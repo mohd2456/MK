@@ -11,3 +11,9 @@ gateway/dist/
 *.log
 .build/
 output/
+.agents/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+gateway/dist/
