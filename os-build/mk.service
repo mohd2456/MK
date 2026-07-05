@@ -1,0 +1,41 @@
+[Unit]
+Description=MK AI Operating System
+Documentation=https://github.com/mohd2456/MK
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/mk
+ExecStart=/usr/bin/python3 -m mk.main --mode daemon
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Environment
+Environment=MK_HOME=/opt/mk
+Environment=MK_CONFIG=/etc/mk/config.yaml
+Environment=MK_DATA=/var/lib/mk
+Environment=MK_LOG=/var/log/mk
+
+# Security hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mk /var/log/mk /tmp
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+# Resource limits (appropriate for MacBook Pro 2010 with 6GB RAM)
+MemoryMax=2G
+CPUQuota=80%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mk
+
+[Install]
+WantedBy=multi-user.target
