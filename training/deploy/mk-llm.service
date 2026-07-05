@@ -1,0 +1,66 @@
+# MK LLM Server — systemd service
+#
+# Runs the local LLM as a system service on the i5-3470.
+# Starts on boot, restarts on crash, runs as mk user.
+#
+# Install:
+#   sudo cp mk-llm.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mk-llm
+#   sudo systemctl start mk-llm
+#
+# Check status:
+#   sudo systemctl status mk-llm
+#   journalctl -u mk-llm -f
+
+[Unit]
+Description=MK Brain — Local LLM Server
+Documentation=https://github.com/mohd2456/MK
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=mk
+Group=mk
+
+# Model configuration
+Environment=MODEL_FILE=/opt/mk/models/mk-brain-q4_k_m.gguf
+
+# Start the server
+ExecStart=/usr/local/bin/mk-llm-server \
+    --model /opt/mk/models/mk-brain-q4_k_m.gguf \
+    --host 127.0.0.1 \
+    --port 8080 \
+    --ctx-size 2048 \
+    --threads 4 \
+    --batch-size 512 \
+    --parallel 1 \
+    --cont-batching \
+    --mlock \
+    --log-disable
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Resource limits (leave headroom for MK OS)
+MemoryMax=6G
+CPUQuota=90%
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/mk/models
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mk-llm
+
+[Install]
+WantedBy=multi-user.target
