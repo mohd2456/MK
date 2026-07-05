@@ -1,0 +1,84 @@
+# MK Configuration
+# Copy this file to ~/.mk/config.yaml and fill in your values.
+
+# LLM Providers - Add as many as you want. MK picks the best available.
+# No loyalty to any provider - quality over everything.
+llm_providers:
+  - name: claude
+    api_key_ref: claude_api_key  # Reference to key in secrets store
+    model: claude-3-sonnet-20240229
+    endpoint: https://api.anthropic.com/v1
+    priority: 10  # Higher = preferred
+    max_tokens: 4096
+    temperature: 0.7
+
+  - name: openai
+    api_key_ref: openai_api_key
+    model: gpt-4
+    endpoint: https://api.openai.com/v1
+    priority: 8
+    max_tokens: 4096
+    temperature: 0.7
+
+  - name: groq
+    api_key_ref: groq_api_key
+    model: llama-3.1-70b-versatile
+    endpoint: https://api.groq.com/openai/v1
+    priority: 5
+    max_tokens: 4096
+    temperature: 0.7
+
+# Machines in your homelab
+machines:
+  - name: media-server
+    host: 192.168.1.100
+    user: admin
+    ssh_key_path: ~/.ssh/homelab_key
+    roles:
+      - media
+      - storage
+
+  - name: compute-node
+    host: 192.168.1.101
+    user: admin
+    ssh_key_path: ~/.ssh/homelab_key
+    roles:
+      - compute
+      - llm-local
+
+# Services MK manages
+services:
+  - name: sonarr
+    url: http://192.168.1.100:8989
+    api_key_ref: sonarr_api_key
+    machine: media-server
+
+  - name: radarr
+    url: http://192.168.1.100:7878
+    api_key_ref: radarr_api_key
+    machine: media-server
+
+  - name: plex
+    url: http://192.168.1.100:32400
+    api_key_ref: plex_token
+    machine: media-server
+
+# Memory settings - keeps context tight and cost low
+memory:
+  short_term_max_messages: 50
+  long_term_storage_path: ~/.mk/memory
+  context_window_budget: 8000  # Token budget for context
+  summary_threshold: 20  # Summarize after this many messages
+
+# Safety - MK asks before doing anything dangerous
+safety:
+  confirm_destructive: true
+  audit_log_path: ~/.mk/audit.log
+  max_iterations: 10
+  secrets_path: ~/.mk/secrets.enc
+
+# Telegram - talk to MK from anywhere
+telegram:
+  enabled: false
+  bot_token_ref: telegram_bot_token
+  allowed_chat_ids: []
