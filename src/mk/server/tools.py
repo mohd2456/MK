@@ -231,6 +231,12 @@ RIPPER_ACTIONS = {
     "check_deps": "check_dependencies",
 }
 
+MIGRATION_ACTIONS = {
+    "export": "export_state",
+    "import": "import_state",
+    "hardware_profile": "hardware_profile",
+}
+
 
 class ServerTool(Tool):
     """Unified server management tool.
@@ -268,7 +274,7 @@ class ServerTool(Tool):
                     "enum": [
                         "system", "storage", "containers", "vms", "lxc",
                         "network", "services", "backups", "users", "homelab",
-                        "ripper",
+                        "ripper", "migration",
                     ],
                     "description": "Server management domain",
                 },
@@ -308,6 +314,7 @@ class ServerTool(Tool):
             "users": (self._mgr.users, USER_ACTIONS),
             "homelab": (self._mgr.homelab, HOMELAB_ACTIONS),
             "ripper": (self._mgr.ripper, RIPPER_ACTIONS),
+            "migration": (self._mgr.migration, MIGRATION_ACTIONS),
         }
 
         entry = domain_map.get(domain)

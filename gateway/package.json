@@ -1,7 +1,7 @@
 {
   "name": "mk-gateway",
-  "version": "0.1.0",
-  "description": "MK Messaging Gateway - Telegram bot for two-way communication with MK AI",
+  "version": "0.2.0",
+  "description": "MK Messaging Gateway - Telegram, Discord, Matrix (WhatsApp/Signal bridge)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -9,10 +9,11 @@
     "dev": "ts-node src/index.ts",
     "test": "echo \"Tests passed\" && exit 0"
   },
-  "keywords": ["telegram", "bot", "ai", "gateway"],
+  "keywords": ["telegram", "discord", "matrix", "bot", "ai", "gateway", "homelab"],
   "license": "MIT",
   "dependencies": {
     "telegraf": "^4.15.0",
+    "discord.js": "^14.14.0",
     "express": "^4.18.0",
     "dotenv": "^16.3.0",
     "zod": "^3.22.0"
