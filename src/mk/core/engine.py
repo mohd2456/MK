@@ -47,6 +47,7 @@ class MKEngine:
         )
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._llm_provider = llm_provider
+        self._llm_router: Optional[Any] = None
         self._agent_loop: Optional[AgentLoop] = None
 
         self._server_manager: Optional[Any] = None
@@ -390,6 +391,41 @@ class MKEngine:
         for tool in server_tools:
             self._tools[tool.name] = tool.execute
             logger.info(f"Registered server tool: {tool.name}")
+
+    def setup_llm_providers(self, keys_file: Optional[str] = None) -> None:
+        """Auto-configure LLM providers from stored API keys.
+
+        Reads all keys from the KeyManager, creates the appropriate provider
+        instances, registers them with an LLMRouter, and sets up the agent
+        loop. Call this on startup after /setkey has stored keys.
+
+        Args:
+            keys_file: Optional path to keys file. Uses default if None.
+        """
+        from mk.llm.keys import KeyManager
+        from mk.llm.provider_factory import configure_router_from_keys
+
+        kwargs = {}
+        if keys_file is not None:
+            kwargs["keys_file"] = keys_file
+
+        key_manager = KeyManager(**kwargs)
+        active = key_manager.get_active_providers()
+
+        if not active:
+            logger.info("No API keys stored - LLM providers not configured")
+            return
+
+        router = configure_router_from_keys(key_manager)
+
+        if router.providers:
+            self._llm_router = router
+            # Use the router as the LLM provider for the agent loop
+            self._setup_agent_loop(router)
+            logger.info(
+                f"LLM configured: {len(router.providers)} providers "
+                f"({', '.join(router.providers.keys())})"
+            )
 
     @property
     def server(self) -> Optional[Any]:

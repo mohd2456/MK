@@ -11,6 +11,7 @@ from mk.llm.providers.groq_provider import GroqProvider
 from mk.llm.providers.mistral_provider import MistralProvider
 from mk.llm.providers.ollama_provider import OllamaProvider
 from mk.llm.providers.openai_provider import OpenAIProvider
+from mk.llm.providers.universal_provider import UniversalProvider
 
 __all__ = [
     "AnthropicProvider",
@@ -19,4 +20,5 @@ __all__ = [
     "MistralProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "UniversalProvider",
 ]
