@@ -220,6 +220,17 @@ HOMELAB_ACTIONS = {
     "schedule_wake": "schedule_wake",
 }
 
+RIPPER_ACTIONS = {
+    "detect_drive": "detect_drive",
+    "disc_status": "disc_status",
+    "rip": "rip_disc",
+    "eject": "eject_disc",
+    "close_tray": "close_tray",
+    "watch": "watch_for_disc",
+    "config": "get_config",
+    "check_deps": "check_dependencies",
+}
+
 
 class ServerTool(Tool):
     """Unified server management tool.
@@ -243,6 +254,7 @@ class ServerTool(Tool):
             "services (systemd), backups (snapshots, replication), "
             "users (accounts, SSH keys, ACLs), "
             "homelab (WoL, UPS, reverse proxy, DDNS, monitoring), "
+            "ripper (autonomous Blu-ray/DVD ripping to Plex/Jellyfin), "
             "and system (overview, health, power, updates)."
         )
 
@@ -256,6 +268,7 @@ class ServerTool(Tool):
                     "enum": [
                         "system", "storage", "containers", "vms", "lxc",
                         "network", "services", "backups", "users", "homelab",
+                        "ripper",
                     ],
                     "description": "Server management domain",
                 },
@@ -294,6 +307,7 @@ class ServerTool(Tool):
             "backups": (self._mgr.backups, BACKUP_ACTIONS),
             "users": (self._mgr.users, USER_ACTIONS),
             "homelab": (self._mgr.homelab, HOMELAB_ACTIONS),
+            "ripper": (self._mgr.ripper, RIPPER_ACTIONS),
         }
 
         entry = domain_map.get(domain)

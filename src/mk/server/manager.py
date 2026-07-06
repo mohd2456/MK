@@ -15,6 +15,7 @@ from .containers import ContainerManager
 from .homelab import HomelabManager
 from .lxc import LXCManager
 from .network import NetworkManager
+from .ripper import DiscRipper
 from .services import ServiceManager
 from .storage import StorageManager
 from .users import UserManager
@@ -50,6 +51,7 @@ class ServerManager:
         self.vms = VMManager()
         self.lxc = LXCManager()
         self.homelab = HomelabManager()
+        self.ripper = DiscRipper()
 
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""

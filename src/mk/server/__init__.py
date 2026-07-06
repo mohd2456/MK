@@ -14,6 +14,7 @@ from mk.server.users import UserManager
 from mk.server.vms import VMManager
 from mk.server.lxc import LXCManager
 from mk.server.homelab import HomelabManager
+from mk.server.ripper import DiscRipper
 from mk.server.tools import ServerTool, create_server_tools
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "VMManager",
     "LXCManager",
     "HomelabManager",
+    "DiscRipper",
     "ServerTool",
     "create_server_tools",
 ]

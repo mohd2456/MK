@@ -106,6 +106,7 @@ class TestServerPublicAPI:
             "VMManager",
             "LXCManager",
             "HomelabManager",
+            "DiscRipper",
             "ServerTool",
             "create_server_tools",
         }
