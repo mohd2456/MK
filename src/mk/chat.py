@@ -182,15 +182,19 @@ class ChatMode:
 
         # Explicit remember requests
         remember_patterns = [
-            r"remember (?:that |this:?\s*)?(.+)",
-            r"don'?t forget (?:that )?(.+)",
-            r"keep in mind (?:that )?(.+)",
-            r"note (?:that )?(.+)",
+            r"remember (?:that |this:?\s*)?(.{3,})",
+            r"don'?t forget (?:that )?(.{3,})",
+            r"keep in mind (?:that )?(.{3,})",
+            r"note (?:that )?(.{3,})",
         ]
         for pattern in remember_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 fact = match.group(1).strip().rstrip(".")
+                if len(fact) < 3 or fact.lower() in ("that", "this"):
+                    continue
+                # Cap length
+                fact = fact[:200]
                 self.add_fact(fact)
                 self._long_term.learn(
                     key=f"user_fact_{len(self._profile.get('facts', []))}",
@@ -202,14 +206,14 @@ class ChatMode:
 
         # Preferences
         pref_patterns = [
-            r"i (?:really )?(?:like|love|enjoy|prefer)\s+(.+)",
-            r"i (?:hate|dislike|don'?t like)\s+(.+)",
-            r"(?:my favorite|i prefer)\s+(.+)",
+            r"i (?:really )?(?:like|love|enjoy|prefer)\s+(.{3,})",
+            r"i (?:hate|dislike|don'?t like)\s+(.{3,})",
+            r"(?:my favorite|i prefer)\s+(.{3,})",
         ]
         for pattern in pref_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                pref = match.group(1).strip().rstrip(".")
+                pref = match.group(1).strip().rstrip(".")[:150]
                 self.add_preference(pref)
                 self._long_term.learn(
                     key=f"preference_{pref[:30]}",
@@ -221,15 +225,15 @@ class ChatMode:
 
         # Life facts (work, location, etc.)
         fact_patterns = [
-            r"i (?:work|live|study|go to)\s+(?:at|in|for)?\s*(.+)",
-            r"i (?:have|own|drive|use)\s+(?:a|an)?\s*(.+)",
-            r"i'?m (?:a|an)\s+(.+?)(?:\.|$)",
+            r"i (?:work|live|study|go to)\s+(?:at|in|for)?\s*(.{3,})",
+            r"i (?:have|own|drive|use)\s+(?:a|an)?\s*(.{3,})",
+            r"i'?m (?:a|an)\s+(.{3,}?)(?:\.|$)",
         ]
         for pattern in fact_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                fact = match.group(1).strip().rstrip(".")
-                if len(fact) > 3 and len(fact) < 100:
+                fact = match.group(1).strip().rstrip(".")[:150]
+                if len(fact) > 3 and len(fact) < 150:
                     self.add_fact(fact)
                     learnings.append(f"fact:{fact}")
 

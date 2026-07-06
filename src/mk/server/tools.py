@@ -74,8 +74,9 @@ class ChatActions:
 
     async def remember_action(self, fact: str = "") -> "ToolResult":
         from mk.tools.base import ToolResult
-        if not fact:
-            return ToolResult(success=False, error="Nothing to remember")
+        if not fact or len(fact.strip()) < 3:
+            return ToolResult(success=False, error="Nothing meaningful to remember")
+        fact = fact.strip()[:200]  # Cap length
         self._chat.add_fact(fact)
         self._chat._long_term.learn(
             key=f"explicit_{fact[:30]}",

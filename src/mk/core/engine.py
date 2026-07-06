@@ -198,7 +198,15 @@ class MKEngine:
                 if fact.lower().startswith(prefix):
                     fact = fact[len(prefix):]
                     break
-            if "server" in self._tools and fact:
+            # If after stripping we still have "remember" or empty, reject
+            if not fact or fact.lower() in ("remember", "that", "remember that"):
+                return AgentResponse(
+                    steps=[],
+                    final_response="What should I remember? Say: remember that [something]",
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            if "server" in self._tools:
                 try:
                     result = await self._tools["server"](
                         domain="chat", action="remember", args={"fact": fact}
@@ -215,7 +223,15 @@ class MKEngine:
                 if key.lower().startswith(prefix):
                     key = key[len(prefix):]
                     break
-            if "server" in self._tools and key:
+            # Reject empty or just "forget"
+            if not key or key.lower() in ("forget", "that", "about"):
+                return AgentResponse(
+                    steps=[],
+                    final_response="What should I forget? Say: forget [something]",
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            if "server" in self._tools:
                 try:
                     result = await self._tools["server"](
                         domain="chat", action="forget", args={"key": key}
