@@ -1,17 +1,12 @@
 """MK OS Boot Sequence.
 
-What you see when MK powers on. This IS the experience.
-
 The boot sequence:
-1. Kernel loads (handled by systemd before we start)
-2. MK service starts → this module runs
+1. Kernel loads (handled by systemd)
+2. MK service starts, this module runs
 3. System probe (hardware, network, storage)
 4. Service discovery (what's running, what failed)
 5. AI initialization (LLM provider check, memory load)
-6. Ready state → accepting input
-
-No login screen. No desktop. No bloat.
-Power on → MK is ready → talk to it.
+6. Ready state, accepting input
 """
 
 from __future__ import annotations
@@ -36,7 +31,7 @@ from mk.config.settings import Settings, load_config
 console = Console()
 
 
-# ─── Boot Phases ──────────────────────────────────────────────────────────────
+# Boot Phases
 
 
 class BootPhase:
@@ -62,7 +57,7 @@ class BootPhase:
         self.detail = detail
 
 
-# ─── Boot Display ─────────────────────────────────────────────────────────────
+# Boot Display
 
 
 def _status_icon(status: str) -> str:
@@ -122,7 +117,7 @@ def print_boot_complete(total_time_ms: float, warnings: int, failures: int) -> N
     console.print()
 
 
-# ─── Boot Probes ──────────────────────────────────────────────────────────────
+# Boot Probes
 
 
 async def _run_cmd(cmd: str) -> Tuple[int, str]:
@@ -390,7 +385,7 @@ async def probe_gateway() -> BootPhase:
     return phase
 
 
-# ─── Main Boot Sequence ───────────────────────────────────────────────────────
+# Main Boot Sequence
 
 
 async def boot_sequence(
@@ -416,7 +411,7 @@ async def boot_sequence(
     if not quiet:
         print_boot_header()
 
-    # ─── Phase 1: System Probe ────────────────────────────────
+    # Phase 1: System Probe
     if not quiet:
         console.print("  [bold]System Probe[/bold]")
 
@@ -430,7 +425,7 @@ async def boot_sequence(
         _print_phase_result(storage_phase)
         console.print()
 
-    # ─── Phase 2: Services ────────────────────────────────────
+    # Phase 2: Services
     if not quiet:
         console.print("  [bold]Services[/bold]")
 
@@ -444,7 +439,7 @@ async def boot_sequence(
         _print_phase_result(gateway_phase)
         console.print()
 
-    # ─── Phase 3: AI Initialization ───────────────────────────
+    # Phase 3: AI Initialization
     if not quiet:
         console.print("  [bold]AI Engine[/bold]")
 
@@ -457,7 +452,7 @@ async def boot_sequence(
         _print_phase_result(ai_phase)
         _print_phase_result(memory_phase)
 
-    # ─── Boot Summary ─────────────────────────────────────────
+    # Boot Summary
     all_phases = [
         hw_phase, net_phase, storage_phase,
         docker_phase, services_phase, gateway_phase,
@@ -484,7 +479,7 @@ async def boot_sequence(
     return settings, boot_info
 
 
-# ─── Entry Point ──────────────────────────────────────────────────────────────
+# Entry Point
 
 
 def run_boot(config_path: Optional[str] = None, mode: str = "terminal") -> Tuple[Optional[Settings], Dict[str, Any]]:

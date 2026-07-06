@@ -1,8 +1,4 @@
-"""Data models for the MK server management layer.
-
-Defines structured representations of storage pools, containers,
-network interfaces, services, backup jobs, and users.
-"""
+"""Data models for the MK server management layer."""
 
 from __future__ import annotations
 
@@ -13,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-# ─── Storage Models ───────────────────────────────────────────────────────────
+# Storage Models
 
 
 class PoolStatus(str, Enum):
@@ -89,7 +85,7 @@ class Share(BaseModel):
     allowed_users: List[str] = Field(default_factory=list, description="Allowed users")
 
 
-# ─── Container Models ─────────────────────────────────────────────────────────
+# Container Models
 
 
 class ContainerState(str, Enum):
@@ -127,7 +123,7 @@ class ComposeStack(BaseModel):
     total: int = Field(default=0, description="Total service count")
 
 
-# ─── Network Models ───────────────────────────────────────────────────────────
+# Network Models
 
 
 class InterfaceType(str, Enum):
@@ -194,7 +190,7 @@ class WireGuardInterface(BaseModel):
     peers: List[WireGuardPeer] = Field(default_factory=list, description="Connected peers")
 
 
-# ─── Service Models ───────────────────────────────────────────────────────────
+# Service Models
 
 
 class ServiceState(str, Enum):
@@ -227,7 +223,7 @@ class ServiceInfo(BaseModel):
     memory_mb: float = Field(default=0.0, description="Memory usage MB")
 
 
-# ─── Backup Models ────────────────────────────────────────────────────────────
+# Backup Models
 
 
 class BackupType(str, Enum):
@@ -271,7 +267,7 @@ class RestorePoint(BaseModel):
     verified: bool = Field(default=False, description="Whether integrity was verified")
 
 
-# ─── User Models ──────────────────────────────────────────────────────────────
+# User Models
 
 
 class UserAccount(BaseModel):

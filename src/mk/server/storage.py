@@ -1,15 +1,4 @@
-"""Storage Manager - ZFS pool, dataset, snapshot, and share management.
-
-The AI-managed storage layer. Handles everything TrueNAS does for storage:
-- ZFS pool creation, status, scrub, expansion
-- Dataset creation with compression, quotas, encryption
-- Snapshot creation, listing, rollback, deletion
-- SMB/NFS share management
-- Disk health monitoring via SMART
-
-All operations execute real system commands. MK decides when to snapshot,
-when to scrub, when to alert — no manual scheduling needed.
-"""
+"""Storage Manager - ZFS pool, dataset, snapshot, and share management."""
 
 from __future__ import annotations
 
@@ -22,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .models import (
     Dataset,
     PoolStatus,
@@ -36,35 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 class StorageManager:
-    """Manages ZFS storage pools, datasets, snapshots, and network shares.
-
-    This is the core storage brain of MK OS. It wraps ZFS commands,
-    share configuration (SMB via samba, NFS via /etc/exports), and
-    disk health monitoring into a unified interface that MK's AI
-    can reason about and act on.
-    """
+    """Manages ZFS storage pools, datasets, snapshots, and network shares."""
 
     def __init__(self, sudo: bool = True) -> None:
-        """Initialize the Storage Manager.
-
-        Args:
-            sudo: Whether to prefix commands with sudo (default True for system ops).
-        """
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""
 
-    # ─── Command Execution ────────────────────────────────────────────────
-
     async def _run(self, cmd: str, check: bool = True) -> Tuple[int, str, str]:
-        """Execute a shell command asynchronously.
-
-        Args:
-            cmd: Command string to execute.
-            check: If True, log errors on non-zero exit.
-
-        Returns:
-            Tuple of (return_code, stdout, stderr).
-        """
+        """Execute a shell command asynchronously."""
         full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
         logger.debug(f"Storage exec: {full_cmd}")
 
@@ -83,14 +52,10 @@ class StorageManager:
 
         return rc, out, err
 
-    # ─── Pool Operations ──────────────────────────────────────────────────
+    # Pool Operations
 
     async def list_pools(self) -> ToolResult:
-        """List all ZFS pools with their status and usage.
-
-        Returns:
-            ToolResult with pool information.
-        """
+        """List all ZFS pools with their status and usage."""
         rc, out, err = await self._run(
             "zpool list -Hp -o name,size,alloc,free,frag,health"
         )
@@ -120,15 +85,9 @@ class StorageManager:
         )
 
     async def pool_status(self, pool_name: str) -> ToolResult:
-        """Get detailed status of a specific pool.
-
-        Args:
-            pool_name: Name of the ZFS pool.
-
-        Returns:
-            ToolResult with detailed pool status.
-        """
-        rc, out, err = await self._run(f"zpool status {pool_name}")
+        """Get detailed status of a specific pool."""
+        validate_name(pool_name, "pool_name")
+        rc, out, err = await self._run(f"zpool status {safe_quote(pool_name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Pool '{pool_name}' not found: {err}")
 
@@ -145,23 +104,14 @@ class StorageManager:
         disks: List[str],
         force: bool = False,
     ) -> ToolResult:
-        """Create a new ZFS pool.
-
-        Args:
-            name: Pool name.
-            vdev_type: VDEV layout (mirror, raidz1, raidz2, raidz3, stripe).
-            disks: List of disk device paths (e.g., ["/dev/sda", "/dev/sdb"]).
-            force: Force creation even if disks appear in use.
-
-        Returns:
-            ToolResult with creation status.
-        """
+        """Create a new ZFS pool."""
         if not name:
             return ToolResult(success=False, error="Pool name is required")
         if not disks:
             return ToolResult(success=False, error="At least one disk is required")
 
-        # Validate vdev type
+        validate_name(name, "pool name")
+
         valid_types = ["mirror", "raidz1", "raidz2", "raidz3", "stripe"]
         if vdev_type not in valid_types:
             return ToolResult(
@@ -169,11 +119,14 @@ class StorageManager:
                 error=f"Invalid vdev type '{vdev_type}'. Use: {', '.join(valid_types)}",
             )
 
-        # Build command
+        # Validate disk paths
+        for disk in disks:
+            validate_name(disk, "disk path")
+
         force_flag = "-f " if force else ""
         vdev_arg = "" if vdev_type == "stripe" else f"{vdev_type} "
-        disk_args = " ".join(disks)
-        cmd = f"zpool create {force_flag}{name} {vdev_arg}{disk_args}"
+        disk_args = " ".join(safe_quote(d) for d in disks)
+        cmd = f"zpool create {force_flag}{safe_quote(name)} {vdev_arg}{disk_args}"
 
         rc, out, err = await self._run(cmd)
         if rc != 0:
@@ -182,22 +135,15 @@ class StorageManager:
         return ToolResult(
             success=True,
             output=f"Pool '{name}' created with {vdev_type} topology using {len(disks)} disks",
-            side_effects=[f"ZFS pool '{name}' created", f"Disks allocated: {disk_args}"],
+            side_effects=[f"ZFS pool '{name}' created", f"Disks allocated: {', '.join(disks)}"],
             metadata={"pool": name, "vdev_type": vdev_type, "disks": disks},
         )
 
     async def destroy_pool(self, name: str, force: bool = False) -> ToolResult:
-        """Destroy a ZFS pool. DANGEROUS - requires confirmation.
-
-        Args:
-            name: Pool name to destroy.
-            force: Force destruction of mounted datasets.
-
-        Returns:
-            ToolResult with destruction status.
-        """
+        """Destroy a ZFS pool."""
+        validate_name(name, "pool name")
         force_flag = "-f " if force else ""
-        rc, out, err = await self._run(f"zpool destroy {force_flag}{name}")
+        rc, out, err = await self._run(f"zpool destroy {force_flag}{safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to destroy pool: {err}")
 
@@ -209,15 +155,9 @@ class StorageManager:
         )
 
     async def scrub_pool(self, pool_name: str) -> ToolResult:
-        """Start a scrub on a ZFS pool to verify data integrity.
-
-        Args:
-            pool_name: Pool to scrub.
-
-        Returns:
-            ToolResult with scrub status.
-        """
-        rc, out, err = await self._run(f"zpool scrub {pool_name}")
+        """Start a scrub on a ZFS pool to verify data integrity."""
+        validate_name(pool_name, "pool_name")
+        rc, out, err = await self._run(f"zpool scrub {safe_quote(pool_name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to start scrub: {err}")
 
@@ -228,18 +168,13 @@ class StorageManager:
             metadata={"pool": pool_name, "action": "scrub"},
         )
 
-    # ─── Dataset Operations ───────────────────────────────────────────────
+    # Dataset Operations
 
     async def list_datasets(self, pool: Optional[str] = None) -> ToolResult:
-        """List ZFS datasets with usage info.
-
-        Args:
-            pool: Filter to specific pool (optional).
-
-        Returns:
-            ToolResult with dataset listing.
-        """
-        target = pool or ""
+        """List ZFS datasets with usage info."""
+        if pool:
+            validate_name(pool, "pool")
+        target = safe_quote(pool) if pool else ""
         rc, out, err = await self._run(
             f"zfs list -Hp -o name,used,avail,refer,mountpoint,compress {target}".strip()
         )
@@ -275,31 +210,22 @@ class StorageManager:
         mountpoint: Optional[str] = None,
         encryption: bool = False,
     ) -> ToolResult:
-        """Create a new ZFS dataset.
-
-        Args:
-            name: Full dataset path (e.g., "tank/media").
-            compression: Compression algorithm (lz4, zstd, gzip, off).
-            quota: Size quota (e.g., "100G", "1T").
-            mountpoint: Custom mount point.
-            encryption: Enable encryption (aes-256-gcm).
-
-        Returns:
-            ToolResult with creation status.
-        """
+        """Create a new ZFS dataset."""
         if not name:
             return ToolResult(success=False, error="Dataset name is required")
+        validate_name(name, "dataset name")
 
-        opts: List[str] = [f"-o compression={compression}"]
+        opts: List[str] = [f"-o compression={safe_quote(compression)}"]
         if quota:
-            opts.append(f"-o quota={quota}")
+            validate_name(quota, "quota")
+            opts.append(f"-o quota={safe_quote(quota)}")
         if mountpoint:
-            opts.append(f"-o mountpoint={mountpoint}")
+            opts.append(f"-o mountpoint={safe_quote(mountpoint)}")
         if encryption:
             opts.append("-o encryption=aes-256-gcm -o keyformat=passphrase")
 
         opts_str = " ".join(opts)
-        rc, out, err = await self._run(f"zfs create {opts_str} {name}")
+        rc, out, err = await self._run(f"zfs create {opts_str} {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create dataset: {err}")
 
@@ -311,17 +237,10 @@ class StorageManager:
         )
 
     async def destroy_dataset(self, name: str, recursive: bool = False) -> ToolResult:
-        """Destroy a ZFS dataset. DANGEROUS.
-
-        Args:
-            name: Dataset to destroy.
-            recursive: Also destroy child datasets and snapshots.
-
-        Returns:
-            ToolResult with destruction status.
-        """
+        """Destroy a ZFS dataset."""
+        validate_name(name, "dataset name")
         r_flag = "-r " if recursive else ""
-        rc, out, err = await self._run(f"zfs destroy {r_flag}{name}")
+        rc, out, err = await self._run(f"zfs destroy {r_flag}{safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to destroy dataset: {err}")
 
@@ -333,17 +252,12 @@ class StorageManager:
         )
 
     async def set_property(self, dataset: str, property_name: str, value: str) -> ToolResult:
-        """Set a ZFS property on a dataset.
-
-        Args:
-            dataset: Target dataset.
-            property_name: Property to set (compression, quota, etc.).
-            value: Property value.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"zfs set {property_name}={value} {dataset}")
+        """Set a ZFS property on a dataset."""
+        validate_name(dataset, "dataset")
+        validate_name(property_name, "property_name")
+        rc, out, err = await self._run(
+            f"zfs set {safe_quote(property_name)}={safe_quote(value)} {safe_quote(dataset)}"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set property: {err}")
 
@@ -353,18 +267,13 @@ class StorageManager:
             metadata={"dataset": dataset, "property": property_name, "value": value},
         )
 
-    # ─── Snapshot Operations ──────────────────────────────────────────────
+    # Snapshot Operations
 
     async def list_snapshots(self, dataset: Optional[str] = None) -> ToolResult:
-        """List ZFS snapshots.
-
-        Args:
-            dataset: Filter to specific dataset (optional).
-
-        Returns:
-            ToolResult with snapshot listing.
-        """
-        target = f"-r {dataset}" if dataset else ""
+        """List ZFS snapshots."""
+        if dataset:
+            validate_name(dataset, "dataset")
+        target = f"-r {safe_quote(dataset)}" if dataset else ""
         rc, out, err = await self._run(
             f"zfs list -t snapshot -Hp -o name,used,refer,creation {target}".strip()
         )
@@ -393,23 +302,17 @@ class StorageManager:
     async def create_snapshot(
         self, dataset: str, snap_name: Optional[str] = None, recursive: bool = False
     ) -> ToolResult:
-        """Create a ZFS snapshot.
-
-        Args:
-            dataset: Dataset to snapshot.
-            snap_name: Snapshot name (auto-generated with timestamp if not provided).
-            recursive: Also snapshot child datasets.
-
-        Returns:
-            ToolResult with snapshot info.
-        """
+        """Create a ZFS snapshot."""
+        validate_name(dataset, "dataset")
         if not snap_name:
             snap_name = f"mk-auto-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        else:
+            validate_name(snap_name, "snapshot name")
 
         full_name = f"{dataset}@{snap_name}"
         r_flag = "-r " if recursive else ""
 
-        rc, out, err = await self._run(f"zfs snapshot {r_flag}{full_name}")
+        rc, out, err = await self._run(f"zfs snapshot {r_flag}{safe_quote(full_name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create snapshot: {err}")
 
@@ -421,17 +324,10 @@ class StorageManager:
         )
 
     async def rollback_snapshot(self, snapshot: str, destroy_newer: bool = False) -> ToolResult:
-        """Rollback a dataset to a snapshot. DANGEROUS.
-
-        Args:
-            snapshot: Full snapshot name (dataset@snap).
-            destroy_newer: Destroy snapshots newer than this one.
-
-        Returns:
-            ToolResult with rollback status.
-        """
+        """Rollback a dataset to a snapshot."""
+        validate_name(snapshot, "snapshot")
         r_flag = "-r " if destroy_newer else ""
-        rc, out, err = await self._run(f"zfs rollback {r_flag}{snapshot}")
+        rc, out, err = await self._run(f"zfs rollback {r_flag}{safe_quote(snapshot)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to rollback: {err}")
 
@@ -443,15 +339,9 @@ class StorageManager:
         )
 
     async def destroy_snapshot(self, snapshot: str) -> ToolResult:
-        """Destroy a ZFS snapshot.
-
-        Args:
-            snapshot: Full snapshot name (dataset@snap).
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"zfs destroy {snapshot}")
+        """Destroy a ZFS snapshot."""
+        validate_name(snapshot, "snapshot")
+        rc, out, err = await self._run(f"zfs destroy {safe_quote(snapshot)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to destroy snapshot: {err}")
 
@@ -462,22 +352,16 @@ class StorageManager:
             metadata={"snapshot": snapshot},
         )
 
-    # ─── Share Operations ─────────────────────────────────────────────────
+    # Share Operations
 
     async def list_shares(self) -> ToolResult:
-        """List all configured network shares (SMB and NFS).
-
-        Returns:
-            ToolResult with share listing.
-        """
+        """List all configured network shares (SMB and NFS)."""
         shares: List[Dict[str, Any]] = []
 
-        # Get SMB shares from samba config
         rc, out, err = await self._run("testparm -s 2>/dev/null || true", check=False)
         if rc == 0 and out:
             shares.append({"type": "smb", "config": out})
 
-        # Get NFS exports
         rc, out, err = await self._run("exportfs -v 2>/dev/null || true", check=False)
         if rc == 0 and out:
             for line in out.splitlines():
@@ -498,19 +382,9 @@ class StorageManager:
         guest_ok: bool = False,
         valid_users: Optional[List[str]] = None,
     ) -> ToolResult:
-        """Create an SMB (Samba) share.
+        """Create an SMB (Samba) share."""
+        validate_name(name, "share name")
 
-        Args:
-            name: Share name.
-            path: Filesystem path to share.
-            read_only: Whether the share is read-only.
-            guest_ok: Allow guest access.
-            valid_users: List of allowed users (empty = all).
-
-        Returns:
-            ToolResult with share creation status.
-        """
-        # Build samba config section
         config_lines = [
             f"[{name}]",
             f"   path = {path}",
@@ -520,19 +394,19 @@ class StorageManager:
             "   directory mask = 0775",
         ]
         if valid_users:
+            for u in valid_users:
+                validate_name(u, "valid_user")
             config_lines.append(f"   valid users = {' '.join(valid_users)}")
 
         config_block = "\n".join(config_lines) + "\n"
 
-        # Append to smb.conf
-        smb_conf = Path("/etc/samba/smb.conf")
+        # Use heredoc to safely write config without interpolation issues
         rc, out, err = await self._run(
-            f"bash -c 'echo \"\n{config_block}\" >> /etc/samba/smb.conf'"
+            f"bash -c 'cat >> /etc/samba/smb.conf << {safe_quote('MKEOF')}\n\n{config_block}MKEOF'"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write SMB config: {err}")
 
-        # Restart samba
         await self._run("systemctl restart smbd")
 
         return ToolResult(
@@ -548,46 +422,29 @@ class StorageManager:
         allowed_network: str = "*",
         options: str = "rw,sync,no_subtree_check",
     ) -> ToolResult:
-        """Create an NFS export.
-
-        Args:
-            path: Filesystem path to export.
-            allowed_network: Network/host allowed (e.g., "192.168.1.0/24").
-            options: NFS export options.
-
-        Returns:
-            ToolResult with export creation status.
-        """
+        """Create an NFS export."""
         export_line = f"{path} {allowed_network}({options})"
 
         rc, out, err = await self._run(
-            f"bash -c 'echo \"{export_line}\" >> /etc/exports'"
+            f"bash -c 'cat >> /etc/exports << {safe_quote('MKEOF')}\n{export_line}\nMKEOF'"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write NFS export: {err}")
 
-        # Reload NFS exports
         await self._run("exportfs -ra")
 
         return ToolResult(
             success=True,
             output=f"NFS export created: {path} -> {allowed_network}",
-            side_effects=[f"NFS export added to /etc/exports", "NFS exports reloaded"],
+            side_effects=["NFS export added to /etc/exports", "NFS exports reloaded"],
             metadata={"path": path, "network": allowed_network, "type": "nfs"},
         )
 
     async def remove_share(self, name: str, share_type: str) -> ToolResult:
-        """Remove a network share.
+        """Remove a network share."""
+        validate_name(name, "share name")
 
-        Args:
-            name: Share name (SMB) or path (NFS).
-            share_type: "smb" or "nfs".
-
-        Returns:
-            ToolResult with removal status.
-        """
         if share_type == "smb":
-            # Remove SMB section from smb.conf (sed-based removal)
             rc, out, err = await self._run(
                 f"sed -i '/\\[{name}\\]/,/^\\[/{{/^\\[{name}\\]/d;/^\\[/!d}}' /etc/samba/smb.conf"
             )
@@ -595,7 +452,6 @@ class StorageManager:
                 return ToolResult(success=False, error=f"Failed to remove SMB share: {err}")
             await self._run("systemctl restart smbd")
         elif share_type == "nfs":
-            # Remove NFS export line
             rc, out, err = await self._run(
                 f"sed -i '\\|^{name}|d' /etc/exports"
             )
@@ -612,14 +468,10 @@ class StorageManager:
             metadata={"name": name, "type": share_type},
         )
 
-    # ─── Disk Health ──────────────────────────────────────────────────────
+    # Disk Health
 
     async def list_disks(self) -> ToolResult:
-        """List all block devices with size and model info.
-
-        Returns:
-            ToolResult with disk listing.
-        """
+        """List all block devices with size and model info."""
         rc, out, err = await self._run(
             "lsblk -Jb -o NAME,SIZE,TYPE,MODEL,SERIAL,ROTA,TRAN"
         )
@@ -633,16 +485,10 @@ class StorageManager:
         )
 
     async def disk_smart_health(self, device: str) -> ToolResult:
-        """Get SMART health status for a disk.
-
-        Args:
-            device: Disk device path (e.g., "/dev/sda").
-
-        Returns:
-            ToolResult with SMART health info.
-        """
-        rc, out, err = await self._run(f"smartctl -a {device}")
-        if rc > 4:  # smartctl uses bitmask return codes; >4 means real error
+        """Get SMART health status for a disk."""
+        validate_name(device, "device path")
+        rc, out, err = await self._run(f"smartctl -a {safe_quote(device)}")
+        if rc > 4:
             return ToolResult(success=False, error=f"SMART check failed: {err}")
 
         return ToolResult(
@@ -651,30 +497,26 @@ class StorageManager:
             metadata={"device": device, "format": "smartctl"},
         )
 
-    # ─── ZFS Send/Receive (Replication) ───────────────────────────────────
+    # ZFS Send/Receive (Replication)
 
     async def send_snapshot(
         self, snapshot: str, destination: str, incremental_from: Optional[str] = None
     ) -> ToolResult:
-        """Send a ZFS snapshot to a remote destination (replication).
-
-        Args:
-            snapshot: Full snapshot name to send.
-            destination: SSH target (user@host:pool/dataset) or local dataset.
-            incremental_from: Base snapshot for incremental send.
-
-        Returns:
-            ToolResult with send status.
-        """
-        incr_flag = f"-i {incremental_from} " if incremental_from else ""
+        """Send a ZFS snapshot to a remote destination (replication)."""
+        validate_name(snapshot, "snapshot")
+        incr_flag = f"-i {safe_quote(incremental_from)} " if incremental_from else ""
 
         if ":" in destination:
-            # Remote send via SSH
             host, target = destination.split(":", 1)
-            cmd = f"zfs send {incr_flag}{snapshot} | ssh {host} zfs receive -F {target}"
+            validate_name(host, "host")
+            validate_name(target, "target dataset")
+            cmd = (
+                f"zfs send {incr_flag}{safe_quote(snapshot)} | "
+                f"ssh {safe_quote(host)} zfs receive -F {safe_quote(target)}"
+            )
         else:
-            # Local receive
-            cmd = f"zfs send {incr_flag}{snapshot} | zfs receive -F {destination}"
+            validate_name(destination, "destination dataset")
+            cmd = f"zfs send {incr_flag}{safe_quote(snapshot)} | zfs receive -F {safe_quote(destination)}"
 
         rc, out, err = await self._run(cmd)
         if rc != 0:

@@ -1,15 +1,4 @@
-"""User Manager - System users, groups, ACLs, and SSH key management.
-
-The AI-managed identity layer. Replaces manual useradd/usermod and web panels:
-- User account creation, modification, deletion
-- Group management and membership
-- SSH authorized key management
-- Password and account locking policies
-- ACL management for fine-grained file permissions
-- Sudo privilege management
-
-MK manages who has access to what — through conversation.
-"""
+"""User Manager - System users, groups, ACLs, and SSH key management."""
 
 from __future__ import annotations
 
@@ -20,24 +9,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .models import GroupInfo, UserAccount
 
 logger = logging.getLogger(__name__)
 
 
 class UserManager:
-    """Manages system users, groups, SSH keys, and access control.
-
-    Provides a unified interface for all identity and access
-    management operations on the server.
-    """
+    """Manages system users, groups, SSH keys, and access control."""
 
     def __init__(self, sudo: bool = True) -> None:
-        """Initialize the User Manager.
-
-        Args:
-            sudo: Whether to prefix commands with sudo.
-        """
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""
 
@@ -61,18 +42,25 @@ class UserManager:
 
         return rc, out, err
 
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
+        logger.debug(f"User exec (stdin): {full_cmd}")
 
-    # ─── User Operations ──────────────────────────────────────────────────
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
+    # User Operations
 
     async def list_users(self, system_users: bool = False) -> ToolResult:
-        """List user accounts on the system.
-
-        Args:
-            system_users: Include system accounts (UID < 1000).
-
-        Returns:
-            ToolResult with user listing.
-        """
+        """List user accounts on the system."""
         if system_users:
             cmd = "getent passwd"
         else:
@@ -104,26 +92,15 @@ class UserManager:
         )
 
     async def user_info(self, username: str) -> ToolResult:
-        """Get detailed information about a user.
-
-        Args:
-            username: Username to look up.
-
-        Returns:
-            ToolResult with user details.
-        """
-        rc, out, err = await self._run(f"id {username}")
+        """Get detailed information about a user."""
+        validate_name(username, "username")
+        rc, out, err = await self._run(f"id {safe_quote(username)}")
         if rc != 0:
             return ToolResult(success=False, error=f"User '{username}' not found: {err}")
 
-        # Get groups
-        rc2, groups_out, _ = await self._run(f"groups {username}")
-
-        # Get last login
-        rc3, login_out, _ = await self._run(f"lastlog -u {username} 2>/dev/null", check=False)
-
-        # Check if locked
-        rc4, shadow_out, _ = await self._run(f"passwd -S {username} 2>/dev/null", check=False)
+        rc2, groups_out, _ = await self._run(f"groups {safe_quote(username)}")
+        rc3, login_out, _ = await self._run(f"lastlog -u {safe_quote(username)} 2>/dev/null", check=False)
+        rc4, shadow_out, _ = await self._run(f"passwd -S {safe_quote(username)} 2>/dev/null", check=False)
         locked = "L" in shadow_out.split()[1] if shadow_out and len(shadow_out.split()) > 1 else False
 
         result = {
@@ -139,7 +116,6 @@ class UserManager:
             metadata={"username": username, "locked": locked},
         )
 
-
     async def create_user(
         self,
         username: str,
@@ -150,36 +126,27 @@ class UserManager:
         comment: str = "",
         create_home: bool = True,
     ) -> ToolResult:
-        """Create a new user account.
+        """Create a new user account."""
+        validate_name(username, "username")
 
-        Args:
-            username: Username for the new account.
-            home_dir: Home directory path (default: /home/username).
-            shell: Login shell.
-            groups: Additional groups to add user to.
-            system_user: Create as system user (UID < 1000).
-            comment: User description/full name.
-            create_home: Create home directory.
-
-        Returns:
-            ToolResult with creation status.
-        """
         cmd_parts = ["useradd"]
 
         if create_home:
             cmd_parts.append("-m")
         if home_dir:
-            cmd_parts.append(f"-d {home_dir}")
+            cmd_parts.append(f"-d {safe_quote(home_dir)}")
         if shell:
-            cmd_parts.append(f"-s {shell}")
+            cmd_parts.append(f"-s {safe_quote(shell)}")
         if system_user:
             cmd_parts.append("-r")
         if comment:
-            cmd_parts.append(f'-c "{comment}"')
+            cmd_parts.append(f"-c {safe_quote(comment)}")
         if groups:
+            for g in groups:
+                validate_name(g, "group")
             cmd_parts.append(f"-G {','.join(groups)}")
 
-        cmd_parts.append(username)
+        cmd_parts.append(safe_quote(username))
         cmd = " ".join(cmd_parts)
 
         rc, out, err = await self._run(cmd)
@@ -197,17 +164,10 @@ class UserManager:
         )
 
     async def delete_user(self, username: str, remove_home: bool = False) -> ToolResult:
-        """Delete a user account.
-
-        Args:
-            username: Username to delete.
-            remove_home: Also remove home directory and mail spool.
-
-        Returns:
-            ToolResult with deletion status.
-        """
+        """Delete a user account."""
+        validate_name(username, "username")
         r_flag = "-r " if remove_home else ""
-        rc, out, err = await self._run(f"userdel {r_flag}{username}")
+        rc, out, err = await self._run(f"userdel {r_flag}{safe_quote(username)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to delete user: {err}")
 
@@ -228,44 +188,34 @@ class UserManager:
         home_dir: Optional[str] = None,
         lock: Optional[bool] = None,
     ) -> ToolResult:
-        """Modify an existing user account.
-
-        Args:
-            username: Username to modify.
-            shell: New login shell.
-            groups: Groups to set/add.
-            append_groups: Append to existing groups (vs replace).
-            comment: New comment/full name.
-            home_dir: New home directory.
-            lock: Lock (True) or unlock (False) the account.
-
-        Returns:
-            ToolResult with modification status.
-        """
+        """Modify an existing user account."""
+        validate_name(username, "username")
         changes: List[str] = []
 
         if shell:
-            await self._run(f"usermod -s {shell} {username}")
+            await self._run(f"usermod -s {safe_quote(shell)} {safe_quote(username)}")
             changes.append(f"shell={shell}")
 
         if groups:
+            for g in groups:
+                validate_name(g, "group")
             a_flag = "-a " if append_groups else ""
-            await self._run(f"usermod {a_flag}-G {','.join(groups)} {username}")
+            await self._run(f"usermod {a_flag}-G {','.join(groups)} {safe_quote(username)}")
             changes.append(f"groups={'added' if append_groups else 'set'}: {','.join(groups)}")
 
         if comment is not None:
-            await self._run(f'usermod -c "{comment}" {username}')
+            await self._run(f"usermod -c {safe_quote(comment)} {safe_quote(username)}")
             changes.append(f"comment={comment}")
 
         if home_dir:
-            await self._run(f"usermod -d {home_dir} -m {username}")
+            await self._run(f"usermod -d {safe_quote(home_dir)} -m {safe_quote(username)}")
             changes.append(f"home={home_dir}")
 
         if lock is True:
-            await self._run(f"usermod -L {username}")
+            await self._run(f"usermod -L {safe_quote(username)}")
             changes.append("account locked")
         elif lock is False:
-            await self._run(f"usermod -U {username}")
+            await self._run(f"usermod -U {safe_quote(username)}")
             changes.append("account unlocked")
 
         if not changes:
@@ -278,18 +228,10 @@ class UserManager:
             metadata={"username": username, "changes": changes},
         )
 
-
-    # ─── Group Operations ─────────────────────────────────────────────────
+    # Group Operations
 
     async def list_groups(self, system_groups: bool = False) -> ToolResult:
-        """List groups on the system.
-
-        Args:
-            system_groups: Include system groups (GID < 1000).
-
-        Returns:
-            ToolResult with group listing.
-        """
+        """List groups on the system."""
         if system_groups:
             cmd = "getent group"
         else:
@@ -319,17 +261,10 @@ class UserManager:
         )
 
     async def create_group(self, name: str, gid: Optional[int] = None) -> ToolResult:
-        """Create a new group.
-
-        Args:
-            name: Group name.
-            gid: Specific GID (auto-assigned if not provided).
-
-        Returns:
-            ToolResult with creation status.
-        """
-        gid_flag = f"-g {gid} " if gid else ""
-        rc, out, err = await self._run(f"groupadd {gid_flag}{name}")
+        """Create a new group."""
+        validate_name(name, "group name")
+        gid_flag = f"-g {int(gid)} " if gid else ""
+        rc, out, err = await self._run(f"groupadd {gid_flag}{safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create group: {err}")
 
@@ -341,15 +276,9 @@ class UserManager:
         )
 
     async def delete_group(self, name: str) -> ToolResult:
-        """Delete a group.
-
-        Args:
-            name: Group name to delete.
-
-        Returns:
-            ToolResult with deletion status.
-        """
-        rc, out, err = await self._run(f"groupdel {name}")
+        """Delete a group."""
+        validate_name(name, "group name")
+        rc, out, err = await self._run(f"groupdel {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to delete group: {err}")
 
@@ -361,16 +290,10 @@ class UserManager:
         )
 
     async def add_to_group(self, username: str, group: str) -> ToolResult:
-        """Add a user to a group.
-
-        Args:
-            username: User to add.
-            group: Group to add to.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"usermod -aG {group} {username}")
+        """Add a user to a group."""
+        validate_name(username, "username")
+        validate_name(group, "group")
+        rc, out, err = await self._run(f"usermod -aG {safe_quote(group)} {safe_quote(username)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to add to group: {err}")
 
@@ -382,16 +305,10 @@ class UserManager:
         )
 
     async def remove_from_group(self, username: str, group: str) -> ToolResult:
-        """Remove a user from a group.
-
-        Args:
-            username: User to remove.
-            group: Group to remove from.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"gpasswd -d {username} {group}")
+        """Remove a user from a group."""
+        validate_name(username, "username")
+        validate_name(group, "group")
+        rc, out, err = await self._run(f"gpasswd -d {safe_quote(username)} {safe_quote(group)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to remove from group: {err}")
 
@@ -402,27 +319,19 @@ class UserManager:
             metadata={"username": username, "group": group},
         )
 
-
-    # ─── SSH Key Management ───────────────────────────────────────────────
+    # SSH Key Management
 
     async def list_ssh_keys(self, username: str) -> ToolResult:
-        """List SSH authorized keys for a user.
-
-        Args:
-            username: Username to list keys for.
-
-        Returns:
-            ToolResult with key listing.
-        """
-        # Get home directory
+        """List SSH authorized keys for a user."""
+        validate_name(username, "username")
         rc, home, err = await self._run(
-            f"getent passwd {username} | cut -d: -f6"
+            f"getent passwd {safe_quote(username)} | cut -d: -f6"
         )
         if rc != 0 or not home:
             return ToolResult(success=False, error=f"User '{username}' not found")
 
         auth_keys_path = f"{home}/.ssh/authorized_keys"
-        rc, out, err = await self._run(f"cat {auth_keys_path} 2>/dev/null", check=False)
+        rc, out, err = await self._run(f"cat {safe_quote(auth_keys_path)} 2>/dev/null", check=False)
 
         keys: List[Dict[str, str]] = []
         if rc == 0 and out:
@@ -445,17 +354,10 @@ class UserManager:
         )
 
     async def add_ssh_key(self, username: str, public_key: str) -> ToolResult:
-        """Add an SSH public key to a user's authorized_keys.
+        """Add an SSH public key to a user's authorized_keys."""
+        validate_name(username, "username")
 
-        Args:
-            username: Username to add key for.
-            public_key: Full SSH public key string.
-
-        Returns:
-            ToolResult with key addition status.
-        """
-        # Get home directory
-        rc, home, _ = await self._run(f"getent passwd {username} | cut -d: -f6")
+        rc, home, _ = await self._run(f"getent passwd {safe_quote(username)} | cut -d: -f6")
         if rc != 0 or not home:
             return ToolResult(success=False, error=f"User '{username}' not found")
 
@@ -463,22 +365,21 @@ class UserManager:
         auth_keys = f"{ssh_dir}/authorized_keys"
 
         # Ensure .ssh directory exists with correct permissions
-        await self._run(f"mkdir -p {ssh_dir}")
-        await self._run(f"chmod 700 {ssh_dir}")
-        await self._run(f"chown {username}:{username} {ssh_dir}")
+        await self._run(f"mkdir -p {safe_quote(ssh_dir)}")
+        await self._run(f"chmod 700 {safe_quote(ssh_dir)}")
+        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(ssh_dir)}")
 
-        # Append key
-        rc, _, err = await self._run(
-            f"bash -c 'echo \"{public_key}\" >> {auth_keys}'"
+        # Append key via stdin to avoid shell interpolation issues with key content
+        rc, _, err = await self._run_with_stdin(
+            f"tee -a {safe_quote(auth_keys)} > /dev/null", public_key + "\n"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to add SSH key: {err}")
 
         # Fix permissions
-        await self._run(f"chmod 600 {auth_keys}")
-        await self._run(f"chown {username}:{username} {auth_keys}")
+        await self._run(f"chmod 600 {safe_quote(auth_keys)}")
+        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(auth_keys)}")
 
-        # Extract comment from key for display
         key_parts = public_key.split()
         comment = key_parts[-1] if len(key_parts) >= 3 else "unnamed"
 
@@ -490,23 +391,15 @@ class UserManager:
         )
 
     async def remove_ssh_key(self, username: str, key_index: int) -> ToolResult:
-        """Remove an SSH key by index from a user's authorized_keys.
-
-        Args:
-            username: Username.
-            key_index: Line index (0-based) of the key to remove.
-
-        Returns:
-            ToolResult with removal status.
-        """
-        rc, home, _ = await self._run(f"getent passwd {username} | cut -d: -f6")
+        """Remove an SSH key by index from a user's authorized_keys."""
+        validate_name(username, "username")
+        rc, home, _ = await self._run(f"getent passwd {safe_quote(username)} | cut -d: -f6")
         if rc != 0 or not home:
             return ToolResult(success=False, error=f"User '{username}' not found")
 
         auth_keys = f"{home}/.ssh/authorized_keys"
-        # sed line numbers are 1-based
-        line_num = key_index + 1
-        rc, _, err = await self._run(f"sed -i '{line_num}d' {auth_keys}")
+        line_num = int(key_index) + 1
+        rc, _, err = await self._run(f"sed -i '{line_num}d' {safe_quote(auth_keys)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to remove key: {err}")
 
@@ -520,17 +413,11 @@ class UserManager:
     async def generate_ssh_keypair(
         self, username: str, key_type: str = "ed25519", comment: Optional[str] = None
     ) -> ToolResult:
-        """Generate a new SSH keypair for a user.
+        """Generate a new SSH keypair for a user."""
+        validate_name(username, "username")
+        validate_name(key_type, "key_type")
 
-        Args:
-            username: User to generate key for.
-            key_type: Key type (ed25519, rsa).
-            comment: Key comment.
-
-        Returns:
-            ToolResult with the public key.
-        """
-        rc, home, _ = await self._run(f"getent passwd {username} | cut -d: -f6")
+        rc, home, _ = await self._run(f"getent passwd {safe_quote(username)} | cut -d: -f6")
         if rc != 0 or not home:
             return ToolResult(success=False, error=f"User '{username}' not found")
 
@@ -538,16 +425,14 @@ class UserManager:
         key_path = f"{home}/.ssh/id_{key_type}"
 
         rc, out, err = await self._run(
-            f'ssh-keygen -t {key_type} -C "{key_comment}" -f {key_path} -N ""'
+            f"ssh-keygen -t {safe_quote(key_type)} -C {safe_quote(key_comment)} "
+            f"-f {safe_quote(key_path)} -N ''"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Key generation failed: {err}")
 
-        # Read public key
-        rc, pubkey, _ = await self._run(f"cat {key_path}.pub")
-
-        # Fix ownership
-        await self._run(f"chown {username}:{username} {key_path} {key_path}.pub")
+        rc, pubkey, _ = await self._run(f"cat {safe_quote(key_path)}.pub")
+        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(key_path)} {safe_quote(key_path)}.pub")
 
         return ToolResult(
             success=True,
@@ -556,38 +441,32 @@ class UserManager:
             metadata={"username": username, "public_key": pubkey, "key_path": key_path},
         )
 
-
-    # ─── Sudo / Privilege Management ──────────────────────────────────────
+    # Sudo / Privilege Management
 
     async def grant_sudo(self, username: str, passwordless: bool = False) -> ToolResult:
-        """Grant sudo privileges to a user.
+        """Grant sudo privileges to a user."""
+        validate_name(username, "username")
 
-        Args:
-            username: User to grant sudo.
-            passwordless: Allow sudo without password.
-
-        Returns:
-            ToolResult with status.
-        """
         if passwordless:
             rule = f"{username} ALL=(ALL) NOPASSWD: ALL"
         else:
             rule = f"{username} ALL=(ALL) ALL"
 
         sudoers_file = f"/etc/sudoers.d/{username}"
-        rc, _, err = await self._run(
-            f"bash -c 'echo \"{rule}\" > {sudoers_file}'"
+
+        # Write sudoers rule via stdin to avoid shell interpolation
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(sudoers_file)} > /dev/null", rule + "\n"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to grant sudo: {err}")
 
-        await self._run(f"chmod 440 {sudoers_file}")
+        await self._run(f"chmod 440 {safe_quote(sudoers_file)}")
 
         # Validate sudoers syntax
-        rc, _, err = await self._run(f"visudo -c -f {sudoers_file}")
+        rc, _, err = await self._run(f"visudo -c -f {safe_quote(sudoers_file)}")
         if rc != 0:
-            # Rollback invalid sudoers
-            await self._run(f"rm -f {sudoers_file}")
+            await self._run(f"rm -f {safe_quote(sudoers_file)}")
             return ToolResult(success=False, error=f"Invalid sudoers syntax: {err}")
 
         return ToolResult(
@@ -598,42 +477,28 @@ class UserManager:
         )
 
     async def revoke_sudo(self, username: str) -> ToolResult:
-        """Revoke sudo privileges from a user.
-
-        Args:
-            username: User to revoke sudo from.
-
-        Returns:
-            ToolResult with status.
-        """
+        """Revoke sudo privileges from a user."""
+        validate_name(username, "username")
         sudoers_file = f"/etc/sudoers.d/{username}"
-        rc, _, err = await self._run(f"rm -f {sudoers_file}")
+        rc, _, err = await self._run(f"rm -f {safe_quote(sudoers_file)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to revoke sudo: {err}")
 
-        # Also remove from sudo/wheel group
-        await self._run(f"gpasswd -d {username} sudo 2>/dev/null", check=False)
-        await self._run(f"gpasswd -d {username} wheel 2>/dev/null", check=False)
+        await self._run(f"gpasswd -d {safe_quote(username)} sudo 2>/dev/null", check=False)
+        await self._run(f"gpasswd -d {safe_quote(username)} wheel 2>/dev/null", check=False)
 
         return ToolResult(
             success=True,
             output=f"Sudo revoked from '{username}'",
-            side_effects=[f"Sudoers file removed, user removed from sudo/wheel groups"],
+            side_effects=["Sudoers file removed, user removed from sudo/wheel groups"],
             metadata={"username": username},
         )
 
-    # ─── ACL Management ───────────────────────────────────────────────────
+    # ACL Management
 
     async def get_acl(self, path: str) -> ToolResult:
-        """Get ACL (Access Control List) for a file/directory.
-
-        Args:
-            path: Filesystem path.
-
-        Returns:
-            ToolResult with ACL information.
-        """
-        rc, out, err = await self._run(f"getfacl {path}")
+        """Get ACL for a file/directory."""
+        rc, out, err = await self._run(f"getfacl {safe_quote(path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to get ACL: {err}")
 
@@ -652,21 +517,14 @@ class UserManager:
         recursive: bool = False,
         default: bool = False,
     ) -> ToolResult:
-        """Set ACL permissions on a file/directory.
-
-        Args:
-            path: Filesystem path.
-            user: User to set permissions for.
-            group: Group to set permissions for.
-            permissions: Permission string (rwx, rx, r, etc.).
-            recursive: Apply recursively.
-            default: Set as default ACL (for directories).
-
-        Returns:
-            ToolResult with ACL set status.
-        """
+        """Set ACL permissions on a file/directory."""
         if not user and not group:
             return ToolResult(success=False, error="Either user or group must be specified")
+
+        if user:
+            validate_name(user, "user")
+        if group:
+            validate_name(group, "group")
 
         r_flag = "-R " if recursive else ""
         d_prefix = "d:" if default else ""
@@ -676,7 +534,7 @@ class UserManager:
         else:
             acl_spec = f"{d_prefix}g:{group}:{permissions}"
 
-        rc, out, err = await self._run(f"setfacl {r_flag}-m {acl_spec} {path}")
+        rc, out, err = await self._run(f"setfacl {r_flag}-m {safe_quote(acl_spec)} {safe_quote(path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set ACL: {err}")
 
@@ -688,24 +546,17 @@ class UserManager:
         )
 
     async def remove_acl(self, path: str, user: Optional[str] = None, group: Optional[str] = None) -> ToolResult:
-        """Remove ACL entries for a user or group.
-
-        Args:
-            path: Filesystem path.
-            user: User to remove ACL for.
-            group: Group to remove ACL for.
-
-        Returns:
-            ToolResult with removal status.
-        """
+        """Remove ACL entries for a user or group."""
         if user:
+            validate_name(user, "user")
             acl_spec = f"u:{user}"
         elif group:
+            validate_name(group, "group")
             acl_spec = f"g:{group}"
         else:
             return ToolResult(success=False, error="User or group required")
 
-        rc, out, err = await self._run(f"setfacl -x {acl_spec} {path}")
+        rc, out, err = await self._run(f"setfacl -x {safe_quote(acl_spec)} {safe_quote(path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to remove ACL: {err}")
 
@@ -716,20 +567,15 @@ class UserManager:
             metadata={"path": path, "removed_acl": acl_spec},
         )
 
-    # ─── Password Management ─────────────────────────────────────────────
+    # Password Management
 
     async def set_password(self, username: str, password: str) -> ToolResult:
-        """Set a user's password.
+        """Set a user's password."""
+        validate_name(username, "username")
 
-        Args:
-            username: User to set password for.
-            password: New password.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, _, err = await self._run(
-            f"bash -c 'echo \"{username}:{password}\" | chpasswd'"
+        # Use chpasswd via stdin to avoid shell interpolation of the password
+        rc, _, err = await self._run_with_stdin(
+            "chpasswd", f"{username}:{password}"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set password: {err}")
@@ -742,15 +588,9 @@ class UserManager:
         )
 
     async def lock_account(self, username: str) -> ToolResult:
-        """Lock a user account (prevent login).
-
-        Args:
-            username: User to lock.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, _, err = await self._run(f"usermod -L {username}")
+        """Lock a user account (prevent login)."""
+        validate_name(username, "username")
+        rc, _, err = await self._run(f"usermod -L {safe_quote(username)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to lock account: {err}")
 
@@ -762,15 +602,9 @@ class UserManager:
         )
 
     async def unlock_account(self, username: str) -> ToolResult:
-        """Unlock a user account.
-
-        Args:
-            username: User to unlock.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, _, err = await self._run(f"usermod -U {username}")
+        """Unlock a user account."""
+        validate_name(username, "username")
+        rc, _, err = await self._run(f"usermod -U {safe_quote(username)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to unlock account: {err}")
 

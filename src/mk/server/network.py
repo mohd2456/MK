@@ -1,15 +1,4 @@
-"""Network Manager - Interfaces, firewall, DNS, and VPN management.
-
-The AI-managed network layer. Replaces pfSense/OPNsense dashboard:
-- Network interface configuration (IP, DHCP, static, bonding, VLANs)
-- Firewall management via nftables (rules, chains, port forwarding)
-- DNS configuration (resolv.conf, local DNS, split DNS)
-- WireGuard VPN management (interfaces, peers, key generation)
-- Network diagnostics (ping, traceroute, DNS lookup, bandwidth test)
-
-MK monitors connectivity, adjusts firewall rules, and manages VPN
-peers — all through conversation.
-"""
+"""Network Manager - Interfaces, firewall, DNS, and VPN management."""
 
 from __future__ import annotations
 
@@ -20,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .models import (
     FirewallRule,
     InterfaceState,
@@ -33,32 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 class NetworkManager:
-    """Manages network interfaces, firewall, DNS, and VPN.
-
-    Provides unified control over the host's networking stack.
-    Replaces the need for pfSense/OPNsense web UIs for basic
-    home server networking tasks.
-    """
+    """Manages network interfaces, firewall, DNS, and VPN."""
 
     def __init__(self, sudo: bool = True) -> None:
-        """Initialize the Network Manager.
-
-        Args:
-            sudo: Whether to prefix commands with sudo.
-        """
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""
 
     async def _run(self, cmd: str, check: bool = True) -> Tuple[int, str, str]:
-        """Execute a shell command asynchronously.
-
-        Args:
-            cmd: Command to execute.
-            check: Log errors on non-zero exit.
-
-        Returns:
-            Tuple of (return_code, stdout, stderr).
-        """
+        """Execute a shell command asynchronously."""
         full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
         logger.debug(f"Network exec: {full_cmd}")
 
@@ -77,14 +49,25 @@ class NetworkManager:
 
         return rc, out, err
 
-    # ─── Interface Management ─────────────────────────────────────────────
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
+        logger.debug(f"Network exec (stdin): {full_cmd}")
+
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
+    # Interface Management
 
     async def list_interfaces(self) -> ToolResult:
-        """List all network interfaces with their configuration.
-
-        Returns:
-            ToolResult with interface listing in JSON format.
-        """
+        """List all network interfaces with their configuration."""
         rc, out, err = await self._run("ip -j addr show")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to list interfaces: {err}")
@@ -96,20 +79,13 @@ class NetworkManager:
         )
 
     async def interface_status(self, name: str) -> ToolResult:
-        """Get detailed status of a specific interface.
-
-        Args:
-            name: Interface name (e.g., eth0, eno1).
-
-        Returns:
-            ToolResult with interface details.
-        """
-        rc, out, err = await self._run(f"ip -j addr show dev {name}")
+        """Get detailed status of a specific interface."""
+        validate_name(name, "interface name")
+        rc, out, err = await self._run(f"ip -j addr show dev {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Interface '{name}' not found: {err}")
 
-        # Also get link stats
-        rc2, stats, _ = await self._run(f"ip -j -s link show dev {name}")
+        rc2, stats, _ = await self._run(f"ip -j -s link show dev {safe_quote(name)}")
 
         result = {"address_info": out}
         if rc2 == 0:
@@ -124,28 +100,17 @@ class NetworkManager:
     async def set_ip_address(
         self, interface: str, address: str, gateway: Optional[str] = None
     ) -> ToolResult:
-        """Set a static IP address on an interface.
+        """Set a static IP address on an interface."""
+        validate_name(interface, "interface")
+        await self._run(f"ip addr flush dev {safe_quote(interface)}")
 
-        Args:
-            interface: Interface name.
-            address: IP address with CIDR (e.g., "192.168.1.10/24").
-            gateway: Default gateway (optional).
-
-        Returns:
-            ToolResult with configuration status.
-        """
-        # Flush existing addresses
-        await self._run(f"ip addr flush dev {interface}")
-
-        # Set new address
-        rc, out, err = await self._run(f"ip addr add {address} dev {interface}")
+        rc, out, err = await self._run(f"ip addr add {safe_quote(address)} dev {safe_quote(interface)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set IP: {err}")
 
-        # Set gateway if provided
         if gateway:
             await self._run("ip route del default 2>/dev/null", check=False)
-            rc, _, err = await self._run(f"ip route add default via {gateway}")
+            rc, _, err = await self._run(f"ip route add default via {safe_quote(gateway)}")
             if rc != 0:
                 return ToolResult(
                     success=False,
@@ -164,15 +129,9 @@ class NetworkManager:
         )
 
     async def bring_interface_up(self, name: str) -> ToolResult:
-        """Bring a network interface up.
-
-        Args:
-            name: Interface name.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"ip link set {name} up")
+        """Bring a network interface up."""
+        validate_name(name, "interface name")
+        rc, out, err = await self._run(f"ip link set {safe_quote(name)} up")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to bring up {name}: {err}")
 
@@ -184,15 +143,9 @@ class NetworkManager:
         )
 
     async def bring_interface_down(self, name: str) -> ToolResult:
-        """Bring a network interface down.
-
-        Args:
-            name: Interface name.
-
-        Returns:
-            ToolResult with status.
-        """
-        rc, out, err = await self._run(f"ip link set {name} down")
+        """Bring a network interface down."""
+        validate_name(name, "interface name")
+        rc, out, err = await self._run(f"ip link set {safe_quote(name)} down")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to bring down {name}: {err}")
 
@@ -204,24 +157,18 @@ class NetworkManager:
         )
 
     async def create_vlan(self, parent: str, vlan_id: int, name: Optional[str] = None) -> ToolResult:
-        """Create a VLAN interface.
-
-        Args:
-            parent: Parent interface (e.g., eth0).
-            vlan_id: VLAN ID (1-4094).
-            name: Custom interface name (default: parent.vlan_id).
-
-        Returns:
-            ToolResult with creation status.
-        """
+        """Create a VLAN interface."""
+        validate_name(parent, "parent interface")
         iface_name = name or f"{parent}.{vlan_id}"
+        validate_name(iface_name, "interface name")
+
         rc, out, err = await self._run(
-            f"ip link add link {parent} name {iface_name} type vlan id {vlan_id}"
+            f"ip link add link {safe_quote(parent)} name {safe_quote(iface_name)} type vlan id {int(vlan_id)}"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create VLAN: {err}")
 
-        await self._run(f"ip link set {iface_name} up")
+        await self._run(f"ip link set {safe_quote(iface_name)} up")
 
         return ToolResult(
             success=True,
@@ -231,26 +178,19 @@ class NetworkManager:
         )
 
     async def create_bridge(self, name: str, members: List[str]) -> ToolResult:
-        """Create a network bridge.
+        """Create a network bridge."""
+        validate_name(name, "bridge name")
+        for member in members:
+            validate_name(member, "bridge member")
 
-        Args:
-            name: Bridge interface name.
-            members: Interfaces to add to the bridge.
-
-        Returns:
-            ToolResult with creation status.
-        """
-        # Create bridge
-        rc, _, err = await self._run(f"ip link add name {name} type bridge")
+        rc, _, err = await self._run(f"ip link add name {safe_quote(name)} type bridge")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create bridge: {err}")
 
-        # Add members
         for member in members:
-            await self._run(f"ip link set {member} master {name}")
+            await self._run(f"ip link set {safe_quote(member)} master {safe_quote(name)}")
 
-        # Bring up
-        await self._run(f"ip link set {name} up")
+        await self._run(f"ip link set {safe_quote(name)} up")
 
         return ToolResult(
             success=True,
@@ -259,14 +199,10 @@ class NetworkManager:
             metadata={"bridge": name, "members": members},
         )
 
-    # ─── Firewall (nftables) ──────────────────────────────────────────────
+    # Firewall (nftables)
 
     async def firewall_status(self) -> ToolResult:
-        """Show current firewall ruleset.
-
-        Returns:
-            ToolResult with nftables ruleset.
-        """
+        """Show current firewall ruleset."""
         rc, out, err = await self._run("nft list ruleset")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to get firewall status: {err}")
@@ -287,48 +223,36 @@ class NetworkManager:
         destination: Optional[str] = None,
         comment: str = "",
     ) -> ToolResult:
-        """Add a firewall rule via nftables.
+        """Add a firewall rule via nftables."""
+        validate_name(chain, "chain")
 
-        Args:
-            chain: Chain name (input, output, forward).
-            action: Rule action (accept, drop, reject).
-            protocol: Protocol (tcp, udp, icmp).
-            port: Destination port number.
-            source: Source IP/network.
-            destination: Destination IP/network.
-            comment: Rule description.
-
-        Returns:
-            ToolResult with rule creation status.
-        """
-        # Build nft rule expression
         rule_parts = []
         if protocol:
+            validate_name(protocol, "protocol")
             rule_parts.append(f"ip protocol {protocol}")
         if source:
-            rule_parts.append(f"ip saddr {source}")
+            rule_parts.append(f"ip saddr {safe_quote(source)}")
         if destination:
-            rule_parts.append(f"ip daddr {destination}")
+            rule_parts.append(f"ip daddr {safe_quote(destination)}")
         if port and protocol:
-            rule_parts.append(f"{protocol} dport {port}")
+            rule_parts.append(f"{protocol} dport {int(port)}")
         if comment:
-            rule_parts.append(f'comment "{comment}"')
+            rule_parts.append(f'comment {safe_quote(comment)}')
         rule_parts.append(action)
 
         rule_expr = " ".join(rule_parts)
 
-        # Ensure table and chain exist
         await self._run(
             "nft add table inet mk_firewall 2>/dev/null", check=False
         )
         await self._run(
-            f"nft add chain inet mk_firewall {chain} '{{ type filter hook {chain} priority 0; policy accept; }}' 2>/dev/null",
+            f"nft add chain inet mk_firewall {safe_quote(chain)} "
+            f"'{{ type filter hook {chain} priority 0; policy accept; }}' 2>/dev/null",
             check=False,
         )
 
-        # Add rule
         rc, out, err = await self._run(
-            f"nft add rule inet mk_firewall {chain} {rule_expr}"
+            f"nft add rule inet mk_firewall {safe_quote(chain)} {rule_expr}"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to add rule: {err}")
@@ -341,17 +265,10 @@ class NetworkManager:
         )
 
     async def remove_firewall_rule(self, chain: str, handle: int) -> ToolResult:
-        """Remove a firewall rule by handle number.
-
-        Args:
-            chain: Chain containing the rule.
-            handle: Rule handle number.
-
-        Returns:
-            ToolResult with removal status.
-        """
+        """Remove a firewall rule by handle number."""
+        validate_name(chain, "chain")
         rc, out, err = await self._run(
-            f"nft delete rule inet mk_firewall {chain} handle {handle}"
+            f"nft delete rule inet mk_firewall {safe_quote(chain)} handle {int(handle)}"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to remove rule: {err}")
@@ -370,18 +287,9 @@ class NetworkManager:
         internal_port: int,
         protocol: str = "tcp",
     ) -> ToolResult:
-        """Add a port forwarding rule (DNAT).
+        """Add a port forwarding rule (DNAT)."""
+        validate_name(protocol, "protocol")
 
-        Args:
-            external_port: External (WAN) port.
-            internal_ip: Internal destination IP.
-            internal_port: Internal destination port.
-            protocol: Protocol (tcp/udp).
-
-        Returns:
-            ToolResult with port forward status.
-        """
-        # Ensure NAT table exists
         await self._run(
             "nft add table ip mk_nat 2>/dev/null", check=False
         )
@@ -391,8 +299,8 @@ class NetworkManager:
         )
 
         rc, out, err = await self._run(
-            f"nft add rule ip mk_nat prerouting {protocol} dport {external_port} "
-            f"dnat to {internal_ip}:{internal_port}"
+            f"nft add rule ip mk_nat prerouting {protocol} dport {int(external_port)} "
+            f"dnat to {safe_quote(internal_ip)}:{int(internal_port)}"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to add port forward: {err}")
@@ -409,18 +317,13 @@ class NetworkManager:
             },
         )
 
-    # ─── DNS Management ───────────────────────────────────────────────────
+    # DNS Management
 
     async def get_dns_config(self) -> ToolResult:
-        """Get current DNS configuration.
-
-        Returns:
-            ToolResult with DNS settings.
-        """
+        """Get current DNS configuration."""
         rc, out, err = await self._run("cat /etc/resolv.conf", check=False)
         resolv = out if rc == 0 else ""
 
-        # Try systemd-resolved
         rc2, resolved, _ = await self._run(
             "resolvectl status 2>/dev/null", check=False
         )
@@ -436,15 +339,7 @@ class NetworkManager:
         )
 
     async def set_dns_servers(self, servers: List[str], search_domains: Optional[List[str]] = None) -> ToolResult:
-        """Set DNS server addresses.
-
-        Args:
-            servers: List of DNS server IPs.
-            search_domains: DNS search domains.
-
-        Returns:
-            ToolResult with configuration status.
-        """
+        """Set DNS server addresses."""
         lines = []
         if search_domains:
             lines.append(f"search {' '.join(search_domains)}")
@@ -453,8 +348,9 @@ class NetworkManager:
 
         content = "\n".join(lines) + "\n"
 
-        rc, _, err = await self._run(
-            f"bash -c 'echo \"{content}\" > /etc/resolv.conf'"
+        # Use stdin to write content safely (avoids interpolation issues)
+        rc, _, err = await self._run_with_stdin(
+            "tee /etc/resolv.conf > /dev/null", content
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set DNS: {err}")
@@ -466,14 +362,10 @@ class NetworkManager:
             metadata={"servers": servers, "search_domains": search_domains},
         )
 
-    # ─── WireGuard VPN ────────────────────────────────────────────────────
+    # WireGuard VPN
 
     async def wireguard_status(self) -> ToolResult:
-        """Show WireGuard interface status and connected peers.
-
-        Returns:
-            ToolResult with WireGuard status.
-        """
+        """Show WireGuard interface status and connected peers."""
         rc, out, err = await self._run("wg show all")
         if rc != 0:
             return ToolResult(
@@ -493,42 +385,44 @@ class NetworkManager:
         address: str = "10.0.0.1/24",
         listen_port: int = 51820,
     ) -> ToolResult:
-        """Create and configure a WireGuard interface.
+        """Create and configure a WireGuard interface."""
+        validate_name(name, "interface name")
 
-        Args:
-            name: Interface name (default: wg0).
-            address: Interface address with CIDR.
-            listen_port: UDP listen port.
-
-        Returns:
-            ToolResult with interface setup status.
-        """
         # Generate keypair
         rc, privkey, err = await self._run("wg genkey")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to generate key: {err}")
 
-        # Derive public key
-        rc, pubkey, err = await self._run(f"echo '{privkey}' | wg pubkey")
+        # Derive public key using stdin instead of echo interpolation
+        rc, pubkey, err = await self._run_with_stdin("wg pubkey", privkey)
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to derive pubkey: {err}")
 
         # Create interface
-        await self._run(f"ip link add dev {name} type wireguard")
-        await self._run(f"ip addr add {address} dev {name}")
+        await self._run(f"ip link add dev {safe_quote(name)} type wireguard")
+        await self._run(f"ip addr add {safe_quote(address)} dev {safe_quote(name)}")
 
-        # Write private key to temp file and configure
-        await self._run(f"bash -c 'echo \"{privkey}\" > /etc/wireguard/{name}.key'")
-        await self._run(f"chmod 600 /etc/wireguard/{name}.key")
-        await self._run(f"wg set {name} listen-port {listen_port} private-key /etc/wireguard/{name}.key")
-        await self._run(f"ip link set {name} up")
+        # Write private key via stdin (avoids key interpolation in shell)
+        key_path = f"/etc/wireguard/{name}.key"
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(key_path)} > /dev/null", privkey
+        )
+        if rc != 0:
+            return ToolResult(success=False, error=f"Failed to write private key: {err}")
+
+        await self._run(f"chmod 600 {safe_quote(key_path)}")
+        await self._run(
+            f"wg set {safe_quote(name)} listen-port {int(listen_port)} "
+            f"private-key {safe_quote(key_path)}"
+        )
+        await self._run(f"ip link set {safe_quote(name)} up")
 
         return ToolResult(
             success=True,
             output=f"WireGuard interface '{name}' created\n  Address: {address}\n  Port: {listen_port}\n  Public Key: {pubkey}",
             side_effects=[
                 f"WireGuard interface '{name}' created and active",
-                f"Private key stored at /etc/wireguard/{name}.key",
+                f"Private key stored at {key_path}",
             ],
             metadata={
                 "interface": name,
@@ -547,27 +441,17 @@ class NetworkManager:
         persistent_keepalive: int = 25,
         name: Optional[str] = None,
     ) -> ToolResult:
-        """Add a peer to a WireGuard interface.
+        """Add a peer to a WireGuard interface."""
+        validate_name(interface, "interface")
 
-        Args:
-            interface: WireGuard interface name.
-            public_key: Peer's public key.
-            allowed_ips: Comma-separated allowed IPs (e.g., "10.0.0.2/32").
-            endpoint: Peer endpoint (host:port).
-            persistent_keepalive: Keepalive interval in seconds.
-            name: Friendly name for the peer (stored as comment).
-
-        Returns:
-            ToolResult with peer addition status.
-        """
         cmd_parts = [
-            f"wg set {interface} peer {public_key}",
-            f"allowed-ips {allowed_ips}",
+            f"wg set {safe_quote(interface)} peer {safe_quote(public_key)}",
+            f"allowed-ips {safe_quote(allowed_ips)}",
         ]
         if endpoint:
-            cmd_parts.append(f"endpoint {endpoint}")
+            cmd_parts.append(f"endpoint {safe_quote(endpoint)}")
         if persistent_keepalive:
-            cmd_parts.append(f"persistent-keepalive {persistent_keepalive}")
+            cmd_parts.append(f"persistent-keepalive {int(persistent_keepalive)}")
 
         cmd = " ".join(cmd_parts)
         rc, out, err = await self._run(cmd)
@@ -588,16 +472,11 @@ class NetworkManager:
         )
 
     async def remove_wireguard_peer(self, interface: str, public_key: str) -> ToolResult:
-        """Remove a peer from a WireGuard interface.
-
-        Args:
-            interface: WireGuard interface name.
-            public_key: Peer's public key to remove.
-
-        Returns:
-            ToolResult with removal status.
-        """
-        rc, out, err = await self._run(f"wg set {interface} peer {public_key} remove")
+        """Remove a peer from a WireGuard interface."""
+        validate_name(interface, "interface")
+        rc, out, err = await self._run(
+            f"wg set {safe_quote(interface)} peer {safe_quote(public_key)} remove"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to remove peer: {err}")
 
@@ -617,25 +496,13 @@ class NetworkManager:
         dns: str = "1.1.1.1",
         allowed_ips: str = "0.0.0.0/0",
     ) -> ToolResult:
-        """Generate a WireGuard client configuration for a new peer.
-
-        Args:
-            server_interface: Server WG interface name.
-            peer_address: IP address for the peer (e.g., "10.0.0.2/32").
-            server_public_key: Server's public key.
-            server_endpoint: Server endpoint (host:port).
-            dns: DNS server for the peer.
-            allowed_ips: What traffic to route through VPN.
-
-        Returns:
-            ToolResult with peer config (for QR code or file).
-        """
+        """Generate a WireGuard client configuration for a new peer."""
         # Generate client keypair
         rc, client_privkey, _ = await self._run("wg genkey")
         if rc != 0:
             return ToolResult(success=False, error="Failed to generate client key")
 
-        rc, client_pubkey, _ = await self._run(f"echo '{client_privkey}' | wg pubkey")
+        rc, client_pubkey, _ = await self._run_with_stdin("wg pubkey", client_privkey)
         if rc != 0:
             return ToolResult(success=False, error="Failed to derive client pubkey")
 
@@ -661,19 +528,11 @@ PersistentKeepalive = 25
             },
         )
 
-    # ─── Network Diagnostics ──────────────────────────────────────────────
+    # Network Diagnostics
 
     async def ping(self, target: str, count: int = 4) -> ToolResult:
-        """Ping a host to check connectivity.
-
-        Args:
-            target: Hostname or IP to ping.
-            count: Number of pings.
-
-        Returns:
-            ToolResult with ping results.
-        """
-        rc, out, err = await self._run(f"ping -c {count} -W 5 {target}")
+        """Ping a host to check connectivity."""
+        rc, out, err = await self._run(f"ping -c {int(count)} -W 5 {safe_quote(target)}")
         if rc != 0:
             return ToolResult(
                 success=False,
@@ -688,15 +547,8 @@ PersistentKeepalive = 25
         )
 
     async def traceroute(self, target: str) -> ToolResult:
-        """Run traceroute to a target.
-
-        Args:
-            target: Hostname or IP.
-
-        Returns:
-            ToolResult with traceroute output.
-        """
-        rc, out, err = await self._run(f"traceroute -w 3 -m 20 {target}")
+        """Run traceroute to a target."""
+        rc, out, err = await self._run(f"traceroute -w 3 -m 20 {safe_quote(target)}")
         success = rc == 0 or bool(out)
 
         return ToolResult(
@@ -706,16 +558,9 @@ PersistentKeepalive = 25
         )
 
     async def dns_lookup(self, hostname: str, record_type: str = "A") -> ToolResult:
-        """Perform a DNS lookup.
-
-        Args:
-            hostname: Domain to look up.
-            record_type: Record type (A, AAAA, MX, NS, TXT, CNAME).
-
-        Returns:
-            ToolResult with DNS query results.
-        """
-        rc, out, err = await self._run(f"dig +short {record_type} {hostname}")
+        """Perform a DNS lookup."""
+        validate_name(record_type, "record_type")
+        rc, out, err = await self._run(f"dig +short {safe_quote(record_type)} {safe_quote(hostname)}")
         if rc != 0:
             return ToolResult(success=False, error=f"DNS lookup failed: {err}")
 
@@ -726,18 +571,9 @@ PersistentKeepalive = 25
         )
 
     async def port_scan(self, target: str, ports: str = "1-1024") -> ToolResult:
-        """Quick port scan on a target (uses /dev/tcp or nmap if available).
-
-        Args:
-            target: Target host.
-            ports: Port range (e.g., "80,443" or "1-1024").
-
-        Returns:
-            ToolResult with open ports.
-        """
-        # Try nmap first, fall back to ss for local
+        """Quick port scan on a target."""
         rc, out, err = await self._run(
-            f"nmap -T4 --open -p {ports} {target} 2>/dev/null || ss -tlnp",
+            f"nmap -T4 --open -p {safe_quote(ports)} {safe_quote(target)} 2>/dev/null || ss -tlnp",
             check=False,
         )
 

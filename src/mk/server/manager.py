@@ -1,16 +1,4 @@
-"""ServerManager - The top-level orchestrator for MK OS server management.
-
-This is the single entry point that ties all sub-managers together.
-MK's brain routes server-related requests here, and the ServerManager
-delegates to the appropriate sub-system (storage, containers, network,
-services, backups, users).
-
-Also provides cross-cutting concerns:
-- Full system overview / dashboard
-- Health aggregation across all subsystems
-- Power management (reboot, shutdown)
-- System info and hardware inventory
-"""
+"""ServerManager - Top-level orchestrator for MK OS server management."""
 
 from __future__ import annotations
 
@@ -21,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .backups import BackupManager
 from .containers import ContainerManager
 from .network import NetworkManager
@@ -36,9 +25,6 @@ class ServerManager:
 
     Initializes and holds references to all sub-managers.
     Provides system-wide operations and a unified health view.
-
-    This is what MK's brain talks to — one object that manages
-    the entire server.
     """
 
     def __init__(
@@ -48,14 +34,6 @@ class ServerManager:
         backup_config_dir: str = "/etc/mk/backups",
         backup_state_dir: str = "/var/lib/mk/backups",
     ) -> None:
-        """Initialize the ServerManager and all sub-managers.
-
-        Args:
-            sudo: Whether sub-managers should use sudo.
-            compose_dir: Base directory for Docker Compose stacks.
-            backup_config_dir: Directory for backup job configs.
-            backup_state_dir: Directory for backup state data.
-        """
         self.storage = StorageManager(sudo=sudo)
         self.containers = ContainerManager(sudo=False, compose_dir=compose_dir)
         self.network = NetworkManager(sudo=sudo)
@@ -90,21 +68,12 @@ class ServerManager:
 
         return rc, out, err
 
-
-    # ─── System Overview ──────────────────────────────────────────────────
+    # System Overview
 
     async def system_overview(self) -> ToolResult:
-        """Get a complete system overview — the AI dashboard.
-
-        Aggregates key info from all subsystems into one view:
-        hostname, uptime, CPU/RAM/disk, containers, services, network.
-
-        Returns:
-            ToolResult with full system overview.
-        """
+        """Get a complete system overview."""
         overview: Dict[str, Any] = {}
 
-        # Hostname and OS
         rc, hostname, _ = await self._run("hostname", check=False)
         overview["hostname"] = hostname or "unknown"
 
@@ -114,15 +83,12 @@ class ServerManager:
         )
         overview["os"] = os_info or "unknown"
 
-        # Kernel
         rc, kernel, _ = await self._run("uname -r", check=False)
         overview["kernel"] = kernel or "unknown"
 
-        # Uptime
         rc, uptime, _ = await self._run("uptime -p", check=False)
         overview["uptime"] = uptime or "unknown"
 
-        # CPU info
         rc, cpu_info, _ = await self._run(
             "lscpu | grep 'Model name' | cut -d: -f2 | xargs",
             check=False,
@@ -133,7 +99,6 @@ class ServerManager:
             "cores": int(cpu_cores) if cpu_cores else 0,
         }
 
-        # Load average
         rc, load, _ = await self._run("cat /proc/loadavg", check=False)
         if load:
             parts = load.split()
@@ -143,7 +108,6 @@ class ServerManager:
                 "15min": float(parts[2]),
             }
 
-        # Memory
         rc, mem, _ = await self._run(
             "free -b | awk '/Mem:/{print $2,$3,$7}'",
             check=False,
@@ -160,7 +124,6 @@ class ServerManager:
                 "percent_used": round(used / total * 100, 1) if total > 0 else 0,
             }
 
-        # Disk (root filesystem)
         rc, disk, _ = await self._run(
             "df -B1 / | awk 'NR==2{print $2,$3,$4,$5}'",
             check=False,
@@ -174,7 +137,6 @@ class ServerManager:
                 "percent_used": parts[3] if len(parts) > 3 else "0%",
             }
 
-        # Docker container summary
         rc, containers, _ = await self._run(
             "docker ps --format '{{.State}}' 2>/dev/null | sort | uniq -c",
             check=False,
@@ -184,14 +146,12 @@ class ServerManager:
         else:
             overview["containers"] = "Docker not available"
 
-        # Failed services
         rc, failed, _ = await self._run(
             "systemctl list-units --state=failed --no-pager --plain --no-legend 2>/dev/null | wc -l",
             check=False,
         )
         overview["failed_services"] = int(failed) if failed and failed.isdigit() else 0
 
-        # Network interfaces with IPs
         rc, ips, _ = await self._run(
             "ip -4 addr show | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}/\\d+' | head -5",
             check=False,
@@ -204,26 +164,13 @@ class ServerManager:
             metadata={"type": "system_overview", "overview": overview},
         )
 
-
     async def health_report(self) -> ToolResult:
-        """Aggregated health report across all subsystems.
-
-        Checks:
-        - Storage pool health
-        - Container health
-        - Failed services
-        - Backup job health
-        - Network connectivity
-        - Disk space warnings
-
-        Returns:
-            ToolResult with health summary and issues.
-        """
+        """Aggregated health report across all subsystems."""
         issues: list = []
         checks_passed = 0
         total_checks = 0
 
-        # 1. Storage health
+        # Storage health
         total_checks += 1
         storage_result = await self.storage.list_pools()
         if storage_result.success:
@@ -235,10 +182,9 @@ class ServerManager:
             if not any(p.get("status") != "online" for p in pools):
                 checks_passed += 1
         else:
-            # No ZFS — not necessarily an issue
             checks_passed += 1
 
-        # 2. Container health
+        # Container health
         total_checks += 1
         containers_result = await self.containers.list_containers()
         if containers_result.success:
@@ -250,22 +196,22 @@ class ServerManager:
             else:
                 checks_passed += 1
         else:
-            checks_passed += 1  # Docker not installed is ok
+            checks_passed += 1
 
-        # 3. Failed services
+        # Failed services
         total_checks += 1
         services_result = await self.services.failed_services()
         if services_result.success:
             if "No failed" in services_result.output or not services_result.output.strip():
                 checks_passed += 1
             else:
-                failed_lines = [l for l in services_result.output.splitlines() if ".service" in l]
+                failed_lines = [line for line in services_result.output.splitlines() if ".service" in line]
                 for line in failed_lines[:5]:
                     issues.append(f"SERVICE: {line.strip()}")
         else:
             checks_passed += 1
 
-        # 4. Backup health
+        # Backup health
         total_checks += 1
         backup_result = await self.backups.health_check()
         if backup_result.success:
@@ -274,7 +220,7 @@ class ServerManager:
             backup_issues = backup_result.metadata.get("issues", [])
             issues.extend(f"BACKUP: {i}" for i in backup_issues[:3])
 
-        # 5. Disk space
+        # Disk space
         total_checks += 1
         rc, disk_out, _ = await self._run(
             "df -h | awk '$5+0 > 85 {print $6, $5}'",
@@ -286,7 +232,7 @@ class ServerManager:
         else:
             checks_passed += 1
 
-        # 6. Basic network
+        # Basic network
         total_checks += 1
         net_result = await self.network.ping("1.1.1.1", count=1)
         if net_result.success:
@@ -294,14 +240,13 @@ class ServerManager:
         else:
             issues.append("NETWORK: Cannot reach internet (1.1.1.1 unreachable)")
 
-        # Build report
         healthy = len(issues) == 0
         status = "HEALTHY" if healthy else f"DEGRADED ({len(issues)} issues)"
 
         report = f"System Health: {status}\n"
         report += f"Checks: {checks_passed}/{total_checks} passed\n"
         if issues:
-            report += f"\nIssues:\n" + "\n".join(f"  ⚠ {i}" for i in issues)
+            report += "\nIssues:\n" + "\n".join(f"  ! {i}" for i in issues)
 
         return ToolResult(
             success=healthy,
@@ -314,26 +259,17 @@ class ServerManager:
             },
         )
 
-
-    # ─── Power Management ─────────────────────────────────────────────────
+    # Power Management
 
     async def reboot(self, delay_minutes: int = 0, message: str = "") -> ToolResult:
-        """Reboot the system.
-
-        Args:
-            delay_minutes: Delay before reboot (0 = immediate).
-            message: Broadcast message to logged-in users.
-
-        Returns:
-            ToolResult with reboot status.
-        """
+        """Reboot the system."""
         if delay_minutes > 0:
-            cmd = f"shutdown -r +{delay_minutes}"
+            cmd = f"shutdown -r +{int(delay_minutes)}"
         else:
             cmd = "shutdown -r now"
 
         if message:
-            cmd += f' "{message}"'
+            cmd += f" {safe_quote(message)}"
 
         rc, out, err = await self._run(cmd)
         if rc != 0:
@@ -347,22 +283,14 @@ class ServerManager:
         )
 
     async def shutdown(self, delay_minutes: int = 0, message: str = "") -> ToolResult:
-        """Shut down the system.
-
-        Args:
-            delay_minutes: Delay before shutdown (0 = immediate).
-            message: Broadcast message.
-
-        Returns:
-            ToolResult with shutdown status.
-        """
+        """Shut down the system."""
         if delay_minutes > 0:
-            cmd = f"shutdown +{delay_minutes}"
+            cmd = f"shutdown +{int(delay_minutes)}"
         else:
             cmd = "shutdown now"
 
         if message:
-            cmd += f' "{message}"'
+            cmd += f" {safe_quote(message)}"
 
         rc, out, err = await self._run(cmd)
         if rc != 0:
@@ -376,11 +304,7 @@ class ServerManager:
         )
 
     async def cancel_shutdown(self) -> ToolResult:
-        """Cancel a pending shutdown/reboot.
-
-        Returns:
-            ToolResult with cancellation status.
-        """
+        """Cancel a pending shutdown/reboot."""
         rc, out, err = await self._run("shutdown -c")
         if rc != 0:
             return ToolResult(success=False, error=f"No pending shutdown to cancel: {err}")
@@ -392,49 +316,39 @@ class ServerManager:
             metadata={"action": "cancel_shutdown"},
         )
 
-    # ─── Hardware Inventory ───────────────────────────────────────────────
+    # Hardware Inventory
 
     async def hardware_info(self) -> ToolResult:
-        """Get detailed hardware inventory.
-
-        Returns:
-            ToolResult with hardware details (CPU, RAM, disks, NICs, GPU).
-        """
+        """Get detailed hardware inventory."""
         hw: Dict[str, Any] = {}
 
-        # CPU
         rc, cpu, _ = await self._run("lscpu --json 2>/dev/null || lscpu", check=False)
         hw["cpu"] = cpu
 
-        # Memory modules
         rc, mem, _ = await self._run(
             "dmidecode -t memory 2>/dev/null | grep -A5 'Memory Device' | grep -E 'Size|Type|Speed' | head -20",
             check=False,
         )
         hw["memory_modules"] = mem or "dmidecode not available"
 
-        # Block devices
         rc, disks, _ = await self._run(
             "lsblk -Jb -o NAME,SIZE,TYPE,MODEL,SERIAL,ROTA,TRAN",
             check=False,
         )
         hw["disks"] = disks
 
-        # Network interfaces
         rc, nics, _ = await self._run(
             "ip -j link show | python3 -m json.tool 2>/dev/null || ip link show",
             check=False,
         )
         hw["network_interfaces"] = nics
 
-        # GPU (if any)
         rc, gpu, _ = await self._run(
             "lspci | grep -i 'vga\\|3d\\|display'",
             check=False,
         )
         hw["gpu"] = gpu or "No dedicated GPU detected"
 
-        # Motherboard
         rc, mb, _ = await self._run(
             "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product' | head -2",
             check=False,
@@ -447,15 +361,10 @@ class ServerManager:
             metadata={"type": "hardware_inventory"},
         )
 
-    # ─── System Updates ───────────────────────────────────────────────────
+    # System Updates
 
     async def check_updates(self) -> ToolResult:
-        """Check for available system package updates.
-
-        Returns:
-            ToolResult with available updates.
-        """
-        # Try apt first (Debian/Ubuntu), then dnf (Fedora/RHEL)
+        """Check for available system package updates."""
         rc, out, err = await self._run(
             "apt list --upgradable 2>/dev/null", check=False
         )
@@ -483,15 +392,7 @@ class ServerManager:
         )
 
     async def apply_updates(self, reboot_if_needed: bool = False) -> ToolResult:
-        """Apply all available system updates.
-
-        Args:
-            reboot_if_needed: Automatically reboot if kernel was updated.
-
-        Returns:
-            ToolResult with update results.
-        """
-        # Try apt
+        """Apply all available system updates."""
         rc, out, err = await self._run(
             "apt-get update && apt-get upgrade -y 2>/dev/null",
             check=False,
@@ -500,7 +401,6 @@ class ServerManager:
             result_output = out
             pkg_mgr = "apt"
         else:
-            # Try dnf
             rc, out, err = await self._run(
                 "dnf upgrade -y 2>/dev/null", check=False
             )
@@ -512,7 +412,6 @@ class ServerManager:
 
         side_effects = ["System packages updated"]
 
-        # Check if reboot needed
         reboot_needed = False
         if pkg_mgr == "apt":
             rc2, reboot_check, _ = await self._run(
@@ -540,7 +439,7 @@ class ServerManager:
             metadata={"package_manager": pkg_mgr, "reboot_needed": reboot_needed},
         )
 
-    # ─── Quick Actions ────────────────────────────────────────────────────
+    # Quick Actions
 
     async def quick_deploy_app(
         self,
@@ -550,21 +449,8 @@ class ServerManager:
         volumes: Optional[list] = None,
         env: Optional[Dict[str, str]] = None,
     ) -> ToolResult:
-        """Quick deploy an app as a Docker container with sensible defaults.
-
-        This is the "one command" deploy — MK's equivalent of clicking
-        install in a home server app store.
-
-        Args:
-            app_name: Name for the container.
-            image: Docker image.
-            ports: Port mappings.
-            volumes: Volume mounts.
-            env: Environment variables.
-
-        Returns:
-            ToolResult with deployment status.
-        """
+        """Quick deploy an app as a Docker container with sensible defaults."""
+        validate_name(app_name, "app_name")
         return await self.containers.run_container(
             image=image,
             name=app_name,

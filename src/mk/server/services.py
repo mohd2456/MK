@@ -1,15 +1,4 @@
-"""Service Manager - Systemd service control, health monitoring, auto-restart.
-
-The AI-managed service layer. Replaces Webmin/Cockpit service management:
-- Full systemd service lifecycle (start, stop, restart, enable, disable)
-- Service status and journal log access
-- Health check integration with auto-restart policies
-- Service creation (writing unit files)
-- Timer management (cron replacement)
-- Boot target management
-
-MK monitors service health and takes action when things fail.
-"""
+"""Service Manager - Systemd service control, health monitoring, auto-restart."""
 
 from __future__ import annotations
 
@@ -20,38 +9,21 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .models import RestartPolicy, ServiceInfo, ServiceState
 
 logger = logging.getLogger(__name__)
 
 
 class ServiceManager:
-    """Manages systemd services, timers, and system targets.
-
-    Controls the entire service lifecycle through systemd.
-    MK can start/stop services, read logs, create new service
-    units, and set up health monitoring with auto-restart.
-    """
+    """Manages systemd services, timers, and system targets."""
 
     def __init__(self, sudo: bool = True) -> None:
-        """Initialize the Service Manager.
-
-        Args:
-            sudo: Whether to prefix systemctl commands with sudo.
-        """
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""
 
     async def _run(self, cmd: str, check: bool = True) -> Tuple[int, str, str]:
-        """Execute a shell command asynchronously.
-
-        Args:
-            cmd: Command to execute.
-            check: Log errors on non-zero exit.
-
-        Returns:
-            Tuple of (return_code, stdout, stderr).
-        """
+        """Execute a shell command asynchronously."""
         full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
         logger.debug(f"Service exec: {full_cmd}")
 
@@ -70,18 +42,26 @@ class ServiceManager:
 
         return rc, out, err
 
-    # ─── Service Lifecycle ────────────────────────────────────────────────
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
+        logger.debug(f"Service exec (stdin): {full_cmd}")
+
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
+    # Service Lifecycle
 
     async def list_services(self, state_filter: Optional[str] = None) -> ToolResult:
-        """List systemd services.
-
-        Args:
-            state_filter: Filter by state (running, failed, inactive).
-
-        Returns:
-            ToolResult with service listing.
-        """
-        state_arg = f"--state={state_filter}" if state_filter else ""
+        """List systemd services."""
+        state_arg = f"--state={safe_quote(state_filter)}" if state_filter else ""
         rc, out, err = await self._run(
             f"systemctl list-units --type=service {state_arg} --no-pager --plain"
         )
@@ -95,21 +75,13 @@ class ServiceManager:
         )
 
     async def service_status(self, name: str) -> ToolResult:
-        """Get detailed status of a service.
-
-        Args:
-            name: Service name (with or without .service suffix).
-
-        Returns:
-            ToolResult with service status.
-        """
+        """Get detailed status of a service."""
+        validate_name(name, "service name")
         if not name.endswith(".service"):
             name = f"{name}.service"
 
-        rc, out, err = await self._run(f"systemctl status {name} --no-pager", check=False)
+        rc, out, err = await self._run(f"systemctl status {safe_quote(name)} --no-pager", check=False)
 
-        # systemctl status returns non-zero for inactive/failed services
-        # but still provides useful output
         if not out and rc != 0:
             return ToolResult(success=False, error=f"Service '{name}' not found: {err}")
 
@@ -120,15 +92,9 @@ class ServiceManager:
         )
 
     async def start_service(self, name: str) -> ToolResult:
-        """Start a service.
-
-        Args:
-            name: Service name.
-
-        Returns:
-            ToolResult with start status.
-        """
-        rc, out, err = await self._run(f"systemctl start {name}")
+        """Start a service."""
+        validate_name(name, "service name")
+        rc, out, err = await self._run(f"systemctl start {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to start '{name}': {err}")
 
@@ -140,15 +106,9 @@ class ServiceManager:
         )
 
     async def stop_service(self, name: str) -> ToolResult:
-        """Stop a service.
-
-        Args:
-            name: Service name.
-
-        Returns:
-            ToolResult with stop status.
-        """
-        rc, out, err = await self._run(f"systemctl stop {name}")
+        """Stop a service."""
+        validate_name(name, "service name")
+        rc, out, err = await self._run(f"systemctl stop {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to stop '{name}': {err}")
 
@@ -160,15 +120,9 @@ class ServiceManager:
         )
 
     async def restart_service(self, name: str) -> ToolResult:
-        """Restart a service.
-
-        Args:
-            name: Service name.
-
-        Returns:
-            ToolResult with restart status.
-        """
-        rc, out, err = await self._run(f"systemctl restart {name}")
+        """Restart a service."""
+        validate_name(name, "service name")
+        rc, out, err = await self._run(f"systemctl restart {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to restart '{name}': {err}")
 
@@ -180,17 +134,10 @@ class ServiceManager:
         )
 
     async def reload_service(self, name: str) -> ToolResult:
-        """Reload a service's configuration without full restart.
-
-        Args:
-            name: Service name.
-
-        Returns:
-            ToolResult with reload status.
-        """
-        rc, out, err = await self._run(f"systemctl reload {name}")
+        """Reload a service's configuration without full restart."""
+        validate_name(name, "service name")
+        rc, out, err = await self._run(f"systemctl reload {safe_quote(name)}")
         if rc != 0:
-            # Fall back to restart if reload not supported
             return await self.restart_service(name)
 
         return ToolResult(
@@ -201,17 +148,10 @@ class ServiceManager:
         )
 
     async def enable_service(self, name: str, now: bool = False) -> ToolResult:
-        """Enable a service to start on boot.
-
-        Args:
-            name: Service name.
-            now: Also start the service immediately.
-
-        Returns:
-            ToolResult with enable status.
-        """
+        """Enable a service to start on boot."""
+        validate_name(name, "service name")
         now_flag = "--now " if now else ""
-        rc, out, err = await self._run(f"systemctl enable {now_flag}{name}")
+        rc, out, err = await self._run(f"systemctl enable {now_flag}{safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to enable '{name}': {err}")
 
@@ -227,17 +167,10 @@ class ServiceManager:
         )
 
     async def disable_service(self, name: str, now: bool = False) -> ToolResult:
-        """Disable a service from starting on boot.
-
-        Args:
-            name: Service name.
-            now: Also stop the service immediately.
-
-        Returns:
-            ToolResult with disable status.
-        """
+        """Disable a service from starting on boot."""
+        validate_name(name, "service name")
         now_flag = "--now " if now else ""
-        rc, out, err = await self._run(f"systemctl disable {now_flag}{name}")
+        rc, out, err = await self._run(f"systemctl disable {now_flag}{safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to disable '{name}': {err}")
 
@@ -252,7 +185,7 @@ class ServiceManager:
             metadata={"service": name, "action": "disable", "stopped": now},
         )
 
-    # ─── Journal Logs ─────────────────────────────────────────────────────
+    # Journal Logs
 
     async def service_logs(
         self,
@@ -261,22 +194,13 @@ class ServiceManager:
         since: Optional[str] = None,
         priority: Optional[str] = None,
     ) -> ToolResult:
-        """Get journal logs for a service.
-
-        Args:
-            name: Service name.
-            lines: Number of recent lines.
-            since: Time filter (e.g., "1h ago", "today", "2024-01-01").
-            priority: Minimum priority (emerg, alert, crit, err, warning, notice, info, debug).
-
-        Returns:
-            ToolResult with log output.
-        """
-        cmd_parts = [f"journalctl -u {name} --no-pager -n {lines}"]
+        """Get journal logs for a service."""
+        validate_name(name, "service name")
+        cmd_parts = [f"journalctl -u {safe_quote(name)} --no-pager -n {int(lines)}"]
         if since:
-            cmd_parts.append(f'--since="{since}"')
+            cmd_parts.append(f"--since={safe_quote(since)}")
         if priority:
-            cmd_parts.append(f"--priority={priority}")
+            cmd_parts.append(f"--priority={safe_quote(priority)}")
 
         cmd = " ".join(cmd_parts)
         rc, out, err = await self._run(cmd, check=False)
@@ -290,19 +214,10 @@ class ServiceManager:
     async def system_logs(
         self, lines: int = 50, since: Optional[str] = None, priority: str = "err"
     ) -> ToolResult:
-        """Get system-wide journal logs filtered by priority.
-
-        Args:
-            lines: Number of recent lines.
-            since: Time filter.
-            priority: Minimum priority level.
-
-        Returns:
-            ToolResult with system logs.
-        """
-        cmd_parts = [f"journalctl --no-pager -n {lines} --priority={priority}"]
+        """Get system-wide journal logs filtered by priority."""
+        cmd_parts = [f"journalctl --no-pager -n {int(lines)} --priority={safe_quote(priority)}"]
         if since:
-            cmd_parts.append(f'--since="{since}"')
+            cmd_parts.append(f"--since={safe_quote(since)}")
 
         cmd = " ".join(cmd_parts)
         rc, out, err = await self._run(cmd, check=False)
@@ -313,7 +228,7 @@ class ServiceManager:
             metadata={"scope": "system", "priority": priority},
         )
 
-    # ─── Service Creation ─────────────────────────────────────────────────
+    # Service Creation
 
     async def create_service(
         self,
@@ -330,26 +245,10 @@ class ServiceManager:
         wants: Optional[List[str]] = None,
         enable: bool = True,
     ) -> ToolResult:
-        """Create a new systemd service unit file.
+        """Create a new systemd service unit file."""
+        validate_name(name, "service name")
 
-        Args:
-            name: Service name (without .service suffix).
-            exec_start: Command to run.
-            description: Service description.
-            working_directory: Working directory for the process.
-            user: Run as this user.
-            group: Run as this group.
-            restart: Restart policy (always, on-failure, no).
-            restart_sec: Seconds to wait before restart.
-            environment: Environment variables.
-            after: Units to start after.
-            wants: Units that are wanted (soft dependency).
-            enable: Enable the service after creation.
-
-        Returns:
-            ToolResult with creation status.
-        """
-        # Build unit file
+        # Build unit file content
         unit_lines = ["[Unit]"]
         unit_lines.append(f"Description={description or name}")
         if after:
@@ -369,12 +268,15 @@ class ServiceManager:
         if working_directory:
             unit_lines.append(f"WorkingDirectory={working_directory}")
         if user:
+            validate_name(user, "user")
             unit_lines.append(f"User={user}")
         if group:
+            validate_name(group, "group")
             unit_lines.append(f"Group={group}")
         if environment:
             for key, value in environment.items():
-                unit_lines.append(f"Environment={key}={value}")
+                # Quote the value in the unit file to handle special chars
+                unit_lines.append(f'Environment="{key}={value}"')
 
         unit_lines.append("")
         unit_lines.append("[Install]")
@@ -383,19 +285,17 @@ class ServiceManager:
         unit_content = "\n".join(unit_lines) + "\n"
         unit_path = f"/etc/systemd/system/{name}.service"
 
-        # Write unit file
-        rc, _, err = await self._run(
-            f"bash -c 'cat > {unit_path} << MKEOF\n{unit_content}MKEOF'"
+        # Write unit file via stdin to avoid shell interpolation
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(unit_path)} > /dev/null", unit_content
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write unit file: {err}")
 
-        # Reload systemd
         await self._run("systemctl daemon-reload")
 
-        # Enable if requested
         if enable:
-            await self._run(f"systemctl enable {name}")
+            await self._run(f"systemctl enable {safe_quote(name)}")
 
         return ToolResult(
             success=True,
@@ -409,25 +309,16 @@ class ServiceManager:
         )
 
     async def delete_service(self, name: str) -> ToolResult:
-        """Delete a systemd service unit.
+        """Delete a systemd service unit."""
+        validate_name(name, "service name")
+        await self._run(f"systemctl stop {safe_quote(name)}", check=False)
+        await self._run(f"systemctl disable {safe_quote(name)}", check=False)
 
-        Args:
-            name: Service name.
-
-        Returns:
-            ToolResult with deletion status.
-        """
-        # Stop and disable first
-        await self._run(f"systemctl stop {name}", check=False)
-        await self._run(f"systemctl disable {name}", check=False)
-
-        # Remove unit file
         unit_path = f"/etc/systemd/system/{name}.service"
-        rc, _, err = await self._run(f"rm -f {unit_path}")
+        rc, _, err = await self._run(f"rm -f {safe_quote(unit_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to delete unit file: {err}")
 
-        # Reload
         await self._run("systemctl daemon-reload")
 
         return ToolResult(
@@ -437,14 +328,10 @@ class ServiceManager:
             metadata={"service": name, "action": "delete"},
         )
 
-    # ─── Timer Management (cron replacement) ──────────────────────────────
+    # Timer Management
 
     async def list_timers(self) -> ToolResult:
-        """List all systemd timers.
-
-        Returns:
-            ToolResult with timer listing.
-        """
+        """List all systemd timers."""
         rc, out, err = await self._run(
             "systemctl list-timers --all --no-pager"
         )
@@ -465,18 +352,8 @@ class ServiceManager:
         description: str = "",
         persistent: bool = True,
     ) -> ToolResult:
-        """Create a systemd timer (cron replacement).
-
-        Args:
-            name: Timer name (without .timer suffix).
-            on_calendar: Calendar expression (e.g., "daily", "*-*-* 02:00:00", "hourly").
-            service_name: Service to trigger (defaults to name.service).
-            description: Timer description.
-            persistent: Run immediately if missed while system was off.
-
-        Returns:
-            ToolResult with timer creation status.
-        """
+        """Create a systemd timer (cron replacement)."""
+        validate_name(name, "timer name")
         target_service = service_name or name
 
         timer_content = f"""[Unit]
@@ -492,14 +369,14 @@ WantedBy=timers.target
 """
 
         timer_path = f"/etc/systemd/system/{name}.timer"
-        rc, _, err = await self._run(
-            f"bash -c 'cat > {timer_path} << MKEOF\n{timer_content}MKEOF'"
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(timer_path)} > /dev/null", timer_content
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write timer: {err}")
 
         await self._run("systemctl daemon-reload")
-        await self._run(f"systemctl enable --now {name}.timer")
+        await self._run(f"systemctl enable --now {safe_quote(name)}.timer")
 
         return ToolResult(
             success=True,
@@ -511,14 +388,10 @@ WantedBy=timers.target
             metadata={"timer": name, "schedule": on_calendar, "service": target_service},
         )
 
-    # ─── System State ─────────────────────────────────────────────────────
+    # System State
 
     async def failed_services(self) -> ToolResult:
-        """List all failed services for quick triage.
-
-        Returns:
-            ToolResult with failed service listing.
-        """
+        """List all failed services."""
         rc, out, err = await self._run(
             "systemctl list-units --state=failed --no-pager --plain"
         )
@@ -530,11 +403,7 @@ WantedBy=timers.target
         )
 
     async def system_boot_time(self) -> ToolResult:
-        """Get system boot analysis.
-
-        Returns:
-            ToolResult with boot timing info.
-        """
+        """Get system boot analysis."""
         rc, out, err = await self._run("systemd-analyze", check=False)
         rc2, blame, _ = await self._run("systemd-analyze blame --no-pager | head -20", check=False)
 
@@ -549,11 +418,7 @@ WantedBy=timers.target
         )
 
     async def reload_daemon(self) -> ToolResult:
-        """Reload systemd manager configuration (daemon-reload).
-
-        Returns:
-            ToolResult with reload status.
-        """
+        """Reload systemd manager configuration (daemon-reload)."""
         rc, out, err = await self._run("systemctl daemon-reload")
         if rc != 0:
             return ToolResult(success=False, error=f"Daemon reload failed: {err}")

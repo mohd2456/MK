@@ -1,16 +1,4 @@
-"""Backup Manager - Scheduled snapshots, replication, and restore.
-
-The AI-managed backup layer. Replaces TrueNAS replication tasks and cron scripts:
-- ZFS snapshot scheduling with intelligent retention policies
-- ZFS send/receive replication to local or remote targets
-- Restic-based file backups (for non-ZFS or cloud targets)
-- Rsync for simple directory mirroring
-- Restore point management and verification
-- Backup health monitoring and alerting
-
-MK decides what needs backing up, when, and verifies integrity
-automatically. No manual cron editing or web UI clicking.
-"""
+"""Backup Manager - Scheduled snapshots, replication, and restore."""
 
 from __future__ import annotations
 
@@ -23,12 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
+from ._shell import safe_quote, validate_name
 from .models import BackupJob, BackupSchedule, BackupType, RestorePoint
 
 logger = logging.getLogger(__name__)
 
-
-# Default retention policies (how many snapshots/backups to keep)
 DEFAULT_RETENTION = {
     "hourly": 24,
     "daily": 7,
@@ -40,13 +27,7 @@ DEFAULT_RETENTION = {
 class BackupManager:
     """Manages backup jobs, snapshots, replication, and restores.
 
-    Supports multiple backup strategies:
-    - ZFS snapshots (fastest, cheapest for ZFS datasets)
-    - ZFS send/receive (replication to another pool or remote host)
-    - Restic (encrypted, deduplicated backups to any target)
-    - Rsync (simple directory sync/mirror)
-
-    MK monitors backup health and triggers alerts on failures.
+    Supports ZFS snapshots, ZFS send/receive, restic, and rsync.
     """
 
     def __init__(
@@ -55,29 +36,13 @@ class BackupManager:
         config_dir: str = "/etc/mk/backups",
         state_dir: str = "/var/lib/mk/backups",
     ) -> None:
-        """Initialize the Backup Manager.
-
-        Args:
-            sudo: Whether to prefix commands with sudo.
-            config_dir: Directory for backup job configurations.
-            state_dir: Directory for backup state/metadata.
-        """
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""
         self._config_dir = config_dir
         self._state_dir = state_dir
 
     async def _run(self, cmd: str, check: bool = True, timeout: int = 3600) -> Tuple[int, str, str]:
-        """Execute a shell command asynchronously.
-
-        Args:
-            cmd: Command to execute.
-            check: Log errors on non-zero exit.
-            timeout: Command timeout in seconds (default 1 hour for backups).
-
-        Returns:
-            Tuple of (return_code, stdout, stderr).
-        """
+        """Execute a shell command asynchronously."""
         full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
         logger.debug(f"Backup exec: {full_cmd}")
 
@@ -104,23 +69,34 @@ class BackupManager:
 
         return rc, out, err
 
-    # ─── Backup Job Management ────────────────────────────────────────────
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
+        logger.debug(f"Backup exec (stdin): {full_cmd}")
+
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
+    # Backup Job Management
 
     async def list_jobs(self) -> ToolResult:
-        """List all configured backup jobs.
-
-        Returns:
-            ToolResult with backup job listing.
-        """
+        """List all configured backup jobs."""
         rc, out, err = await self._run(
-            f"find {self._config_dir} -name '*.json' 2>/dev/null", check=False
+            f"find {safe_quote(self._config_dir)} -name '*.json' 2>/dev/null", check=False
         )
 
         jobs: List[Dict[str, Any]] = []
         if out:
             for config_file in out.splitlines():
                 if config_file.strip():
-                    rc2, content, _ = await self._run(f"cat {config_file.strip()}", check=False)
+                    rc2, content, _ = await self._run(f"cat {safe_quote(config_file.strip())}", check=False)
                     if rc2 == 0:
                         try:
                             job = json.loads(content)
@@ -144,20 +120,9 @@ class BackupManager:
         retention_count: int = 7,
         cron_expression: Optional[str] = None,
     ) -> ToolResult:
-        """Create a new backup job.
+        """Create a new backup job."""
+        validate_name(name, "job name")
 
-        Args:
-            name: Job name (unique identifier).
-            backup_type: Type (zfs_snapshot, zfs_send, rsync, restic).
-            source: Source path or dataset.
-            destination: Destination path or target.
-            schedule: Frequency (hourly, daily, weekly, monthly, custom).
-            retention_count: Number of backups to retain.
-            cron_expression: Custom cron expression (if schedule=custom).
-
-        Returns:
-            ToolResult with job creation status.
-        """
         valid_types = ["zfs_snapshot", "zfs_send", "rsync", "restic"]
         if backup_type not in valid_types:
             return ToolResult(
@@ -192,14 +157,14 @@ class BackupManager:
             "last_status": None,
         }
 
-        # Ensure config directory exists
-        await self._run(f"mkdir -p {self._config_dir}")
+        await self._run(f"mkdir -p {safe_quote(self._config_dir)}")
 
-        # Write job config
         config_path = f"{self._config_dir}/{name}.json"
         config_json = json.dumps(job_config, indent=2)
-        rc, _, err = await self._run(
-            f"bash -c 'cat > {config_path} << MKEOF\n{config_json}\nMKEOF'"
+
+        # Write config via stdin to avoid interpolation issues
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(config_path)} > /dev/null", config_json
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to save job config: {err}")
@@ -213,7 +178,6 @@ class BackupManager:
         }
         on_calendar = cron_expression if schedule == "custom" else calendar_map.get(schedule, "*-*-* 02:00:00")
 
-        # Create the backup service unit
         service_content = f"""[Unit]
 Description=MK Backup Job: {name}
 After=network.target
@@ -225,9 +189,8 @@ StandardOutput=journal
 StandardError=journal
 """
         service_path = f"/etc/systemd/system/mk-backup-{name}.service"
-        await self._run(f"bash -c 'cat > {service_path} << MKEOF\n{service_content}MKEOF'")
+        await self._run_with_stdin(f"tee {safe_quote(service_path)} > /dev/null", service_content)
 
-        # Create timer
         timer_content = f"""[Unit]
 Description=MK Backup Timer: {name}
 
@@ -240,39 +203,32 @@ RandomizedDelaySec=300
 WantedBy=timers.target
 """
         timer_path = f"/etc/systemd/system/mk-backup-{name}.timer"
-        await self._run(f"bash -c 'cat > {timer_path} << MKEOF\n{timer_content}MKEOF'")
+        await self._run_with_stdin(f"tee {safe_quote(timer_path)} > /dev/null", timer_content)
 
         await self._run("systemctl daemon-reload")
-        await self._run(f"systemctl enable --now mk-backup-{name}.timer")
+        await self._run(f"systemctl enable --now mk-backup-{safe_quote(name)}.timer")
 
         return ToolResult(
             success=True,
             output=f"Backup job '{name}' created (type: {backup_type}, schedule: {schedule})",
             side_effects=[
                 f"Job config saved to {config_path}",
-                f"Systemd timer created and enabled",
+                "Systemd timer created and enabled",
                 f"Next run scheduled: {on_calendar}",
             ],
             metadata={"job": name, "type": backup_type, "schedule": schedule, "config_path": config_path},
         )
 
     async def delete_job(self, name: str) -> ToolResult:
-        """Delete a backup job and its timer.
+        """Delete a backup job and its timer."""
+        validate_name(name, "job name")
 
-        Args:
-            name: Job name.
+        await self._run(f"systemctl stop mk-backup-{safe_quote(name)}.timer", check=False)
+        await self._run(f"systemctl disable mk-backup-{safe_quote(name)}.timer", check=False)
 
-        Returns:
-            ToolResult with deletion status.
-        """
-        # Stop and disable timer
-        await self._run(f"systemctl stop mk-backup-{name}.timer", check=False)
-        await self._run(f"systemctl disable mk-backup-{name}.timer", check=False)
-
-        # Remove files
         await self._run(f"rm -f /etc/systemd/system/mk-backup-{name}.service", check=False)
         await self._run(f"rm -f /etc/systemd/system/mk-backup-{name}.timer", check=False)
-        await self._run(f"rm -f {self._config_dir}/{name}.json", check=False)
+        await self._run(f"rm -f {safe_quote(self._config_dir)}/{name}.json", check=False)
         await self._run("systemctl daemon-reload")
 
         return ToolResult(
@@ -282,20 +238,13 @@ WantedBy=timers.target
             metadata={"job": name, "action": "delete"},
         )
 
-    # ─── Manual Backup Execution ──────────────────────────────────────────
+    # Manual Backup Execution
 
     async def run_backup(self, name: str) -> ToolResult:
-        """Manually trigger a backup job NOW.
-
-        Args:
-            name: Job name to execute.
-
-        Returns:
-            ToolResult with backup execution result.
-        """
-        # Load job config
+        """Manually trigger a backup job."""
+        validate_name(name, "job name")
         config_path = f"{self._config_dir}/{name}.json"
-        rc, content, err = await self._run(f"cat {config_path}")
+        rc, content, err = await self._run(f"cat {safe_quote(config_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Job '{name}' not found: {err}")
 
@@ -308,7 +257,6 @@ WantedBy=timers.target
         source = job.get("source", "")
         destination = job.get("destination", "")
 
-        # Execute based on type
         if backup_type == "zfs_snapshot":
             result = await self._run_zfs_snapshot(source, name)
         elif backup_type == "zfs_send":
@@ -325,24 +273,17 @@ WantedBy=timers.target
         job["last_run"] = datetime.now().isoformat()
         job["last_status"] = status
         updated_json = json.dumps(job, indent=2)
-        await self._run(f"bash -c 'cat > {config_path} << MKEOF\n{updated_json}\nMKEOF'")
+        await self._run_with_stdin(f"tee {safe_quote(config_path)} > /dev/null", updated_json)
 
         return result
 
     async def _run_zfs_snapshot(self, dataset: str, job_name: str) -> ToolResult:
-        """Execute a ZFS snapshot backup.
-
-        Args:
-            dataset: Dataset to snapshot.
-            job_name: Job name for snapshot naming.
-
-        Returns:
-            ToolResult with snapshot status.
-        """
+        """Execute a ZFS snapshot backup."""
+        validate_name(dataset, "dataset")
         snap_name = f"mk-backup-{job_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         full_name = f"{dataset}@{snap_name}"
 
-        rc, out, err = await self._run(f"zfs snapshot -r {full_name}")
+        rc, out, err = await self._run(f"zfs snapshot -r {safe_quote(full_name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Snapshot failed: {err}")
 
@@ -354,36 +295,29 @@ WantedBy=timers.target
         )
 
     async def _run_zfs_send(self, source: str, destination: str) -> ToolResult:
-        """Execute a ZFS send/receive replication.
+        """Execute a ZFS send/receive replication."""
+        validate_name(source, "source dataset")
 
-        Args:
-            source: Source dataset.
-            destination: Destination (local dataset or user@host:dataset).
-
-        Returns:
-            ToolResult with replication status.
-        """
-        # Get latest snapshot
         rc, out, err = await self._run(
-            f"zfs list -t snapshot -H -o name -S creation {source} | head -1"
+            f"zfs list -t snapshot -H -o name -S creation {safe_quote(source)} | head -1"
         )
         if rc != 0 or not out:
-            # Create a snapshot first
             snap_name = f"mk-replicate-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-            await self._run(f"zfs snapshot {source}@{snap_name}")
+            await self._run(f"zfs snapshot {safe_quote(source)}@{safe_quote(snap_name)}")
             latest_snap = f"{source}@{snap_name}"
         else:
             latest_snap = out.strip()
 
-        # Send to destination
         if ":" in destination:
-            # Remote replication via SSH
             host, target = destination.split(":", 1)
-            cmd = f"zfs send -R {latest_snap} | ssh {host} zfs receive -F {target}"
+            cmd = (
+                f"zfs send -R {safe_quote(latest_snap)} | "
+                f"ssh {safe_quote(host)} zfs receive -F {safe_quote(target)}"
+            )
         else:
-            cmd = f"zfs send -R {latest_snap} | zfs receive -F {destination}"
+            cmd = f"zfs send -R {safe_quote(latest_snap)} | zfs receive -F {safe_quote(destination)}"
 
-        rc, out, err = await self._run(cmd, timeout=7200)  # 2 hour timeout for replication
+        rc, out, err = await self._run(cmd, timeout=7200)
         if rc != 0:
             return ToolResult(success=False, error=f"Replication failed: {err}")
 
@@ -395,17 +329,9 @@ WantedBy=timers.target
         )
 
     async def _run_rsync(self, source: str, destination: str) -> ToolResult:
-        """Execute an rsync backup.
-
-        Args:
-            source: Source directory.
-            destination: Destination (local path or user@host:/path).
-
-        Returns:
-            ToolResult with rsync status.
-        """
+        """Execute an rsync backup."""
         rc, out, err = await self._run(
-            f"rsync -avz --delete --stats {source}/ {destination}/",
+            f"rsync -avz --delete --stats {safe_quote(source)}/ {safe_quote(destination)}/",
             timeout=7200,
         )
         if rc != 0:
@@ -419,17 +345,9 @@ WantedBy=timers.target
         )
 
     async def _run_restic(self, source: str, repository: str) -> ToolResult:
-        """Execute a restic backup.
-
-        Args:
-            source: Source directory to back up.
-            repository: Restic repository path (local, S3, SFTP, etc.).
-
-        Returns:
-            ToolResult with restic backup status.
-        """
+        """Execute a restic backup."""
         rc, out, err = await self._run(
-            f"restic -r {repository} backup {source} --json",
+            f"restic -r {safe_quote(repository)} backup {safe_quote(source)} --json",
             timeout=7200,
         )
         if rc != 0:
@@ -442,20 +360,13 @@ WantedBy=timers.target
             metadata={"source": source, "repository": repository, "type": "restic"},
         )
 
-    # ─── Retention / Cleanup ──────────────────────────────────────────────
+    # Retention / Cleanup
 
     async def apply_retention(self, job_name: str) -> ToolResult:
-        """Apply retention policy — remove old backups exceeding retention count.
-
-        Args:
-            job_name: Job to apply retention for.
-
-        Returns:
-            ToolResult with cleanup results.
-        """
-        # Load job config
+        """Apply retention policy -- remove old backups exceeding retention count."""
+        validate_name(job_name, "job name")
         config_path = f"{self._config_dir}/{job_name}.json"
-        rc, content, err = await self._run(f"cat {config_path}")
+        rc, content, err = await self._run(f"cat {safe_quote(config_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Job '{job_name}' not found")
 
@@ -471,25 +382,23 @@ WantedBy=timers.target
         removed: List[str] = []
 
         if backup_type in ("zfs_snapshot", "zfs_send"):
-            # List snapshots matching this job's naming pattern
             rc, out, err = await self._run(
-                f"zfs list -t snapshot -H -o name -S creation -r {source} 2>/dev/null | "
+                f"zfs list -t snapshot -H -o name -S creation -r {safe_quote(source)} 2>/dev/null | "
                 f"grep 'mk-backup-{job_name}'"
             , check=False)
 
             if rc == 0 and out:
                 snapshots = [s.strip() for s in out.splitlines() if s.strip()]
-                # Remove excess snapshots (keep newest 'retention' count)
                 to_remove = snapshots[retention:]
                 for snap in to_remove:
-                    rc2, _, _ = await self._run(f"zfs destroy {snap}", check=False)
+                    rc2, _, _ = await self._run(f"zfs destroy {safe_quote(snap)}", check=False)
                     if rc2 == 0:
                         removed.append(snap)
 
         elif backup_type == "restic":
             repository = job.get("destination", "")
             rc, out, err = await self._run(
-                f"restic -r {repository} forget --keep-last {retention} --prune --json",
+                f"restic -r {safe_quote(repository)} forget --keep-last {int(retention)} --prune --json",
                 check=False,
             )
             if rc == 0:
@@ -502,19 +411,13 @@ WantedBy=timers.target
             metadata={"job": job_name, "removed_count": len(removed), "retention": retention},
         )
 
-    # ─── Restore Operations ───────────────────────────────────────────────
+    # Restore Operations
 
     async def list_restore_points(self, job_name: str) -> ToolResult:
-        """List available restore points for a backup job.
-
-        Args:
-            job_name: Job name to list restore points for.
-
-        Returns:
-            ToolResult with restore point listing.
-        """
+        """List available restore points for a backup job."""
+        validate_name(job_name, "job name")
         config_path = f"{self._config_dir}/{job_name}.json"
-        rc, content, err = await self._run(f"cat {config_path}")
+        rc, content, err = await self._run(f"cat {safe_quote(config_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Job '{job_name}' not found")
 
@@ -531,7 +434,7 @@ WantedBy=timers.target
 
         if backup_type in ("zfs_snapshot", "zfs_send"):
             rc, out, _ = await self._run(
-                f"zfs list -t snapshot -Hp -o name,used,creation -S creation -r {source} 2>/dev/null | "
+                f"zfs list -t snapshot -Hp -o name,used,creation -S creation -r {safe_quote(source)} 2>/dev/null | "
                 f"grep 'mk-backup-{job_name}'",
                 check=False,
             )
@@ -547,7 +450,7 @@ WantedBy=timers.target
 
         elif backup_type == "restic":
             rc, out, _ = await self._run(
-                f"restic -r {destination} snapshots --json",
+                f"restic -r {safe_quote(destination)} snapshots --json",
                 check=False,
             )
             if rc == 0 and out:
@@ -574,18 +477,10 @@ WantedBy=timers.target
         restore_point_id: str,
         target_path: Optional[str] = None,
     ) -> ToolResult:
-        """Restore from a backup restore point.
-
-        Args:
-            job_name: Backup job name.
-            restore_point_id: Restore point identifier (snapshot name or restic ID).
-            target_path: Override restore target (optional, defaults to original source).
-
-        Returns:
-            ToolResult with restore status.
-        """
+        """Restore from a backup restore point."""
+        validate_name(job_name, "job name")
         config_path = f"{self._config_dir}/{job_name}.json"
-        rc, content, err = await self._run(f"cat {config_path}")
+        rc, content, err = await self._run(f"cat {safe_quote(config_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Job '{job_name}' not found")
 
@@ -599,8 +494,7 @@ WantedBy=timers.target
         destination = job.get("destination", "")
 
         if backup_type in ("zfs_snapshot", "zfs_send"):
-            # ZFS rollback
-            rc, out, err = await self._run(f"zfs rollback -r {restore_point_id}")
+            rc, out, err = await self._run(f"zfs rollback -r {safe_quote(restore_point_id)}")
             if rc != 0:
                 return ToolResult(success=False, error=f"ZFS rollback failed: {err}")
 
@@ -617,7 +511,8 @@ WantedBy=timers.target
         elif backup_type == "restic":
             restore_target = target_path or source
             rc, out, err = await self._run(
-                f"restic -r {destination} restore {restore_point_id} --target {restore_target}",
+                f"restic -r {safe_quote(destination)} restore {safe_quote(restore_point_id)} "
+                f"--target {safe_quote(restore_target)}",
                 timeout=7200,
             )
             if rc != 0:
@@ -631,10 +526,9 @@ WantedBy=timers.target
             )
 
         elif backup_type == "rsync":
-            # Rsync restore: swap source/destination
             restore_target = target_path or source
             rc, out, err = await self._run(
-                f"rsync -avz --stats {destination}/ {restore_target}/",
+                f"rsync -avz --stats {safe_quote(destination)}/ {safe_quote(restore_target)}/",
                 timeout=7200,
             )
             if rc != 0:
@@ -649,19 +543,13 @@ WantedBy=timers.target
 
         return ToolResult(success=False, error=f"Unsupported backup type: {backup_type}")
 
-    # ─── Verification ─────────────────────────────────────────────────────
+    # Verification
 
     async def verify_backup(self, job_name: str) -> ToolResult:
-        """Verify the integrity of the latest backup for a job.
-
-        Args:
-            job_name: Job to verify.
-
-        Returns:
-            ToolResult with verification status.
-        """
+        """Verify the integrity of the latest backup for a job."""
+        validate_name(job_name, "job name")
         config_path = f"{self._config_dir}/{job_name}.json"
-        rc, content, err = await self._run(f"cat {config_path}")
+        rc, content, err = await self._run(f"cat {safe_quote(config_path)}")
         if rc != 0:
             return ToolResult(success=False, error=f"Job '{job_name}' not found")
 
@@ -675,7 +563,7 @@ WantedBy=timers.target
 
         if backup_type == "restic":
             rc, out, err = await self._run(
-                f"restic -r {destination} check --json",
+                f"restic -r {safe_quote(destination)} check --json",
                 timeout=3600,
             )
             if rc != 0:
@@ -691,10 +579,10 @@ WantedBy=timers.target
             )
 
         elif backup_type in ("zfs_snapshot", "zfs_send"):
-            # ZFS scrub verifies data integrity
             source = job.get("source", "")
             pool = source.split("/")[0] if "/" in source else source
-            rc, out, err = await self._run(f"zpool scrub {pool}")
+            validate_name(pool, "pool")
+            rc, out, err = await self._run(f"zpool scrub {safe_quote(pool)}")
             if rc != 0:
                 return ToolResult(success=False, error=f"Scrub failed: {err}")
             return ToolResult(
@@ -709,14 +597,10 @@ WantedBy=timers.target
             metadata={"verified": False, "job": job_name},
         )
 
-    # ─── Backup Health Summary ────────────────────────────────────────────
+    # Backup Health Summary
 
     async def health_check(self) -> ToolResult:
-        """Check the health of all backup jobs — report failures and stale backups.
-
-        Returns:
-            ToolResult with backup health summary.
-        """
+        """Check the health of all backup jobs."""
         result = await self.list_jobs()
         if not result.success:
             return result
@@ -739,7 +623,6 @@ WantedBy=timers.target
             elif last_run is None:
                 issues.append(f"NEVER RUN: Job '{name}' has never executed")
             else:
-                # Check staleness (compare to schedule)
                 try:
                     last_dt = datetime.fromisoformat(last_run)
                     age_hours = (datetime.now() - last_dt).total_seconds() / 3600
@@ -760,7 +643,7 @@ WantedBy=timers.target
 
         summary = f"Backup Health: {healthy_count}/{len(jobs)} jobs healthy"
         if issues:
-            summary += f"\n\nIssues ({len(issues)}):\n" + "\n".join(f"  • {i}" for i in issues)
+            summary += f"\n\nIssues ({len(issues)}):\n" + "\n".join(f"  - {i}" for i in issues)
 
         return ToolResult(
             success=len(issues) == 0,
