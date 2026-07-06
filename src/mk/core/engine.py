@@ -122,8 +122,12 @@ class MKEngine:
     async def _handle_no_llm(self, user_input: str) -> AgentResponse:
         """Handle user input when no LLM is configured.
 
-        Tries to match common server commands by keyword.
-        Falls back to a helpful message.
+        Order of operations:
+        1. remember/forget (explicit memory commands)
+        2. Try to extract learnings from natural conversation
+        3. Match exact-word keywords for server commands
+        4. Greetings and help
+        5. Fallback message
 
         Args:
             user_input: The user's input text.
@@ -132,8 +136,67 @@ class MKEngine:
             AgentResponse.
         """
         text = user_input.strip().lower()
+        words = set(text.split())
 
-        # Map keywords to server tool calls
+        # --- 1. remember/forget FIRST (before anything else) ---
+        if text.startswith("remember"):
+            fact = user_input.strip()
+            for prefix in ("remember that ", "remember "):
+                if fact.lower().startswith(prefix):
+                    fact = fact[len(prefix):]
+                    break
+            if not fact or fact.lower() in ("remember", "that", "remember that"):
+                return AgentResponse(
+                    steps=[],
+                    final_response="What should I remember? Say: remember that [something]",
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            if "server" in self._tools:
+                try:
+                    result = await self._tools["server"](
+                        domain="chat", action="remember", args={"fact": fact}
+                    )
+                    output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
+                except Exception as e:
+                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+
+        if text.startswith("forget"):
+            key = user_input.strip()
+            for prefix in ("forget that ", "forget about ", "forget "):
+                if key.lower().startswith(prefix):
+                    key = key[len(prefix):]
+                    break
+            if not key or key.lower() in ("forget", "that", "about"):
+                return AgentResponse(
+                    steps=[],
+                    final_response="What should I forget? Say: forget [something]",
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            if "server" in self._tools:
+                try:
+                    result = await self._tools["server"](
+                        domain="chat", action="forget", args={"key": key}
+                    )
+                    output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
+                except Exception as e:
+                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+
+        # --- 2. Try to learn from natural conversation ---
+        # "my name is X", "I like X", "I live in X", etc.
+        learned = self._try_learn_from_input(user_input)
+        if learned:
+            return AgentResponse(
+                steps=[],
+                final_response=learned,
+                tokens_used=0,
+                cost=0.0,
+            )
+
+        # --- 3. Exact word keyword matching (no substring!) ---
         keyword_map = {
             "status": ("system", "overview", {}),
             "health": ("system", "health", {}),
@@ -167,10 +230,9 @@ class MKEngine:
             "profile": ("chat", "profile", {}),
         }
 
-        # Check for keyword match
+        # Match by exact word (not substring)
         for keyword, (domain, action, args) in keyword_map.items():
-            if keyword in text:
-                # Try to execute via server tool
+            if keyword in words:
                 if "server" in self._tools:
                     try:
                         result = await self._tools["server"](
@@ -191,60 +253,9 @@ class MKEngine:
                             cost=0.0,
                         )
 
-        # "remember that..." handling
-        if text.startswith("remember"):
-            fact = user_input.strip()
-            # Strip "remember that" prefix
-            for prefix in ("remember that ", "remember "):
-                if fact.lower().startswith(prefix):
-                    fact = fact[len(prefix):]
-                    break
-            # If after stripping we still have "remember" or empty, reject
-            if not fact or fact.lower() in ("remember", "that", "remember that"):
-                return AgentResponse(
-                    steps=[],
-                    final_response="What should I remember? Say: remember that [something]",
-                    tokens_used=0,
-                    cost=0.0,
-                )
-            if "server" in self._tools:
-                try:
-                    result = await self._tools["server"](
-                        domain="chat", action="remember", args={"fact": fact}
-                    )
-                    output = getattr(result, "output", str(result))
-                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
-                except Exception as e:
-                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
-
-        # "forget..." handling
-        if text.startswith("forget"):
-            key = user_input.strip()
-            for prefix in ("forget that ", "forget about ", "forget "):
-                if key.lower().startswith(prefix):
-                    key = key[len(prefix):]
-                    break
-            # Reject empty or just "forget"
-            if not key or key.lower() in ("forget", "that", "about"):
-                return AgentResponse(
-                    steps=[],
-                    final_response="What should I forget? Say: forget [something]",
-                    tokens_used=0,
-                    cost=0.0,
-                )
-            if "server" in self._tools:
-                try:
-                    result = await self._tools["server"](
-                        domain="chat", action="forget", args={"key": key}
-                    )
-                    output = getattr(result, "output", str(result))
-                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
-                except Exception as e:
-                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
-
-        # Greetings
-        greetings = ("hello", "hi", "hey", "sup", "yo", "chat")
-        if text in greetings or text.rstrip("!") in greetings:
+        # --- 4. Greetings ---
+        greetings = {"hello", "hi", "hey", "sup", "yo", "chat"}
+        if words & greetings:
             return AgentResponse(
                 steps=[],
                 final_response=(
@@ -260,7 +271,7 @@ class MKEngine:
             )
 
         # Help
-        if text in ("help", "?", "commands"):
+        if words & {"help", "?", "commands"}:
             return AgentResponse(
                 steps=[],
                 final_response=(
@@ -281,7 +292,13 @@ class MKEngine:
                     "  keys         — API keys configured\n"
                     "  rip          — Disc ripper status\n"
                     "  eject        — Eject disc\n"
-                    "  updates      — Check for updates\n\n"
+                    "  updates      — Check for updates\n"
+                    "  aboutme      — What I know about you\n\n"
+                    "Memory commands:\n"
+                    "  remember that [fact]\n"
+                    "  forget [thing]\n"
+                    "  my name is [name]\n"
+                    "  I like [thing]\n\n"
                     "For full natural language: add an API key.\n"
                     "  /setkey your-key (from Telegram)\n"
                     "  Or edit /etc/mk/config.yaml"
@@ -290,7 +307,7 @@ class MKEngine:
                 cost=0.0,
             )
 
-        # Default: no match
+        # --- 5. Default ---
         return AgentResponse(
             steps=[],
             final_response=(
@@ -301,6 +318,43 @@ class MKEngine:
             tokens_used=0,
             cost=0.0,
         )
+
+    def _try_learn_from_input(self, user_input: str) -> str:
+        """Try to extract and store learnings from natural conversation.
+
+        Handles: "my name is X", "I like X", "I live in X", "I work at X"
+        without needing an LLM.
+
+        Args:
+            user_input: User's raw input.
+
+        Returns:
+            Response string if something was learned, empty string if not.
+        """
+        if "server" not in self._tools:
+            return ""
+
+        from mk.chat import ChatMode
+        chat = ChatMode()
+        learnings = chat.extract_learnings(user_input)
+
+        if not learnings:
+            return ""
+
+        # Build response
+        responses = []
+        for l in learnings:
+            if l.startswith("name:"):
+                name = l.split(":", 1)[1]
+                responses.append(f"Got it, {name}.")
+            elif l.startswith("fact:"):
+                fact = l.split(":", 1)[1]
+                responses.append(f"✓ Noted: {fact}")
+            elif l.startswith("preference:"):
+                pref = l.split(":", 1)[1]
+                responses.append(f"✓ Preference saved: {pref}")
+
+        return "\n".join(responses) if responses else ""
 
     async def _handle_direct_command(
         self, tool_name: str, tool_args: Dict[str, str]
