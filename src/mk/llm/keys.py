@@ -39,11 +39,18 @@ KEY_PATTERNS = {
     "perplexity": re.compile(r"^pplx-"),
     "cohere": re.compile(r"^[a-zA-Z0-9]{40}$"),
     "deepseek": re.compile(r"^sk-[a-f0-9]{48,}"),
+    "xai": re.compile(r"^xai-"),
+    "nvidia": re.compile(r"^nvapi-"),
+    "sambanova": re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-"),
+    "cerebras": re.compile(r"^csk-"),
+    "hyperbolic": re.compile(r"^hyp_"),
+    "lepton": re.compile(r"^lpt_"),
+    "novita": re.compile(r"^nvt-"),
+    "octo": re.compile(r"^octo-"),
+    "anyscale": re.compile(r"^esecret_"),
 }
 
 # Best models per provider (ranked by capability)
-# Format: (model_id, cost_per_1k_input, cost_per_1k_output, max_tokens, tier)
-# Tier: "smart" = heavy reasoning, "fast" = quick tasks, "cheap" = bulk/simple
 PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     "anthropic": [
         {"model": "claude-sonnet-4-20250514", "input": 0.003, "output": 0.015, "max_ctx": 200000, "tier": "smart"},
@@ -91,6 +98,47 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
         {"model": "command-r-plus", "input": 0.003, "output": 0.015, "max_ctx": 128000, "tier": "smart"},
         {"model": "command-r", "input": 0.0005, "output": 0.0015, "max_ctx": 128000, "tier": "fast"},
     ],
+    "xai": [
+        {"model": "grok-3", "input": 0.003, "output": 0.015, "max_ctx": 131072, "tier": "smart"},
+        {"model": "grok-3-mini", "input": 0.0003, "output": 0.0005, "max_ctx": 131072, "tier": "fast"},
+        {"model": "grok-build-0.1", "input": 0.001, "output": 0.002, "max_ctx": 256000, "tier": "smart"},
+    ],
+    "nvidia": [
+        {"model": "nvidia/llama-3.1-nemotron-70b-instruct", "input": 0.00035, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
+        {"model": "nvidia/nemotron-4-340b-instruct", "input": 0.0042, "output": 0.0042, "max_ctx": 4096, "tier": "smart"},
+        {"model": "meta/llama-3.3-70b-instruct", "input": 0.00035, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
+        {"model": "meta/llama-3.1-8b-instruct", "input": 0.00005, "output": 0.00005, "max_ctx": 128000, "tier": "cheap"},
+    ],
+    "sambanova": [
+        {"model": "Meta-Llama-3.3-70B-Instruct", "input": 0.0006, "output": 0.0006, "max_ctx": 128000, "tier": "fast"},
+        {"model": "Meta-Llama-3.1-8B-Instruct", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
+        {"model": "DeepSeek-R1", "input": 0.002, "output": 0.008, "max_ctx": 128000, "tier": "smart"},
+    ],
+    "cerebras": [
+        {"model": "llama-3.3-70b", "input": 0.00059, "output": 0.00079, "max_ctx": 128000, "tier": "fast"},
+        {"model": "llama-3.1-8b", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
+    ],
+    "hyperbolic": [
+        {"model": "meta-llama/Llama-3.3-70B-Instruct", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
+        {"model": "meta-llama/Llama-3.1-8B-Instruct", "input": 0.00006, "output": 0.00006, "max_ctx": 128000, "tier": "cheap"},
+        {"model": "deepseek-ai/DeepSeek-R1", "input": 0.002, "output": 0.002, "max_ctx": 128000, "tier": "smart"},
+    ],
+    "lepton": [
+        {"model": "llama-3.3-70b", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
+        {"model": "llama-3.1-8b", "input": 0.00006, "output": 0.00006, "max_ctx": 128000, "tier": "cheap"},
+    ],
+    "novita": [
+        {"model": "meta-llama/llama-3.3-70b-instruct", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
+        {"model": "meta-llama/llama-3.1-8b-instruct", "input": 0.00005, "output": 0.00005, "max_ctx": 128000, "tier": "cheap"},
+    ],
+    "octo": [
+        {"model": "meta-llama-3.1-70b-instruct", "input": 0.0009, "output": 0.0009, "max_ctx": 128000, "tier": "fast"},
+        {"model": "meta-llama-3.1-8b-instruct", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
+    ],
+    "anyscale": [
+        {"model": "meta-llama/Meta-Llama-3.1-70B-Instruct", "input": 0.001, "output": 0.001, "max_ctx": 128000, "tier": "fast"},
+        {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct", "input": 0.00015, "output": 0.00015, "max_ctx": 128000, "tier": "cheap"},
+    ],
 }
 
 # Provider API endpoints
@@ -106,6 +154,15 @@ PROVIDER_ENDPOINTS = {
     "perplexity": "https://api.perplexity.ai",
     "deepseek": "https://api.deepseek.com/v1",
     "cohere": "https://api.cohere.ai/v1",
+    "xai": "https://api.x.ai/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "sambanova": "https://api.sambanova.ai/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "hyperbolic": "https://api.hyperbolic.xyz/v1",
+    "lepton": "https://llama-3-3-70b.lepton.run/api/v1",
+    "novita": "https://api.novita.ai/v3/openai",
+    "octo": "https://text.octoai.run/v1",
+    "anyscale": "https://api.endpoints.anyscale.com/v1",
 }
 
 

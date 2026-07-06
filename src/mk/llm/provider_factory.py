@@ -44,6 +44,15 @@ UNIVERSAL_PROVIDERS = {
     "deepseek",
     "openrouter",
     "cohere",
+    "xai",
+    "nvidia",
+    "sambanova",
+    "cerebras",
+    "hyperbolic",
+    "lepton",
+    "novita",
+    "octo",
+    "anyscale",
 }
 
 
