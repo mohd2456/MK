@@ -175,7 +175,7 @@ class MKEngine:
                         result = await self._tools["server"](
                             domain=domain, action=action, args=args
                         )
-                        output = getattr(result, "output", str(result))
+                        output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
                         return AgentResponse(
                             steps=[],
                             final_response=output,

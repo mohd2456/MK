@@ -477,7 +477,7 @@ class ServerTool(Tool):
         try:
             return await method(**args) if args else await method()
         except Exception as e:
-            logger.error(f"Server tool error: {domain}.{action} - {e}")
+            logger.debug(f"Server tool error: {domain}.{action} - {e}")
             return ToolResult(success=False, error=f"Error in {domain}.{action}: {str(e)}")
 
 

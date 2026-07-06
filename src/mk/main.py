@@ -13,6 +13,7 @@ Power on → Boot → Ready. Just talk.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from typing import Optional
 
@@ -24,6 +25,13 @@ from mk.config.settings import Settings
 from mk.core.engine import MKEngine
 
 console = Console()
+
+# Configure logging — only show warnings+ in terminal, debug to journal in daemon
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(name)s: %(message)s",
+    stream=sys.stderr,
+)
 
 
 # ─── Interactive REPL ─────────────────────────────────────────────────────────

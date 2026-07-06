@@ -45,7 +45,7 @@ class NetworkManager:
         err = stderr.decode().strip()
 
         if rc != 0 and check:
-            logger.error(f"Command failed ({rc}): {full_cmd}\n{err}")
+            logger.debug(f"Command failed ({rc}): {full_cmd}\n{err}")
 
         return rc, out, err
 

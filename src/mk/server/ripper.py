@@ -424,7 +424,7 @@ class DiscRipper:
             if rc == 0:
                 final_paths.append(dest)
             else:
-                logger.error(f"Failed to move {src} to {dest}: {err}")
+                logger.debug(f"Failed to move {src} to {dest}: {err}")
 
         return final_paths
 
@@ -459,7 +459,7 @@ class DiscRipper:
             if rc == 0:
                 final_paths.append(dest)
             else:
-                logger.error(f"Failed to move {src} to {dest}: {err}")
+                logger.debug(f"Failed to move {src} to {dest}: {err}")
 
         return final_paths
 
