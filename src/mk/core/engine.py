@@ -6,6 +6,7 @@ tools, and the agent loop. Exposes a simple process(input) interface.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from mk.config.settings import Settings, load_config
@@ -13,6 +14,8 @@ from mk.core.agent_loop import AgentLoop, LLMProvider
 from mk.core.command_router import CommandRouter
 from mk.core.context import ContextBuilder
 from mk.core.models import AgentResponse, AgentStep, Conversation, Role, ToolCall
+
+logger = logging.getLogger(__name__)
 
 
 class MKEngine:
@@ -45,6 +48,8 @@ class MKEngine:
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._llm_provider = llm_provider
         self._agent_loop: Optional[AgentLoop] = None
+
+        self._server_manager: Optional[Any] = None
 
         if llm_provider:
             self._setup_agent_loop(llm_provider)
@@ -192,3 +197,30 @@ class MKEngine:
             {"name": name, "description": getattr(handler, "__doc__", "") or ""}
             for name, handler in self._tools.items()
         ]
+
+    def setup_server_management(self, **kwargs: Any) -> None:
+        """Initialize and register the server management layer.
+
+        Sets up all server sub-managers (storage, containers, network,
+        services, backups, users) and registers the unified server tool.
+
+        Args:
+            **kwargs: Passed to ServerManager constructor (sudo, compose_dir, etc.).
+        """
+        from mk.server import ServerManager, create_server_tools
+
+        self._server_manager = ServerManager(**kwargs)
+        server_tools = create_server_tools(self._server_manager)
+
+        for tool in server_tools:
+            self._tools[tool.name] = tool.execute
+            logger.info(f"Registered server tool: {tool.name}")
+
+    @property
+    def server(self) -> Optional[Any]:
+        """Access the ServerManager instance (if initialized).
+
+        Returns:
+            ServerManager or None if not set up.
+        """
+        return self._server_manager
