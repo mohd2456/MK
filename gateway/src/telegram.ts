@@ -218,6 +218,68 @@ export function createTelegramBot(
     }
   });
 
+  // --- /chat ---
+  bot.command("chat", async (ctx) => {
+    await ctx.reply(
+      "💬 *Chat mode active.*\n\n" +
+        "Just talk to me normally — I'll remember what you tell me.\n" +
+        "Say 'remember that...' to store something explicitly.\n\n" +
+        "Other chat commands:\n" +
+        "/remember [thing] — Store a fact\n" +
+        "/forget [thing] — Remove from memory\n" +
+        "/aboutme — What I know about you",
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  // --- /remember [fact] ---
+  bot.command("remember", async (ctx) => {
+    const fact = ctx.message.text.replace("/remember", "").trim();
+    if (!fact) {
+      await ctx.reply("Usage: `/remember I prefer dark mode`", {
+        parse_mode: "Markdown",
+      });
+      return;
+    }
+    try {
+      const response = await bridge.sendServerCommand("chat", "remember", {
+        fact,
+      });
+      await ctx.reply(response.text || "✓ Remembered.");
+    } catch {
+      await ctx.reply("❌ Failed to store memory.");
+    }
+  });
+
+  // --- /forget [thing] ---
+  bot.command("forget", async (ctx) => {
+    const thing = ctx.message.text.replace("/forget", "").trim();
+    if (!thing) {
+      await ctx.reply("Usage: `/forget dark mode`", { parse_mode: "Markdown" });
+      return;
+    }
+    try {
+      const response = await bridge.sendServerCommand("chat", "forget", {
+        key: thing,
+      });
+      await ctx.reply(response.text || "✓ Forgotten.");
+    } catch {
+      await ctx.reply("❌ Failed to forget.");
+    }
+  });
+
+  // --- /aboutme ---
+  bot.command("aboutme", async (ctx) => {
+    try {
+      const response = await bridge.sendServerCommand("chat", "profile", {});
+      await ctx.reply(formatResponse("About You", response), {
+        parse_mode: "Markdown",
+      });
+    } catch {
+      await ctx.reply("❌ Failed to get profile.");
+    }
+  });
+
   // --- /setkey [provider] [key] ---
   bot.command("setkey", async (ctx) => {
     const text = ctx.message.text.replace("/setkey", "").trim();

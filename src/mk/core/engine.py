@@ -162,6 +162,8 @@ class MKEngine:
             "eject": ("ripper", "eject", {}),
             "hardware": ("system", "hardware", {}),
             "updates": ("system", "check_updates", {}),
+            "aboutme": ("chat", "profile", {}),
+            "profile": ("chat", "profile", {}),
         }
 
         # Check for keyword match
@@ -188,8 +190,43 @@ class MKEngine:
                             cost=0.0,
                         )
 
+        # "remember that..." handling
+        if text.startswith("remember"):
+            fact = user_input.strip()
+            # Strip "remember that" prefix
+            for prefix in ("remember that ", "remember "):
+                if fact.lower().startswith(prefix):
+                    fact = fact[len(prefix):]
+                    break
+            if "server" in self._tools and fact:
+                try:
+                    result = await self._tools["server"](
+                        domain="chat", action="remember", args={"fact": fact}
+                    )
+                    output = getattr(result, "output", str(result))
+                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
+                except Exception as e:
+                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+
+        # "forget..." handling
+        if text.startswith("forget"):
+            key = user_input.strip()
+            for prefix in ("forget that ", "forget about ", "forget "):
+                if key.lower().startswith(prefix):
+                    key = key[len(prefix):]
+                    break
+            if "server" in self._tools and key:
+                try:
+                    result = await self._tools["server"](
+                        domain="chat", action="forget", args={"key": key}
+                    )
+                    output = getattr(result, "output", str(result))
+                    return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
+                except Exception as e:
+                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+
         # Greetings
-        greetings = ("hello", "hi", "hey", "sup", "yo")
+        greetings = ("hello", "hi", "hey", "sup", "yo", "chat")
         if text in greetings or text.rstrip("!") in greetings:
             return AgentResponse(
                 steps=[],

@@ -64,6 +64,69 @@ class KeyActions:
 
 from mk.llm.keys import MAX_KEYS
 
+
+class ChatActions:
+    """Wrapper for chat mode memory operations."""
+
+    def __init__(self) -> None:
+        from mk.chat import ChatMode
+        self._chat = ChatMode()
+
+    async def remember_action(self, fact: str = "") -> "ToolResult":
+        from mk.tools.base import ToolResult
+        if not fact:
+            return ToolResult(success=False, error="Nothing to remember")
+        self._chat.add_fact(fact)
+        self._chat._long_term.learn(
+            key=f"explicit_{fact[:30]}",
+            value=fact,
+            source="explicit_command",
+            tags=["user_requested"],
+        )
+        self._chat._save_memory()
+        self._chat._save_profile()
+        return ToolResult(success=True, output=f"✓ Remembered: {fact}")
+
+    async def forget_action(self, key: str = "") -> "ToolResult":
+        from mk.tools.base import ToolResult
+        if not key:
+            return ToolResult(success=False, error="What should I forget?")
+        forgotten = self._chat.forget(key)
+        if forgotten:
+            return ToolResult(success=True, output=f"✓ Forgot anything about: {key}")
+        return ToolResult(success=True, output=f"I don't have anything stored about '{key}'")
+
+    async def profile_action(self) -> "ToolResult":
+        import json
+        from mk.tools.base import ToolResult
+        profile = self._chat.get_profile()
+        lines = []
+        name = profile.get("name")
+        if name:
+            lines.append(f"Name: {name}")
+        facts = profile.get("facts", [])
+        if facts:
+            lines.append(f"\nFacts ({len(facts)}):")
+            for f in facts[-10:]:
+                lines.append(f"  • {f}")
+        prefs = profile.get("preferences", [])
+        if prefs:
+            lines.append(f"\nPreferences ({len(prefs)}):")
+            for p in prefs[-5:]:
+                lines.append(f"  • {p}")
+        interests = profile.get("interests", [])
+        if interests:
+            lines.append(f"\nInterests: {', '.join(interests)}")
+        if not lines:
+            lines.append("I don't know anything about you yet.\nJust talk to me and I'll learn!")
+        return ToolResult(success=True, output="\n".join(lines))
+
+    async def stats_action(self) -> "ToolResult":
+        import json
+        from mk.tools.base import ToolResult
+        stats = self._chat.get_stats()
+        return ToolResult(success=True, output=json.dumps(stats, indent=2))
+
 # Action-to-method mappings for each domain.
 # Keys are action names exposed to the LLM, values are method names on the sub-manager.
 
@@ -297,6 +360,13 @@ KEYS_ACTIONS = {
     "strategy": "strategy_action",
 }
 
+CHAT_ACTIONS = {
+    "remember": "remember_action",
+    "forget": "forget_action",
+    "profile": "profile_action",
+    "stats": "stats_action",
+}
+
 
 class ServerTool(Tool):
     """Unified server management tool.
@@ -307,6 +377,7 @@ class ServerTool(Tool):
     def __init__(self, server_manager: ServerManager) -> None:
         self._mgr = server_manager
         self._key_mgr = KeyActions()
+        self._chat_mgr = ChatActions()
 
     @property
     def name(self) -> str:
@@ -335,7 +406,7 @@ class ServerTool(Tool):
                     "enum": [
                         "system", "storage", "containers", "vms", "lxc",
                         "network", "services", "backups", "users", "homelab",
-                        "ripper", "migration", "keys",
+                        "ripper", "migration", "keys", "chat",
                     ],
                     "description": "Server management domain",
                 },
@@ -377,6 +448,7 @@ class ServerTool(Tool):
             "ripper": (self._mgr.ripper, RIPPER_ACTIONS),
             "migration": (self._mgr.migration, MIGRATION_ACTIONS),
             "keys": (self._key_mgr, KEYS_ACTIONS),
+            "chat": (self._chat_mgr, CHAT_ACTIONS),
         }
 
         entry = domain_map.get(domain)
