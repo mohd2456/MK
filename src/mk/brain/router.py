@@ -213,6 +213,15 @@ class BrainRouter:
 
     def _check_commands(self, text: str) -> Optional[BrainResponse]:
         """Check if the input matches a known command pattern."""
+        # Skip if input is too long (likely a complex request, not a command)
+        if len(text.split()) > 8:
+            return None
+
+        # Skip if it starts with question/help words
+        help_starters = ("help", "how", "why", "what should", "can you explain", "write", "create")
+        if any(text.startswith(s) for s in help_starters):
+            return None
+
         # First check: is the target a known service/container?
         for pattern_info in self._command_patterns:
             match = re.search(pattern_info["pattern"], text)
