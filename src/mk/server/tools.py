@@ -11,6 +11,59 @@ from .manager import ServerManager
 
 logger = logging.getLogger(__name__)
 
+
+class KeyActions:
+    """Wrapper that exposes KeyManager methods as ToolResult-returning actions."""
+
+    def __init__(self) -> None:
+        from mk.llm.keys import KeyManager
+        self._km = KeyManager()
+
+    async def add_key_action(self, key: str = "", provider: str = "") -> "ToolResult":
+        from mk.tools.base import ToolResult
+        if not key:
+            return ToolResult(success=False, error="No key provided")
+        override = provider if provider else None
+        ok, msg = self._km.add_key(key, provider_override=override)
+        return ToolResult(success=ok, output=msg)
+
+    async def remove_key_action(self, provider: str = "", index: int = 0) -> "ToolResult":
+        from mk.tools.base import ToolResult
+        if not provider:
+            return ToolResult(success=False, error="Provider name required")
+        ok, msg = self._km.remove_key(provider, index)
+        return ToolResult(success=ok, output=msg)
+
+    async def list_keys_action(self) -> "ToolResult":
+        import json
+        from mk.tools.base import ToolResult
+        keys_info = self._km.list_keys()
+        if not keys_info:
+            return ToolResult(success=True, output="No API keys configured.\nUse /setkey to add one.")
+        lines = [f"API Keys ({self._km.total_keys()}/{MAX_KEYS}):\n"]
+        for provider, info in keys_info.items():
+            lines.append(f"  {provider}: {info['key_count']} key(s)")
+            lines.append(f"    Models: {', '.join(info['models'][:3])}")
+        return ToolResult(success=True, output="\n".join(lines))
+
+    async def strategy_action(self) -> "ToolResult":
+        import json
+        from mk.tools.base import ToolResult
+        strategy = self._km.get_token_budget_strategy()
+        lines = [f"Model Strategy ({strategy['total_providers']} providers, {strategy['total_keys']} keys):\n"]
+        for tier in ("cheap", "fast", "smart"):
+            pick = strategy.get(tier)
+            if pick:
+                lines.append(f"  {tier.upper()}: {pick['provider']}/{pick['model']}")
+                lines.append(f"    Cost: ${pick['input_cost']}/1K in, ${pick['output_cost']}/1K out")
+            else:
+                lines.append(f"  {tier.upper()}: (no model available)")
+        lines.append(f"\n{strategy['strategy']}")
+        return ToolResult(success=True, output="\n".join(lines))
+
+
+from mk.llm.keys import MAX_KEYS
+
 # Action-to-method mappings for each domain.
 # Keys are action names exposed to the LLM, values are method names on the sub-manager.
 
@@ -237,6 +290,13 @@ MIGRATION_ACTIONS = {
     "hardware_profile": "hardware_profile",
 }
 
+KEYS_ACTIONS = {
+    "add": "add_key_action",
+    "remove": "remove_key_action",
+    "list": "list_keys_action",
+    "strategy": "strategy_action",
+}
+
 
 class ServerTool(Tool):
     """Unified server management tool.
@@ -246,6 +306,7 @@ class ServerTool(Tool):
 
     def __init__(self, server_manager: ServerManager) -> None:
         self._mgr = server_manager
+        self._key_mgr = KeyActions()
 
     @property
     def name(self) -> str:
@@ -274,7 +335,7 @@ class ServerTool(Tool):
                     "enum": [
                         "system", "storage", "containers", "vms", "lxc",
                         "network", "services", "backups", "users", "homelab",
-                        "ripper", "migration",
+                        "ripper", "migration", "keys",
                     ],
                     "description": "Server management domain",
                 },
@@ -315,6 +376,7 @@ class ServerTool(Tool):
             "homelab": (self._mgr.homelab, HOMELAB_ACTIONS),
             "ripper": (self._mgr.ripper, RIPPER_ACTIONS),
             "migration": (self._mgr.migration, MIGRATION_ACTIONS),
+            "keys": (self._key_mgr, KEYS_ACTIONS),
         }
 
         entry = domain_map.get(domain)

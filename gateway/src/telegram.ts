@@ -218,6 +218,93 @@ export function createTelegramBot(
     }
   });
 
+  // --- /setkey [provider] [key] ---
+  bot.command("setkey", async (ctx) => {
+    const text = ctx.message.text.replace("/setkey", "").trim();
+    if (!text) {
+      await ctx.reply(
+        "*Usage:*\n" +
+          "`/setkey your-api-key-here`\n" +
+          "`/setkey openai sk-abc123...`\n\n" +
+          "MK auto-detects the provider from the key format.\n" +
+          "Supports: anthropic, openai, gemini, groq, mistral, " +
+          "openrouter, together, fireworks, perplexity, deepseek, cohere\n\n" +
+          "Up to 40 keys. MK picks the best model for each task.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Parse: might be "provider key" or just "key"
+    const parts = text.split(/\s+/);
+    let provider: string | undefined;
+    let key: string;
+
+    if (parts.length >= 2 && !parts[0].startsWith("sk-") && !parts[0].startsWith("AI") && !parts[0].startsWith("gsk_")) {
+      provider = parts[0];
+      key = parts.slice(1).join("");
+    } else {
+      key = parts.join("");
+    }
+
+    try {
+      const payload: Record<string, string> = { key };
+      if (provider) payload.provider = provider;
+
+      const response = await bridge.sendServerCommand("keys", "add", payload);
+      await ctx.reply(response.text || "Key added.");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      await ctx.reply(`❌ ${msg}`);
+    }
+
+    // Delete the user's message (contains the API key!)
+    try {
+      await ctx.deleteMessage();
+    } catch {
+      // Can't delete in private chats, that's fine
+    }
+  });
+
+  // --- /keys ---
+  bot.command("keys", async (ctx) => {
+    try {
+      const response = await bridge.sendServerCommand("keys", "list", {});
+      await ctx.reply(formatResponse("API Keys", response), {
+        parse_mode: "Markdown",
+      });
+    } catch (error) {
+      await ctx.reply("❌ Failed to list keys.");
+    }
+  });
+
+  // --- /removekey [provider] ---
+  bot.command("removekey", async (ctx) => {
+    const provider = ctx.message.text.replace("/removekey", "").trim();
+    if (!provider) {
+      await ctx.reply("Usage: `/removekey openai`", { parse_mode: "Markdown" });
+      return;
+    }
+    try {
+      const response = await bridge.sendServerCommand("keys", "remove", { provider });
+      await ctx.reply(response.text || "Key removed.");
+    } catch (error) {
+      await ctx.reply("❌ Failed to remove key.");
+    }
+  });
+
+  // --- /models ---
+  bot.command("models", async (ctx) => {
+    try {
+      const response = await bridge.sendServerCommand("keys", "strategy", {});
+      await ctx.reply(formatResponse("Model Strategy", response), {
+        parse_mode: "Markdown",
+      });
+    } catch (error) {
+      await ctx.reply("❌ Failed to get model info.");
+    }
+  });
+
   // --- /logs [service] ---
   bot.command("logs", async (ctx) => {
     const service = ctx.message.text.replace("/logs", "").trim();
