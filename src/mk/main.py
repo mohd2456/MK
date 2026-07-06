@@ -1,7 +1,13 @@
-"""MK CLI entry point.
+"""MK - Personal AI Operating System.
 
-Starts MK in terminal mode with a Rich-powered interactive REPL.
-The terminal IS MK. MK IS the terminal.
+Entry point for all MK modes:
+- terminal: Interactive REPL (login shell, local)
+- daemon: Background service (systemd managed)
+
+The boot sequence runs first, probing hardware/network/storage/services/AI,
+then drops into the appropriate mode.
+
+Power on → Boot → Ready. Just talk.
 """
 
 from __future__ import annotations
@@ -11,57 +17,51 @@ import sys
 from typing import Optional
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.text import Text
 
-from mk.config.settings import load_config
+from mk.boot import boot_sequence
+from mk.config.settings import Settings
 from mk.core.engine import MKEngine
-
 
 console = Console()
 
 
-def print_banner() -> None:
-    """Print the MK startup banner."""
-    banner = Text("MK", style="bold cyan")
-    banner.append(" v0.1.0", style="dim")
-    banner.append("\nPersonal AI Operating System", style="italic")
-    console.print(Panel(banner, border_style="cyan", padding=(1, 2)))
-    console.print("[dim]Type 'exit' or 'quit' to stop. Ctrl+C to interrupt.[/dim]\n")
+# ─── Interactive REPL ─────────────────────────────────────────────────────────
 
 
 async def repl_loop(engine: MKEngine) -> None:
     """Run the interactive REPL loop.
 
+    This is MK's primary interface. No menus, no buttons.
+    You type, MK responds. Natural language to system commands.
+
     Args:
         engine: Initialized MKEngine instance.
     """
-    print_banner()
-
     while True:
         try:
-            # Get input
+            # Prompt
             console.print("[bold cyan]MK>[/bold cyan] ", end="")
             user_input = await asyncio.get_event_loop().run_in_executor(
                 None, input, ""
             )
 
-            # Check for exit
-            if user_input.strip().lower() in ("exit", "quit", "bye"):
+            # Exit commands
+            if user_input.strip().lower() in ("exit", "quit", "bye", "shutdown"):
                 console.print("\n[cyan]MK shutting down. See you.[/cyan]")
                 break
 
-            # Skip empty input
+            # Skip empty
             if not user_input.strip():
                 continue
 
-            # Process through engine
+            # Process
             response = await engine.process(user_input)
 
-            # Display response
+            # Display
             console.print(f"\n[green]{response.final_response}[/green]")
 
-            # Show cost info if any
+            # Token/cost info
             if response.tokens_used > 0:
                 console.print(
                     f"[dim]({response.tokens_used} tokens, "
@@ -70,45 +70,113 @@ async def repl_loop(engine: MKEngine) -> None:
             console.print()
 
         except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted.[/yellow]")
+            console.print("\n[yellow]^C[/yellow]")
             continue
         except EOFError:
             console.print("\n[cyan]MK shutting down.[/cyan]")
             break
 
 
+# ─── Daemon Mode ──────────────────────────────────────────────────────────────
+
+
+async def daemon_loop(engine: MKEngine) -> None:
+    """Run MK as a background daemon.
+
+    In daemon mode, MK:
+    - Monitors system health
+    - Responds to Telegram/API messages
+    - Executes scheduled tasks
+    - Manages backups and services
+
+    Args:
+        engine: Initialized MKEngine instance.
+    """
+    import logging
+
+    logger = logging.getLogger("mk.daemon")
+    logger.info("MK daemon running. Waiting for events...")
+
+    # In daemon mode, we keep running and handle events
+    # The actual event sources (API, Telegram, timers) will be
+    # integrated as they're built out.
+    try:
+        while True:
+            await asyncio.sleep(60)
+            # Future: health check loop, event polling, etc.
+    except asyncio.CancelledError:
+        logger.info("MK daemon shutting down")
+
+
+# ─── Main Entry Point ─────────────────────────────────────────────────────────
+
+
+async def main(mode: str = "terminal", config_path: Optional[str] = None) -> None:
+    """Main async entry point for MK.
+
+    Runs the boot sequence then enters the requested mode.
+
+    Args:
+        mode: Operating mode (terminal or daemon).
+        config_path: Path to config YAML.
+    """
+    # ─── Boot ─────────────────────────────────────────────────
+    quiet = mode == "daemon"
+    settings, boot_info = await boot_sequence(
+        config_path=config_path,
+        quiet=quiet,
+        mode=mode,
+    )
+
+    # Use default settings if config failed
+    if settings is None:
+        settings = Settings()
+
+    # ─── Initialize Engine ────────────────────────────────────
+    engine = MKEngine(settings=settings)
+    engine.setup_server_management()
+
+    # Store boot info for the AI to reference
+    engine._boot_info = boot_info  # type: ignore[attr-defined]
+
+    # ─── Enter Mode ───────────────────────────────────────────
+    if mode == "terminal":
+        await repl_loop(engine)
+    elif mode == "daemon":
+        await daemon_loop(engine)
+    else:
+        console.print(f"[red]Unknown mode: {mode}[/red]")
+        sys.exit(1)
+
+
 def cli_entry() -> None:
     """CLI entry point for the 'mk' command."""
-    # Handle --help flag
-    if "--help" in sys.argv or "-h" in sys.argv:
-        console.print("[bold]MK - Personal AI Operating System[/bold]")
-        console.print("\nUsage: mk [OPTIONS]")
-        console.print("\nOptions:")
-        console.print("  --config PATH   Path to config file")
-        console.print("  --help, -h      Show this help message")
-        console.print("  --version       Show version")
-        sys.exit(0)
+    import argparse
 
-    if "--version" in sys.argv:
-        console.print("mk v0.1.0")
-        sys.exit(0)
+    parser = argparse.ArgumentParser(
+        prog="mk",
+        description="MK - Personal AI Operating System",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["terminal", "daemon"],
+        default="terminal",
+        help="Operating mode (default: terminal)",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config.yaml",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="mk v0.1.0",
+    )
 
-    # Load config
-    config_path: Optional[str] = None
-    if "--config" in sys.argv:
-        idx = sys.argv.index("--config")
-        if idx + 1 < len(sys.argv):
-            config_path = sys.argv[idx + 1]
-
-    try:
-        settings = load_config(config_path)
-    except Exception as e:
-        console.print(f"[red]Config error: {e}[/red]")
-        console.print("[dim]Using default configuration.[/dim]")
-        settings = load_config()
-
-    engine = MKEngine(settings=settings)
-    asyncio.run(repl_loop(engine))
+    args = parser.parse_args()
+    asyncio.run(main(mode=args.mode, config_path=args.config))
 
 
 if __name__ == "__main__":
