@@ -200,7 +200,8 @@ class UserManager:
             for g in groups:
                 validate_name(g, "group")
             a_flag = "-a " if append_groups else ""
-            await self._run(f"usermod {a_flag}-G {','.join(groups)} {safe_quote(username)}")
+            group_list = safe_quote(",".join(groups))
+            await self._run(f"usermod {a_flag}-G {group_list} {safe_quote(username)}")
             changes.append(f"groups={'added' if append_groups else 'set'}: {','.join(groups)}")
 
         if comment is not None:

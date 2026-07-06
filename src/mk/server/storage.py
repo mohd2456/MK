@@ -52,6 +52,21 @@ class StorageManager:
 
         return rc, out, err
 
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}" if not cmd.startswith("sudo") else cmd
+        logger.debug(f"Storage exec (stdin): {full_cmd}")
+
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
     # Pool Operations
 
     async def list_pools(self) -> ToolResult:
@@ -400,9 +415,9 @@ class StorageManager:
 
         config_block = "\n".join(config_lines) + "\n"
 
-        # Use heredoc to safely write config without interpolation issues
-        rc, out, err = await self._run(
-            f"bash -c 'cat >> /etc/samba/smb.conf << {safe_quote('MKEOF')}\n\n{config_block}MKEOF'"
+        # Write config via stdin to avoid shell interpolation issues
+        rc, _, err = await self._run_with_stdin(
+            "tee -a /etc/samba/smb.conf > /dev/null", "\n" + config_block
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write SMB config: {err}")
@@ -425,8 +440,9 @@ class StorageManager:
         """Create an NFS export."""
         export_line = f"{path} {allowed_network}({options})"
 
-        rc, out, err = await self._run(
-            f"bash -c 'cat >> /etc/exports << {safe_quote('MKEOF')}\n{export_line}\nMKEOF'"
+        # Write export via stdin to avoid shell interpolation issues
+        rc, _, err = await self._run_with_stdin(
+            "tee -a /etc/exports > /dev/null", export_line + "\n"
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write NFS export: {err}")
@@ -444,16 +460,19 @@ class StorageManager:
         """Remove a network share."""
         validate_name(name, "share name")
 
+        # Escape regex metacharacters in name for safe sed usage
+        escaped_name = name.replace(".", "\\.").replace("@", "\\@")
+
         if share_type == "smb":
             rc, out, err = await self._run(
-                f"sed -i '/\\[{name}\\]/,/^\\[/{{/^\\[{name}\\]/d;/^\\[/!d}}' /etc/samba/smb.conf"
+                f"sed -i '/\\[{escaped_name}\\]/,/^\\[/{{/^\\[{escaped_name}\\]/d;/^\\[/!d}}' /etc/samba/smb.conf"
             )
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to remove SMB share: {err}")
             await self._run("systemctl restart smbd")
         elif share_type == "nfs":
             rc, out, err = await self._run(
-                f"sed -i '\\|^{name}|d' /etc/exports"
+                f"sed -i '\\|^{escaped_name}|d' /etc/exports"
             )
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to remove NFS export: {err}")
