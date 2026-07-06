@@ -112,19 +112,141 @@ class MKEngine:
                 available_tools=self._get_tool_descriptions(),
             )
         else:
-            # No LLM provider configured
-            response = AgentResponse(
+            # No LLM — try to handle common commands directly
+            response = await self._handle_no_llm(user_input)
+
+        self.conversation.add_message(Role.ASSISTANT, response.final_response)
+        return response
+
+    async def _handle_no_llm(self, user_input: str) -> AgentResponse:
+        """Handle user input when no LLM is configured.
+
+        Tries to match common server commands by keyword.
+        Falls back to a helpful message.
+
+        Args:
+            user_input: The user's input text.
+
+        Returns:
+            AgentResponse.
+        """
+        text = user_input.strip().lower()
+
+        # Map keywords to server tool calls
+        keyword_map = {
+            "status": ("system", "overview", {}),
+            "health": ("system", "health", {}),
+            "overview": ("system", "overview", {}),
+            "containers": ("containers", "list", {}),
+            "docker": ("containers", "list", {}),
+            "storage": ("storage", "list_pools", {}),
+            "pools": ("storage", "list_pools", {}),
+            "disks": ("storage", "list_disks", {}),
+            "services": ("services", "failed", {}),
+            "failed": ("services", "failed", {}),
+            "network": ("network", "list_interfaces", {}),
+            "interfaces": ("network", "list_interfaces", {}),
+            "ip": ("homelab", "public_ip", {}),
+            "temps": ("homelab", "temperatures", {}),
+            "temperature": ("homelab", "temperatures", {}),
+            "uptime": ("system", "overview", {}),
+            "backup": ("backups", "health", {}),
+            "backups": ("backups", "health", {}),
+            "users": ("users", "list", {}),
+            "keys": ("keys", "list", {}),
+            "models": ("keys", "strategy", {}),
+            "vms": ("vms", "list", {}),
+            "lxc": ("lxc", "list", {}),
+            "speedtest": ("homelab", "speedtest", {}),
+            "rip": ("ripper", "disc_status", {}),
+            "eject": ("ripper", "eject", {}),
+            "hardware": ("system", "hardware", {}),
+            "updates": ("system", "check_updates", {}),
+        }
+
+        # Check for keyword match
+        for keyword, (domain, action, args) in keyword_map.items():
+            if keyword in text:
+                # Try to execute via server tool
+                if "server" in self._tools:
+                    try:
+                        result = await self._tools["server"](
+                            domain=domain, action=action, args=args
+                        )
+                        output = getattr(result, "output", str(result))
+                        return AgentResponse(
+                            steps=[],
+                            final_response=output,
+                            tokens_used=0,
+                            cost=0.0,
+                        )
+                    except Exception as e:
+                        return AgentResponse(
+                            steps=[],
+                            final_response=f"Error: {str(e)}",
+                            tokens_used=0,
+                            cost=0.0,
+                        )
+
+        # Greetings
+        greetings = ("hello", "hi", "hey", "sup", "yo")
+        if text in greetings or text.rstrip("!") in greetings:
+            return AgentResponse(
                 steps=[],
                 final_response=(
-                    "No LLM provider configured. "
-                    "Please add a provider to config.yaml."
+                    "Hey. MK is running but no AI provider is configured.\n"
+                    "I can still run direct commands. Try:\n"
+                    "  status, containers, storage, services, network,\n"
+                    "  backup, hardware, temps, speedtest, users, keys\n\n"
+                    "To add AI: /setkey your-api-key (from Telegram)\n"
+                    "Or edit /etc/mk/config.yaml"
                 ),
                 tokens_used=0,
                 cost=0.0,
             )
 
-        self.conversation.add_message(Role.ASSISTANT, response.final_response)
-        return response
+        # Help
+        if text in ("help", "?", "commands"):
+            return AgentResponse(
+                steps=[],
+                final_response=(
+                    "MK OS — Available without AI:\n\n"
+                    "  status       — System overview\n"
+                    "  health       — Full health report\n"
+                    "  containers   — Docker containers\n"
+                    "  storage      — ZFS pools\n"
+                    "  services     — Failed services\n"
+                    "  network      — Network interfaces\n"
+                    "  backup       — Backup health\n"
+                    "  hardware     — Hardware info\n"
+                    "  temps        — Temperatures\n"
+                    "  speedtest    — Internet speed\n"
+                    "  users        — User accounts\n"
+                    "  vms          — Virtual machines\n"
+                    "  lxc          — LXC containers\n"
+                    "  keys         — API keys configured\n"
+                    "  rip          — Disc ripper status\n"
+                    "  eject        — Eject disc\n"
+                    "  updates      — Check for updates\n\n"
+                    "For full natural language: add an API key.\n"
+                    "  /setkey your-key (from Telegram)\n"
+                    "  Or edit /etc/mk/config.yaml"
+                ),
+                tokens_used=0,
+                cost=0.0,
+            )
+
+        # Default: no match
+        return AgentResponse(
+            steps=[],
+            final_response=(
+                f"No AI configured — can't process: \"{user_input}\"\n"
+                "Type 'help' to see what works without AI,\n"
+                "or add a key: /setkey your-api-key"
+            ),
+            tokens_used=0,
+            cost=0.0,
+        )
 
     async def _handle_direct_command(
         self, tool_name: str, tool_args: Dict[str, str]
