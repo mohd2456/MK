@@ -103,6 +103,9 @@ class TestServerPublicAPI:
             "ServiceManager",
             "BackupManager",
             "UserManager",
+            "VMManager",
+            "LXCManager",
+            "HomelabManager",
             "ServerTool",
             "create_server_tools",
         }

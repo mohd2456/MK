@@ -12,10 +12,13 @@ from mk.tools.base import ToolResult
 from ._shell import safe_quote, validate_name
 from .backups import BackupManager
 from .containers import ContainerManager
+from .homelab import HomelabManager
+from .lxc import LXCManager
 from .network import NetworkManager
 from .services import ServiceManager
 from .storage import StorageManager
 from .users import UserManager
+from .vms import VMManager
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,9 @@ class ServerManager:
             state_dir=backup_state_dir,
         )
         self.users = UserManager(sudo=sudo)
+        self.vms = VMManager()
+        self.lxc = LXCManager()
+        self.homelab = HomelabManager()
 
         self._sudo = sudo
         self._cmd_prefix = "sudo " if sudo else ""

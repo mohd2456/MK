@@ -157,6 +157,69 @@ USER_ACTIONS = {
     "unlock": "unlock_account",
 }
 
+VM_ACTIONS = {
+    "list": "list_vms",
+    "info": "vm_info",
+    "create": "create_vm",
+    "start": "start_vm",
+    "stop": "stop_vm",
+    "reboot": "reboot_vm",
+    "pause": "pause_vm",
+    "resume": "resume_vm",
+    "delete": "delete_vm",
+    "list_snapshots": "list_snapshots",
+    "create_snapshot": "create_snapshot",
+    "revert_snapshot": "revert_snapshot",
+    "delete_snapshot": "delete_snapshot",
+    "set_vcpus": "set_vcpus",
+    "set_memory": "set_memory",
+    "add_disk": "add_disk",
+    "clone": "clone_vm",
+    "console": "console_info",
+    "autostart": "set_autostart",
+}
+
+LXC_ACTIONS = {
+    "list": "list_containers",
+    "info": "container_info",
+    "create": "create_container",
+    "start": "start_container",
+    "stop": "stop_container",
+    "restart": "restart_container",
+    "destroy": "destroy_container",
+    "exec": "exec_command",
+    "list_snapshots": "list_snapshots",
+    "create_snapshot": "create_snapshot",
+    "restore_snapshot": "restore_snapshot",
+    "clone": "clone_container",
+    "autostart": "set_autostart",
+    "set_memory": "set_memory_limit",
+    "set_cpu": "set_cpu_limit",
+    "add_mount": "add_mount",
+}
+
+HOMELAB_ACTIONS = {
+    "wake": "wake_machine",
+    "ups_status": "ups_status",
+    "ups_battery": "ups_battery_percent",
+    "proxy_status": "proxy_status",
+    "add_proxy": "add_proxy_site",
+    "remove_proxy": "remove_proxy_site",
+    "ddns_status": "ddns_status",
+    "ddns_update": "ddns_update_now",
+    "public_ip": "get_public_ip",
+    "temperatures": "system_temperatures",
+    "speedtest": "speedtest",
+    "top_processes": "top_processes",
+    "check_port": "check_port_open",
+    "list_certs": "list_certs",
+    "renew_certs": "renew_certs",
+    "list_cron": "list_cron_jobs",
+    "disk_health": "disk_health_summary",
+    "suspend": "suspend_system",
+    "schedule_wake": "schedule_wake",
+}
+
 
 class ServerTool(Tool):
     """Unified server management tool.
@@ -174,13 +237,13 @@ class ServerTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Manage the server: storage (ZFS pools, datasets, snapshots, shares), "
-            "containers (Docker lifecycle, compose stacks), "
-            "network (interfaces, firewall, DNS, WireGuard VPN), "
-            "services (systemd units, timers, logs), "
-            "backups (scheduled jobs, restore points, replication), "
-            "users (accounts, groups, SSH keys, ACLs), "
-            "and system (overview, health, power, updates, hardware)."
+            "Manage the server: storage (ZFS), containers (Docker), "
+            "vms (KVM/QEMU via libvirt), lxc (system containers), "
+            "network (interfaces, firewall, DNS, VPN), "
+            "services (systemd), backups (snapshots, replication), "
+            "users (accounts, SSH keys, ACLs), "
+            "homelab (WoL, UPS, reverse proxy, DDNS, monitoring), "
+            "and system (overview, health, power, updates)."
         )
 
     @property
@@ -191,8 +254,8 @@ class ServerTool(Tool):
                 "domain": {
                     "type": "string",
                     "enum": [
-                        "system", "storage", "containers",
-                        "network", "services", "backups", "users",
+                        "system", "storage", "containers", "vms", "lxc",
+                        "network", "services", "backups", "users", "homelab",
                     ],
                     "description": "Server management domain",
                 },
@@ -224,10 +287,13 @@ class ServerTool(Tool):
             "system": (self._mgr, SYSTEM_ACTIONS),
             "storage": (self._mgr.storage, STORAGE_ACTIONS),
             "containers": (self._mgr.containers, CONTAINER_ACTIONS),
+            "vms": (self._mgr.vms, VM_ACTIONS),
+            "lxc": (self._mgr.lxc, LXC_ACTIONS),
             "network": (self._mgr.network, NETWORK_ACTIONS),
             "services": (self._mgr.services, SERVICE_ACTIONS),
             "backups": (self._mgr.backups, BACKUP_ACTIONS),
             "users": (self._mgr.users, USER_ACTIONS),
+            "homelab": (self._mgr.homelab, HOMELAB_ACTIONS),
         }
 
         entry = domain_map.get(domain)
