@@ -31,8 +31,9 @@ class TestValidateName:
     def test_accepts_device_path(self):
         assert validate_name("/dev/sda", "disk") == "/dev/sda"
 
-    def test_accepts_name_with_spaces(self):
-        assert validate_name("my share", "share") == "my share"
+    def test_rejects_name_with_spaces(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            validate_name("my share", "share")
 
     def test_accepts_numeric_start(self):
         assert validate_name("1pool", "pool") == "1pool"

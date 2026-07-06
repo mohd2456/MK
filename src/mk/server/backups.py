@@ -226,9 +226,9 @@ WantedBy=timers.target
         await self._run(f"systemctl stop mk-backup-{safe_quote(name)}.timer", check=False)
         await self._run(f"systemctl disable mk-backup-{safe_quote(name)}.timer", check=False)
 
-        await self._run(f"rm -f /etc/systemd/system/mk-backup-{name}.service", check=False)
-        await self._run(f"rm -f /etc/systemd/system/mk-backup-{name}.timer", check=False)
-        await self._run(f"rm -f {safe_quote(self._config_dir)}/{name}.json", check=False)
+        await self._run(f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.service')}", check=False)
+        await self._run(f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.timer')}", check=False)
+        await self._run(f"rm -f {safe_quote(f'{self._config_dir}/{name}.json')}", check=False)
         await self._run("systemctl daemon-reload")
 
         return ToolResult(

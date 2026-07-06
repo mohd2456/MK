@@ -44,6 +44,21 @@ class ContainerManager:
 
         return rc, out, err
 
+    async def _run_with_stdin(self, cmd: str, input_data: str) -> Tuple[int, str, str]:
+        """Execute a shell command with data passed via stdin."""
+        full_cmd = f"{self._cmd_prefix}{cmd}"
+        logger.debug(f"Container exec (stdin): {full_cmd}")
+
+        proc = await asyncio.create_subprocess_shell(
+            full_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=input_data.encode())
+        rc = proc.returncode or 0
+        return rc, stdout.decode().strip(), stderr.decode().strip()
+
     # Container Lifecycle
 
     async def list_containers(self, all_containers: bool = True) -> ToolResult:
@@ -239,7 +254,7 @@ class ContainerManager:
         cmd_parts.append(safe_quote(image))
 
         if command:
-            cmd_parts.append(command)
+            cmd_parts.append(safe_quote(command))
 
         full_cmd = " ".join(cmd_parts)
         rc, out, err = await self._run(full_cmd)
@@ -301,8 +316,8 @@ class ContainerManager:
             return ToolResult(success=False, error=f"Failed to create stack dir: {err}")
 
         compose_path = f"{stack_dir}/docker-compose.yml"
-        rc, _, err = await self._run(
-            f"cat > {safe_quote(compose_path)} << 'MKEOF'\n{compose_content}\nMKEOF"
+        rc, _, err = await self._run_with_stdin(
+            f"tee {safe_quote(compose_path)} > /dev/null", compose_content
         )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write compose file: {err}")
@@ -310,8 +325,8 @@ class ContainerManager:
         if env_vars:
             env_content = "\n".join(f"{k}={v}" for k, v in env_vars.items())
             env_path = f"{stack_dir}/.env"
-            rc, _, err = await self._run(
-                f"cat > {safe_quote(env_path)} << 'MKEOF'\n{env_content}\nMKEOF"
+            rc, _, err = await self._run_with_stdin(
+                f"tee {safe_quote(env_path)} > /dev/null", env_content
             )
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to write .env: {err}")

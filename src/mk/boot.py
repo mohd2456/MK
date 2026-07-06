@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+import shlex
 import sys
 import time
 from datetime import datetime
@@ -335,7 +336,7 @@ async def probe_ai(settings: Optional[Settings]) -> BootPhase:
         from urllib.parse import urlparse
         parsed = urlparse(primary.endpoint)
         host = parsed.hostname or ""
-        rc, _ = await _run_cmd(f"getent hosts {host} 2>/dev/null")
+        rc, _ = await _run_cmd(f"getent hosts {shlex.quote(host)} 2>/dev/null")
         if rc == 0:
             phase.ok(f"{primary.name}/{primary.model}")
         else:
