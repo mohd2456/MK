@@ -186,3 +186,117 @@ export function useSystemServices() {
     { refreshInterval: DATA_REFRESH_INTERVAL }
   );
 }
+
+
+
+// ─── V2: Storage (real data) ─────────────────────────────────
+
+const fetcherV2 = <T>(endpoint: string): Promise<T> => {
+  const url = `/api/v2${endpoint}`;
+  return fetch(url, { credentials: "include" }).then((r) => {
+    if (!r.ok) throw new Error(`API Error ${r.status}`);
+    return r.json();
+  });
+};
+
+export function useStoragePools() {
+  return useSWR("v2-storage-pools", () => fetcherV2("/storage/pools"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useStorageDatasets() {
+  return useSWR("v2-storage-datasets", () => fetcherV2("/storage/datasets"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useStorageDisks() {
+  return useSWR("v2-storage-disks", () => fetcherV2("/storage/disks"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useStorageSnapshots() {
+  return useSWR("v2-storage-snapshots", () => fetcherV2("/storage/snapshots"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+// ─── V2: Network ─────────────────────────────────────────────
+
+export function useNetworkInterfacesV2() {
+  return useSWR("v2-network-interfaces", () => fetcherV2("/network/interfaces"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+// ─── V2: Media Manager ───────────────────────────────────────
+
+export function useDropFolders() {
+  return useSWR("v2-drop-folders", () => fetcherV2("/media-manager/folders"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useProcessingQueue() {
+  return useSWR("v2-processing-queue", () => fetcherV2("/media-manager/queue"), {
+    refreshInterval: METRICS_REFRESH_INTERVAL,
+  });
+}
+
+export function useDropStats() {
+  return useSWR("v2-drop-stats", () => fetcherV2("/media-manager/stats"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useDropHistory() {
+  return useSWR("v2-drop-history", () => fetcherV2("/media-manager/history"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+// ─── V2: Protection ──────────────────────────────────────────
+
+export function useBackupJobs() {
+  return useSWR("v2-backup-jobs", () => fetcherV2("/protection/jobs"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useProtectionSnapshots() {
+  return useSWR("v2-protection-snapshots", () => fetcherV2("/protection/snapshots"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+// ─── V2: Docker Stacks ───────────────────────────────────────
+
+export function useDockerStacks() {
+  return useSWR("v2-stacks", () => fetcherV2("/stacks"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+// ─── V2: System Updates ──────────────────────────────────────
+
+export function useSystemUpdates() {
+  return useSWR("v2-system-updates", () => fetcherV2("/system/updates"), {
+    refreshInterval: 60_000,
+  });
+}
+
+// ─── V2: Media/Disc ──────────────────────────────────────────
+
+export function useDiscStatus() {
+  return useSWR("v2-disc-status", () => fetcherV2("/media/disc"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}
+
+export function useMediaLibrary() {
+  return useSWR("v2-media-library", () => fetcherV2("/media/library"), {
+    refreshInterval: DATA_REFRESH_INTERVAL,
+  });
+}

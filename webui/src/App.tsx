@@ -19,6 +19,7 @@ import { MediaManagerPage } from "@/pages/MediaManagerPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { useAuthStore } from "@/stores/authStore";
 import { KeysPage } from "@/pages/KeysPage";
+import { ToastContainer } from "@/components/ui/toast";
 /**
  * Route guard: redirects to login if not authenticated.
  */
@@ -57,6 +58,7 @@ export default function App() {
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ToastContainer />
     </BrowserRouter>
   );
 }

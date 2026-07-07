@@ -22,6 +22,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   useSystemInfo,
   useContainers,
+  useSystemUpdates,
   restartContainer,
   stopContainer,
   startContainer,
@@ -39,9 +40,11 @@ function formatUptime(seconds: number): string {
 export function SystemPage() {
   const { data: sysInfo, isLoading: sysLoading, mutate: mutateSys } = useSystemInfo();
   const { data: containersData, isLoading: ctLoading, mutate: mutateCt } = useContainers();
+  const { data: updatesData } = useSystemUpdates();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const containers = containersData?.containers ?? [];
+  const updates = (updatesData as any)?.updates ?? [];
 
   async function handleContainerAction(
     name: string,
@@ -82,6 +85,7 @@ export function SystemPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="updates">Updates</TabsTrigger>
           <TabsTrigger value="power">Power</TabsTrigger>
         </TabsList>
 
@@ -223,6 +227,41 @@ export function SystemPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+        </TabsContent>
+
+        {/* Updates — Real from apt/dnf */}
+        <TabsContent value="updates">
+          {updates.length === 0 ? (
+            <Card><CardContent className="p-6 text-center text-mk-text-muted">
+              <p className="text-sm">System is up to date. No updates available.</p>
+            </CardContent></Card>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-mk-text-secondary">
+                Available updates: <span className="text-mk-text-primary font-medium">{updates.length} packages</span>
+              </p>
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Package</TableHead><TableHead>Current</TableHead>
+                  <TableHead>Available</TableHead><TableHead>Priority</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {updates.map((upd: any) => (
+                    <TableRow key={upd.package}>
+                      <TableCell className="font-medium text-mk-text-primary font-mono">{upd.package}</TableCell>
+                      <TableCell className="font-mono text-xs">{upd.current}</TableCell>
+                      <TableCell className="font-mono text-xs text-mk-accent">{upd.available}</TableCell>
+                      <TableCell>
+                        <Badge variant={upd.priority === "security" ? "error" : upd.priority === "bugfix" ? "info" : "default"}>
+                          {upd.priority}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </TabsContent>
 

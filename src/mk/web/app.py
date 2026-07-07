@@ -225,6 +225,10 @@ def create_app(
     _register_keys_routes(app)
     _register_websocket(app)
 
+    # Register V2 routes (real data for storage, network, media manager, etc.)
+    from mk.web.routes_v2 import router as v2_router
+    app.include_router(v2_router, dependencies=[Depends(require_auth)])
+
     # Serve static frontend (if build exists)
     if static_dir is None:
         # Check env var first (set during deployment), then fall back to repo-relative path
