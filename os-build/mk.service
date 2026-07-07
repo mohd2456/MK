@@ -9,7 +9,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/mk
-ExecStart=/usr/bin/python3 -m mk.main --mode daemon
+ExecStart=/usr/bin/python3 -m mk.main --mode daemon --config /etc/mk/config.yaml
 Restart=always
 RestartSec=5
 TimeoutStartSec=30
@@ -20,11 +20,15 @@ Environment=MK_HOME=/opt/mk
 Environment=MK_CONFIG=/etc/mk/config.yaml
 Environment=MK_DATA=/var/lib/mk
 Environment=MK_LOG=/var/log/mk
+Environment=PYTHONUNBUFFERED=1
 
 # Security hardening
+# NOTE: ProtectHome=no is required because code may fall back to ~/.mk/
+# for secrets, memory, and plugins if MK_DATA paths don't exist yet.
+# The primary data path is /var/lib/mk (set via MK_DATA env var).
+ProtectHome=no
 ProtectSystem=strict
-ReadWritePaths=/var/lib/mk /var/log/mk /tmp
-ProtectHome=yes
+ReadWritePaths=/var/lib/mk /var/log/mk /etc/mk /tmp /opt/mk
 PrivateTmp=yes
 NoNewPrivileges=yes
 

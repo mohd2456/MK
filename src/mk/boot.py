@@ -353,7 +353,15 @@ async def probe_memory() -> BootPhase:
     phase = BootPhase("memory", "Memory")
     start = time.time()
 
-    memory_path = Path.home() / ".mk" / "memory"
+    # Check memory path: MK_DATA env → /var/lib/mk/memory → ~/.mk/memory
+    mk_data = os.environ.get("MK_DATA")
+    if mk_data:
+        memory_path = Path(mk_data) / "memory"
+    elif Path("/var/lib/mk/memory").exists():
+        memory_path = Path("/var/lib/mk/memory")
+    else:
+        memory_path = Path.home() / ".mk" / "memory"
+
     if memory_path.exists():
         # Count memory files
         files = list(memory_path.glob("**/*.json"))
@@ -375,8 +383,12 @@ async def probe_gateway() -> BootPhase:
     if rc == 0 and out:
         phase.ok("Telegram bridge active")
     else:
-        # Check if it should be running
-        gateway_dir = Path("/opt/mk/gateway")
+        # Check if it should be running — check MK_HOME env, then /opt/mk/gateway
+        mk_home = os.environ.get("MK_HOME", "/opt/mk")
+        gateway_dir = Path(mk_home) / "gateway"
+        if not gateway_dir.exists():
+            gateway_dir = Path("/opt/mk/gateway")
+
         if gateway_dir.exists():
             phase.warn("Gateway installed but not running")
         else:

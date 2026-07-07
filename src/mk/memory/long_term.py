@@ -8,6 +8,7 @@ Includes relevance scoring for intelligent memory retrieval.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,12 +29,22 @@ class LongTermMemory:
 
         Args:
             storage_path: Path to the directory for storing memory files.
-                If None, uses ~/.mk/memory as default.
+                Resolution order:
+                    1. Explicit storage_path argument
+                    2. MK_DATA env var + /memory
+                    3. /var/lib/mk/memory (deployed install)
+                    4. ~/.mk/memory (development fallback)
         """
         if storage_path:
             self._storage_path = Path(storage_path)
         else:
-            self._storage_path = Path.home() / ".mk" / "memory"
+            mk_data = os.environ.get("MK_DATA")
+            if mk_data:
+                self._storage_path = Path(mk_data) / "memory"
+            elif Path("/var/lib/mk/memory").exists() or Path("/var/lib/mk").exists():
+                self._storage_path = Path("/var/lib/mk/memory")
+            else:
+                self._storage_path = Path.home() / ".mk" / "memory"
         self._knowledge: Dict[str, UserKnowledge] = {}
         self._loaded = False
 

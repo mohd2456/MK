@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import logging
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -98,12 +99,29 @@ class PluginLoader:
 
         Args:
             plugin_dirs: List of directories to scan for plugins.
-                Defaults to [~/.mk/plugins/].
+                Resolution order for defaults:
+                    1. MK_HOME env var + /plugins
+                    2. /opt/mk/plugins (deployed install)
+                    3. ~/.mk/plugins (development fallback)
         """
         if plugin_dirs:
             self._plugin_dirs = [Path(d) for d in plugin_dirs]
         else:
-            self._plugin_dirs = [Path.home() / ".mk" / "plugins"]
+            dirs: List[Path] = []
+            mk_home = os.environ.get("MK_HOME")
+            if mk_home:
+                dirs.append(Path(mk_home) / "plugins")
+            if Path("/opt/mk/plugins").exists():
+                dirs.append(Path("/opt/mk/plugins"))
+            dirs.append(Path.home() / ".mk" / "plugins")
+            # Deduplicate while preserving order
+            seen: set = set()
+            self._plugin_dirs = []
+            for d in dirs:
+                resolved = d.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    self._plugin_dirs.append(d)
 
     @property
     def plugin_dirs(self) -> List[Path]:

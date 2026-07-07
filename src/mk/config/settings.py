@@ -7,6 +7,7 @@ and Telegram integration configuration.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -156,9 +157,16 @@ class Settings(BaseModel):
 def load_config(config_path: Optional[str] = None) -> Settings:
     """Load configuration from a YAML file.
 
+    Search order:
+        1. Explicit config_path argument
+        2. MK_CONFIG environment variable
+        3. /etc/mk/config.yaml (deployed install)
+        4. ~/.mk/config.yaml (user-level)
+        5. config.yaml in current directory (development)
+
     Args:
-        config_path: Path to the YAML config file. If None, looks for
-            config.yaml in ~/.mk/ and current directory.
+        config_path: Path to the YAML config file. If None, searches
+            standard locations in priority order.
 
     Returns:
         Validated Settings instance.
@@ -172,7 +180,13 @@ def load_config(config_path: Optional[str] = None) -> Settings:
     if config_path:
         search_paths.append(Path(config_path))
     else:
+        # Check MK_CONFIG env var first (set by systemd service)
+        env_config = os.environ.get("MK_CONFIG")
+        if env_config:
+            search_paths.append(Path(env_config))
+
         search_paths.extend([
+            Path("/etc/mk/config.yaml"),
             Path.home() / ".mk" / "config.yaml",
             Path("config.yaml"),
         ])

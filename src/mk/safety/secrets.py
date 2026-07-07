@@ -43,13 +43,26 @@ class SecretsManager:
 
         Args:
             secrets_dir: Directory to store encrypted secrets.
-                Defaults to ~/.mk/secrets/.
+                Resolution order:
+                    1. Explicit secrets_dir argument
+                    2. MK_DATA env var + /secrets
+                    3. /var/lib/mk/secrets (deployed install)
+                    4. ~/.mk/secrets (development fallback)
             passphrase: Master passphrase for encryption. If None,
                 reads from MK_SECRETS_PASSPHRASE environment variable.
         """
-        self._secrets_dir = Path(
-            secrets_dir or os.path.expanduser("~/.mk/secrets")
-        )
+        if secrets_dir:
+            resolved_dir = secrets_dir
+        else:
+            mk_data = os.environ.get("MK_DATA")
+            if mk_data:
+                resolved_dir = os.path.join(mk_data, "secrets")
+            elif Path("/var/lib/mk/secrets").exists() or Path("/var/lib/mk").exists():
+                resolved_dir = "/var/lib/mk/secrets"
+            else:
+                resolved_dir = os.path.expanduser("~/.mk/secrets")
+
+        self._secrets_dir = Path(resolved_dir)
         self._secrets_dir.mkdir(parents=True, exist_ok=True)
 
         self._secrets_path = self._secrets_dir / "vault.enc"
