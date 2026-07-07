@@ -91,7 +91,7 @@ def print_boot_header() -> None:
     console.print("[bold cyan]  ██║ ╚═╝ ██║██║  ██╗[/bold cyan]")
     console.print("[bold cyan]  ╚═╝     ╚═╝╚═╝  ╚═╝[/bold cyan]")
     console.print()
-    console.print("  [bold]MK OS[/bold] [dim]v0.1.0[/dim]")
+    console.print("  [bold]MK OS[/bold] [dim]v2.0.0[/dim]")
     console.print("  [dim]Personal AI Operating System[/dim]")
     console.print()
     console.print("  [dim]─────────────────────────────────────────[/dim]")
