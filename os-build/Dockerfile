@@ -47,6 +47,7 @@ RUN mkdir -p /opt/mk /var/lib/mk /var/log/mk /etc/mk
 COPY src/ /opt/mk/src/
 COPY pyproject.toml /opt/mk/
 COPY gateway/ /opt/mk/gateway/
+COPY webui/ /opt/mk/webui/
 
 # Install MK Python dependencies
 WORKDIR /opt/mk
@@ -56,8 +57,13 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir .
 WORKDIR /opt/mk/gateway
 RUN pnpm install --prod && pnpm build || true
 
+# Build the Web UI frontend
+WORKDIR /opt/mk/webui
+RUN pnpm install && pnpm build || true
+
 # Copy system configuration
 COPY os-build/mk.service /etc/systemd/system/mk.service
+COPY os-build/mk-web.service /etc/systemd/system/mk-web.service
 COPY os-build/motd /etc/motd
 COPY os-build/mk-shell.sh /usr/local/bin/mk-shell
 RUN chmod +x /usr/local/bin/mk-shell
@@ -69,6 +75,11 @@ RUN echo "mk" > /etc/hostname
 RUN systemctl enable mk.service 2>/dev/null || \
     ln -sf /etc/systemd/system/mk.service \
     /etc/systemd/system/multi-user.target.wants/mk.service
+
+# Enable MK Web service
+RUN systemctl enable mk-web.service 2>/dev/null || \
+    ln -sf /etc/systemd/system/mk-web.service \
+    /etc/systemd/system/multi-user.target.wants/mk-web.service
 
 WORKDIR /opt/mk
 CMD ["/usr/bin/python3", "-m", "mk.main", "--mode", "daemon"]

@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+/*
+ * MK OS Design System
+ * ====================
+ * Dark-first color palette with blue-tinted backgrounds
+ * and cyan accent. Every color chosen for dark backgrounds.
+ */
+
+@theme {
+  /* ─── Background Layers (darkest to lightest) ─── */
+  --color-mk-base: #0a0a0f;
+  --color-mk-surface: #12121a;
+  --color-mk-elevated: #1a1a2e;
+  --color-mk-overlay: #1e1e32;
+
+  /* ─── Borders ─── */
+  --color-mk-border: #2a2a3e;
+  --color-mk-border-strong: #3a3a5e;
+
+  /* ─── Text Hierarchy ─── */
+  --color-mk-text-primary: #f0f0f5;
+  --color-mk-text-secondary: #9090a8;
+  --color-mk-text-muted: #5a5a72;
+
+  /* ─── Accent (MK Brand Cyan) ─── */
+  --color-mk-accent: #00d4ff;
+  --color-mk-accent-hover: #33ddff;
+  --color-mk-accent-muted: #00d4ff20;
+
+  /* ─── Status Colors ─── */
+  --color-mk-success: #00e676;
+  --color-mk-warning: #ffab00;
+  --color-mk-error: #ff5252;
+  --color-mk-info: #448aff;
+
+  /* ─── Chat Bubble Colors ─── */
+  --color-mk-chat-user: #1a2a3a;
+  --color-mk-chat-mk: #0a1a2a;
+  --color-mk-chat-border: #2a3a4a;
+
+  /* ─── Spacing Tokens ─── */
+  --spacing-page: 24px;
+  --spacing-card: 16px;
+  --spacing-gap: 12px;
+  --spacing-tight: 8px;
+
+  /* ─── Border Radius ─── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ─── Shadows (subtle blue-tinted for dark theme) ─── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+  --shadow-accent: 0 0 20px rgba(0, 212, 255, 0.15);
+
+  /* ─── Transitions ─── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* ─── Z-Index Layers ─── */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --z-tooltip: 500;
+
+  /* ─── Font Family ─── */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Fira Code", monospace;
+}
+
+/* ─── Global Styles ─── */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-mk-base);
+  color: var(--color-mk-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* ─── Scrollbar Styling ─── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-mk-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-mk-border-strong);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-mk-border) transparent;
+}
+
+/* ─── Selection ─── */
+
+::selection {
+  background-color: var(--color-mk-accent-muted);
+  color: var(--color-mk-accent);
+}
+
+/* ─── Focus Ring ─── */
+
+:focus-visible {
+  outline: 2px solid var(--color-mk-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Utility Classes ─── */
+
+@utility text-gradient {
+  background: linear-gradient(135deg, var(--color-mk-accent), #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@utility glow-accent {
+  box-shadow: var(--shadow-accent);
+}
+
+@utility animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@utility animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@utility animate-slide-up {
+  animation: slide-up 0.2s ease-out;
+}

@@ -176,6 +176,15 @@ class MKEngineV2(MKEngine):
         if self.settings.tailscale.enabled:
             summary["subsystems"]["tailscale"] = await self._init_tailscale()
 
+            # Auto-expose Web UI on tailnet via Tailscale Serve
+            try:
+                from mk.server.network import NetworkManager
+                nm = NetworkManager(sudo=True)
+                await nm.tailscale_serve(port=8080, path="/")
+                logger.info("Web UI exposed on tailnet via Tailscale Serve (port 8080)")
+            except Exception as e:
+                logger.debug(f"Tailscale Serve for Web UI skipped: {e}")
+
         self._initialized = True
         logger.info(f"MK Engine V2 initialized: {summary}")
         return summary
