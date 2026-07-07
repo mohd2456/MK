@@ -1,8 +1,8 @@
 [project]
 name = "mk"
-version = "0.1.0"
+version = "2.0.0"
 description = "MK - Personal AI Operating System"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
     { name = "MK", email = "mk@localhost" },
@@ -16,6 +16,7 @@ dependencies = [
     "rich>=13.0",
     "aiofiles>=23.0",
     "aiohttp>=3.9.0",
+    "numpy>=1.24.0",
 ]
 
 [project.scripts]
@@ -33,7 +34,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 
 [project.optional-dependencies]
