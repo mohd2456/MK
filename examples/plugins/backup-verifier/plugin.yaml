@@ -1,0 +1,65 @@
+name: backup-verifier
+version: "0.2.0"
+description: "Verifies backup integrity by restoring random files and checking checksums"
+author: "MK"
+
+tools:
+  - name: verify_latest
+    description: "Verify the latest backup by restoring and checksumming random files"
+    parameters:
+      type: object
+      properties:
+        pool:
+          type: string
+          description: "Backup pool or target to verify (e.g., 'tank/backups')"
+        sample_count:
+          type: integer
+          description: "Number of random files to verify"
+          default: 5
+      required:
+        - pool
+
+  - name: check_age
+    description: "Check if backups are stale (older than threshold)"
+    parameters:
+      type: object
+      properties:
+        max_age_hours:
+          type: integer
+          description: "Maximum acceptable age in hours"
+          default: 24
+      required: []
+
+  - name: list_backups
+    description: "List all available backup snapshots with timestamps"
+    parameters:
+      type: object
+      properties:
+        pool:
+          type: string
+          description: "Pool to list backups for"
+        limit:
+          type: integer
+          description: "Max number to list"
+          default: 10
+      required: []
+
+permissions:
+  - "filesystem:read"
+  - "shell:exec"
+  - "ssh:connect"
+
+triggers:
+  - event: "schedule:nightly"
+    tool: verify_latest
+    args:
+      pool: "tank/backups"
+      sample_count: 3
+  - event: "schedule:hourly"
+    tool: check_age
+    args:
+      max_age_hours: 24
+
+timeout_seconds: 120
+max_memory_mb: 128
+enabled: true
