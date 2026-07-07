@@ -2,9 +2,11 @@
  * SystemPage
  * ===========
  * System info, services, updates, power controls, and AI configuration.
+ * Fetches real data from API instead of mock.
  */
 
-import { RefreshCw, Power, RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { RefreshCw, Power, RotateCcw, Play, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -17,48 +19,61 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn, formatBytes } from "@/lib/utils";
+import {
+  useSystemInfo,
+  useContainers,
+  restartContainer,
+  stopContainer,
+  startContainer,
+} from "@/hooks/useApi";
 
-// Mock data
-const systemInfo = {
-  hostname: "mk-server",
-  os: "MK OS 1.0 (Debian 12 base)",
-  kernel: "6.6.10-amd64",
-  uptime: "47 days 3 hours",
-  cpu: "AMD Ryzen 9 7950X (16C/32T)",
-  ram: "64 GB DDR5-5600 (32 GB used)",
-  bootDrive: "Samsung 980 Pro 500GB (NVMe)",
-};
-
-const services = [
-  { name: "docker", status: "running", cpu: 2, ram: 4.2 * 1024 ** 3, uptime: "47d", description: "Docker Engine" },
-  { name: "samba", status: "running", cpu: 0, ram: 128 * 1024 ** 2, uptime: "47d", description: "Samba File Sharing" },
-  { name: "nfs-server", status: "running", cpu: 0, ram: 64 * 1024 ** 2, uptime: "47d", description: "NFS Server" },
-  { name: "wireguard", status: "running", cpu: 0, ram: 12 * 1024 ** 2, uptime: "47d", description: "WireGuard VPN" },
-  { name: "mk-api", status: "running", cpu: 1, ram: 256 * 1024 ** 2, uptime: "2d", description: "MK OS API Server" },
-  { name: "nginx", status: "running", cpu: 0, ram: 48 * 1024 ** 2, uptime: "47d", description: "Nginx Reverse Proxy" },
-  { name: "cron", status: "running", cpu: 0, ram: 8 * 1024 ** 2, uptime: "47d", description: "Cron Scheduler" },
-];
-
-const updates = [
-  { pkg: "linux-image", current: "6.6.8", available: "6.6.10", priority: "security" },
-  { pkg: "docker-ce", current: "24.0.7", available: "25.0.1", priority: "feature" },
-  { pkg: "mk-server", current: "1.0.2", available: "1.0.3", priority: "bugfix" },
-];
-
-const priorityBadge: Record<string, "error" | "accent" | "info"> = {
-  security: "error",
-  feature: "accent",
-  bugfix: "info",
-};
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days} days ${hours} hours`;
+  if (hours > 0) return `${hours} hours ${mins} min`;
+  return `${mins} min`;
+}
 
 export function SystemPage() {
+  const { data: sysInfo, isLoading: sysLoading, mutate: mutateSys } = useSystemInfo();
+  const { data: containersData, isLoading: ctLoading, mutate: mutateCt } = useContainers();
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const containers = containersData?.containers ?? [];
+
+  async function handleContainerAction(
+    name: string,
+    action: "restart" | "stop" | "start"
+  ) {
+    setActionLoading(`${name}-${action}`);
+    try {
+      if (action === "restart") await restartContainer(name);
+      else if (action === "stop") await stopContainer(name);
+      else await startContainer(name);
+      // Refresh the container list
+      await mutateCt();
+    } catch (e) {
+      console.error(`Failed to ${action} ${name}:`, e);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-mk-text-primary">System</h1>
-        <Button variant="secondary" size="sm">
-          <RefreshCw size={14} />
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            mutateSys();
+            mutateCt();
+          }}
+        >
+          <RefreshCw size={14} className={sysLoading || ctLoading ? "animate-spin" : ""} />
           Refresh
         </Button>
       </div>
@@ -67,107 +82,140 @@ export function SystemPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="services">Services</TabsTrigger>
-          <TabsTrigger value="updates">Updates</TabsTrigger>
           <TabsTrigger value="power">Power</TabsTrigger>
-          <TabsTrigger value="ai">AI Settings</TabsTrigger>
         </TabsList>
 
-        {/* System Overview */}
+        {/* System Overview — Real data from /api/v1/system/info */}
         <TabsContent value="overview">
           <Card>
             <CardContent className="p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-8">
-                {Object.entries(systemInfo).map(([key, value]) => (
-                  <div key={key} className="flex items-baseline gap-2">
-                    <span className="text-sm text-mk-text-muted capitalize min-w-[90px]">
-                      {key.replace(/([A-Z])/g, " $1").trim()}:
-                    </span>
-                    <span className="text-sm text-mk-text-primary">{value}</span>
+              {sysLoading ? (
+                <p className="text-sm text-mk-text-muted">Loading system info...</p>
+              ) : sysInfo ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-8">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Hostname:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.hostname}</span>
                   </div>
-                ))}
-              </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Os:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.os}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Kernel:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.kernel}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Uptime:</span>
+                    <span className="text-sm text-mk-text-primary">{formatUptime(sysInfo.uptime_seconds)}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Arch:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.arch}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Cpu:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.cpu_count} cores</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Python:</span>
+                    <span className="text-sm text-mk-text-primary">{sysInfo.python}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-mk-text-muted">Failed to load system info</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Services */}
+        {/* Services — Real Docker containers from /api/v1/apps/containers */}
         <TabsContent value="services">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>RAM</TableHead>
-                <TableHead>Uptime</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((svc) => (
-                <TableRow key={svc.name}>
-                  <TableCell>
-                    <div>
-                      <span className="font-medium text-mk-text-primary">{svc.name}</span>
-                      <p className="text-[11px] text-mk-text-muted">{svc.description}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={svc.status === "running" ? "success" : "error"}>
-                      {svc.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{svc.cpu}%</TableCell>
-                  <TableCell>{formatBytes(svc.ram)}</TableCell>
-                  <TableCell className="text-mk-text-muted">{svc.uptime}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon-sm" aria-label="Restart service">
-                      <RotateCcw size={13} />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TabsContent>
-
-        {/* Updates */}
-        <TabsContent value="updates">
-          <div className="space-y-4">
-            <p className="text-sm text-mk-text-secondary">
-              Available updates: <span className="text-mk-text-primary font-medium">{updates.length} packages</span>
-            </p>
+          {ctLoading ? (
+            <p className="text-sm text-mk-text-muted p-4">Loading containers...</p>
+          ) : containers.length === 0 ? (
+            <p className="text-sm text-mk-text-muted p-4">No containers found</p>
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Package</TableHead>
-                  <TableHead>Current</TableHead>
-                  <TableHead>Available</TableHead>
-                  <TableHead>Priority</TableHead>
+                  <TableHead>Container</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>Ports</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {updates.map((upd) => (
-                  <TableRow key={upd.pkg}>
-                    <TableCell className="font-medium text-mk-text-primary font-mono">
-                      {upd.pkg}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{upd.current}</TableCell>
-                    <TableCell className="font-mono text-xs text-mk-accent">{upd.available}</TableCell>
+                {containers.map((ct) => (
+                  <TableRow key={ct.name}>
                     <TableCell>
-                      <Badge variant={priorityBadge[upd.priority]}>
-                        {upd.priority}
+                      <span className="font-medium text-mk-text-primary">{ct.name}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ct.state === "running" ? "success" : "error"}>
+                        {ct.state}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-mk-text-muted max-w-[200px] truncate">
+                      {ct.image}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-mk-text-muted max-w-[200px] truncate">
+                      {ct.ports || "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {ct.state === "running" ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Restart container"
+                              disabled={actionLoading === `${ct.name}-restart`}
+                              onClick={() => handleContainerAction(ct.name, "restart")}
+                            >
+                              {actionLoading === `${ct.name}-restart` ? (
+                                <Loader2 size={13} className="animate-spin" />
+                              ) : (
+                                <RotateCcw size={13} />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Stop container"
+                              disabled={actionLoading === `${ct.name}-stop`}
+                              onClick={() => handleContainerAction(ct.name, "stop")}
+                            >
+                              {actionLoading === `${ct.name}-stop` ? (
+                                <Loader2 size={13} className="animate-spin" />
+                              ) : (
+                                <Square size={13} />
+                              )}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Start container"
+                            disabled={actionLoading === `${ct.name}-start`}
+                            onClick={() => handleContainerAction(ct.name, "start")}
+                          >
+                            {actionLoading === `${ct.name}-start` ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <Play size={13} />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <div className="flex gap-3">
-              <Button>Update All</Button>
-              <Button variant="secondary">Update Selected</Button>
-            </div>
-          </div>
+          )}
         </TabsContent>
 
         {/* Power */}
@@ -183,69 +231,13 @@ export function SystemPage() {
                   <Power size={16} />
                   Shutdown
                 </Button>
-                <Button variant="outline" size="lg">
-                  Schedule
-                </Button>
               </div>
               <div className="border-t border-mk-border pt-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-mk-text-muted">Last boot:</span>
-                  <span className="text-mk-text-primary">2024-01-01 08:00</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-mk-text-muted">UPS:</span>
-                  <span className="text-mk-text-primary">APC 1500VA - 98% (6h runtime)</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AI Settings */}
-        <TabsContent value="ai">
-          <Card>
-            <CardContent className={cn("p-6 space-y-4 max-w-lg")}>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-mk-text-secondary">Provider</span>
-                  <span className="text-sm text-mk-text-primary">Anthropic (Claude)</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-mk-text-secondary">Model</span>
-                  <span className="text-sm font-mono text-mk-text-primary">claude-sonnet-4-20250514</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-mk-text-secondary">API Key</span>
-                  <span className="text-sm font-mono text-mk-text-muted">sk-...****</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-mk-text-secondary">Temperature</span>
-                  <span className="text-sm text-mk-text-primary">0.7</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-mk-text-secondary">Max tokens</span>
-                  <span className="text-sm text-mk-text-primary">4096</span>
-                </div>
-              </div>
-              <div className="border-t border-mk-border pt-4 space-y-2">
-                <h4 className="text-sm font-semibold text-mk-text-primary">Context Options</h4>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-mk-success">&#10003;</span>
-                    <span className="text-mk-text-secondary">Include system metrics</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-mk-success">&#10003;</span>
-                    <span className="text-mk-text-secondary">Include recent alerts</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-mk-success">&#10003;</span>
-                    <span className="text-mk-text-secondary">Include page context</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-mk-text-muted">&#10007;</span>
-                    <span className="text-mk-text-muted">Include full command history</span>
-                  </div>
+                  <span className="text-mk-text-muted">Uptime:</span>
+                  <span className="text-mk-text-primary">
+                    {sysInfo ? formatUptime(sysInfo.uptime_seconds) : "Loading..."}
+                  </span>
                 </div>
               </div>
             </CardContent>

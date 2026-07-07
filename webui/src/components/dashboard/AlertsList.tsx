@@ -2,43 +2,14 @@
  * AlertsList Component
  * =====================
  * Prioritized list of system alerts with severity indicators.
+ * Fetches real alerts from /api/v1/dashboard/alerts.
  */
 
-import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Alert, AlertSeverity } from "@/types/api";
+import { useDashboardAlerts } from "@/hooks/useApi";
 
-interface AlertsListProps {
-  alerts?: Alert[];
-  onDismiss?: (id: string) => void;
-}
-
-const defaultAlerts: Alert[] = [
-  {
-    id: "1",
-    severity: "warning",
-    message: "Disk sda temperature 55C during scrub",
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    dismissed: false,
-    source: "storage",
-  },
-  {
-    id: "2",
-    severity: "warning",
-    message: "Pool tank at 75% capacity",
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-    dismissed: false,
-    source: "storage",
-  },
-  {
-    id: "3",
-    severity: "info",
-    message: "System update available (linux-image 6.6.10)",
-    timestamp: new Date(Date.now() - 14400000).toISOString(),
-    dismissed: false,
-    source: "system",
-  },
-];
+type AlertSeverity = "critical" | "warning" | "info";
 
 const severityConfig: Record<
   AlertSeverity,
@@ -61,11 +32,10 @@ const severityConfig: Record<
   },
 };
 
-export function AlertsList({
-  alerts = defaultAlerts,
-  onDismiss,
-}: AlertsListProps) {
-  const activeAlerts = alerts.filter((a) => !a.dismissed);
+export function AlertsList() {
+  const { data: alerts, isLoading } = useDashboardAlerts();
+
+  const activeAlerts = alerts ?? [];
 
   return (
     <div className="rounded-[8px] border border-mk-border bg-mk-surface p-4">
@@ -75,12 +45,15 @@ export function AlertsList({
         </h3>
       </div>
 
-      {activeAlerts.length === 0 ? (
+      {isLoading ? (
+        <p className="text-sm text-mk-text-muted py-2">Loading alerts...</p>
+      ) : activeAlerts.length === 0 ? (
         <p className="text-sm text-mk-text-muted py-2">No active alerts</p>
       ) : (
         <div className="flex flex-col gap-2">
           {activeAlerts.map((alert) => {
-            const config = severityConfig[alert.severity];
+            const severity = (alert.severity as AlertSeverity) || "info";
+            const config = severityConfig[severity] ?? severityConfig.info;
             const Icon = config.icon;
             return (
               <div
@@ -95,15 +68,6 @@ export function AlertsList({
                 <span className="text-sm text-mk-text-secondary flex-1 leading-snug">
                   {alert.message}
                 </span>
-                {onDismiss && (
-                  <button
-                    onClick={() => onDismiss(alert.id)}
-                    className="opacity-0 group-hover:opacity-100 text-mk-text-muted hover:text-mk-text-primary transition-opacity"
-                    aria-label="Dismiss alert"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
               </div>
             );
           })}
