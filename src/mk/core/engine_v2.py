@@ -172,6 +172,10 @@ class MKEngineV2(MKEngine):
         if self._enable_policy:
             summary["subsystems"]["policy"] = self._init_policy()
 
+        # 6. Auto-Tailscale (if configured)
+        if self.settings.tailscale.enabled:
+            summary["subsystems"]["tailscale"] = await self._init_tailscale()
+
         self._initialized = True
         logger.info(f"MK Engine V2 initialized: {summary}")
         return summary
@@ -210,6 +214,12 @@ class MKEngineV2(MKEngine):
         """
         # Record user message
         self.conversation.add_message(Role.USER, user_input)
+
+        # Handle Tailscale auth key via chat (like /setkey for LLM providers)
+        if user_input.strip().startswith("tskey-") or user_input.strip().lower().startswith("/tailscale "):
+            response = await self._handle_tailscale_command(user_input.strip())
+            self.conversation.add_message(Role.ASSISTANT, response.final_response)
+            return response
 
         # Enrich with semantic memory (add relevant context)
         memory_context = ""
@@ -266,6 +276,134 @@ class MKEngineV2(MKEngine):
             )
 
         return response
+
+    async def _handle_tailscale_command(self, user_input: str) -> AgentResponse:
+        """Handle Tailscale auth key or commands directly.
+
+        Supports:
+        - Paste a tskey-auth-* key → stores it and connects immediately
+        - /tailscale up → connect
+        - /tailscale down → disconnect
+        - /tailscale status → show status
+        - /tailscale serve <port> → expose service
+        - /tailscale ip → show tailscale IP
+        """
+        from mk.server.network import NetworkManager
+
+        nm = NetworkManager(sudo=True)
+
+        # User pasted a raw auth key
+        if user_input.startswith("tskey-"):
+            auth_key = user_input.strip()
+
+            # Store it in secrets
+            try:
+                from mk.safety.secrets import SecretsManager
+                secrets = SecretsManager()
+                secrets.store_secret("tailscale_auth_key", auth_key)
+            except Exception:
+                pass  # Store failed, but we can still use it directly
+
+            # Connect immediately
+            result = await nm.tailscale_install()
+            up_result = await nm.tailscale_up(
+                auth_key=auth_key,
+                hostname=self.settings.tailscale.hostname or "mk",
+                advertise_routes=self.settings.tailscale.advertise_routes or None,
+                accept_routes=True,
+                ssh=True,
+            )
+
+            if up_result.success:
+                ip_result = await nm.tailscale_ip()
+                ip_str = ip_result.metadata.get("ipv4", "") if ip_result.success else ""
+                return AgentResponse(
+                    steps=[],
+                    final_response=(
+                        f"✓ Tailscale connected!\n"
+                        f"  IP: {ip_str}\n"
+                        f"  SSH: enabled (ssh into me from anywhere on your tailnet)\n"
+                        f"  Key stored securely.\n\n"
+                        f"You can now access this machine from any device on your tailnet."
+                    ),
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            elif up_result.metadata.get("needs_auth"):
+                return AgentResponse(
+                    steps=[],
+                    final_response=(
+                        f"Tailscale needs browser auth. Visit:\n"
+                        f"{up_result.metadata.get('auth_url', '')}\n\n"
+                        f"After authorizing, I'll be connected."
+                    ),
+                    tokens_used=0,
+                    cost=0.0,
+                )
+            else:
+                return AgentResponse(
+                    steps=[],
+                    final_response=f"Tailscale connection failed: {up_result.error}",
+                    tokens_used=0,
+                    cost=0.0,
+                )
+
+        # /tailscale commands
+        parts = user_input.lower().replace("/tailscale", "").strip().split()
+        cmd = parts[0] if parts else "status"
+
+        if cmd == "up":
+            result = await nm.tailscale_up(
+                hostname=self.settings.tailscale.hostname or "mk",
+                accept_routes=True,
+                ssh=True,
+            )
+            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+
+        elif cmd == "down":
+            result = await nm.tailscale_down()
+            return AgentResponse(steps=[], final_response=result.output or result.error or "Disconnected", tokens_used=0, cost=0.0)
+
+        elif cmd == "status":
+            result = await nm.tailscale_status()
+            return AgentResponse(steps=[], final_response=result.output or result.error or "No status", tokens_used=0, cost=0.0)
+
+        elif cmd == "ip":
+            result = await nm.tailscale_ip()
+            return AgentResponse(steps=[], final_response=result.output or result.error or "No IP", tokens_used=0, cost=0.0)
+
+        elif cmd == "peers":
+            result = await nm.tailscale_peers()
+            return AgentResponse(steps=[], final_response=result.output or result.error or "No peers", tokens_used=0, cost=0.0)
+
+        elif cmd == "serve" and len(parts) > 1:
+            port = int(parts[1]) if parts[1].isdigit() else 8080
+            path = parts[2] if len(parts) > 2 else "/"
+            result = await nm.tailscale_serve(port=port, path=path)
+            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+
+        elif cmd == "funnel" and len(parts) > 1:
+            port = int(parts[1]) if parts[1].isdigit() else 8080
+            result = await nm.tailscale_funnel(port=port)
+            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+
+        else:
+            return AgentResponse(
+                steps=[],
+                final_response=(
+                    "Tailscale commands:\n"
+                    "  Paste your tskey-auth-* key → auto-connect\n"
+                    "  /tailscale up        → connect\n"
+                    "  /tailscale down      → disconnect\n"
+                    "  /tailscale status    → show connection\n"
+                    "  /tailscale ip        → show Tailscale IP\n"
+                    "  /tailscale peers     → list peers\n"
+                    "  /tailscale serve 32400 → expose Plex on tailnet\n"
+                    "  /tailscale funnel 8080 → expose to internet\n"
+                ),
+                tokens_used=0,
+                cost=0.0,
+            )
 
     async def _handle_direct_command_v2(
         self, tool_name: str, tool_args: Dict[str, str]
@@ -508,6 +646,103 @@ class MKEngineV2(MKEngine):
             "enabled": True,
             "rules": self._policy_engine.rule_count,
         }
+
+    async def _init_tailscale(self) -> Dict[str, Any]:
+        """Auto-setup Tailscale on startup if configured.
+
+        If tailscale.enabled=true in config:
+        1. Installs Tailscale if not present
+        2. Connects with configured auth key, hostname, routes
+        3. Sets up any configured serve/funnel endpoints
+
+        This makes Tailscale fully hands-off — just put the auth key
+        in your config and MK handles the rest on every boot.
+        """
+        from mk.server.network import NetworkManager
+
+        nm = NetworkManager(sudo=True)
+        ts_config = self.settings.tailscale
+        results: Dict[str, Any] = {"enabled": True}
+
+        # Step 1: Install if needed
+        install_result = await nm.tailscale_install()
+        results["installed"] = install_result.success or install_result.metadata.get("already_installed", False)
+
+        if not results["installed"]:
+            results["error"] = f"Installation failed: {install_result.error}"
+            logger.error(f"Tailscale auto-setup failed: {install_result.error}")
+            return results
+
+        # Step 2: Get auth key from secrets or config
+        auth_key: Optional[str] = None
+        if ts_config.auth_key_ref:
+            # Try to get from secrets store
+            try:
+                from mk.safety.secrets import SecretsManager
+                secrets = SecretsManager()
+                auth_key = secrets.get_secret(ts_config.auth_key_ref)
+            except Exception:
+                pass
+
+            # Try environment variable as fallback
+            if not auth_key:
+                import os
+                auth_key = os.environ.get("TAILSCALE_AUTH_KEY", "")
+                if not auth_key:
+                    auth_key = os.environ.get("TS_AUTH_KEY", "")
+
+        # Step 3: Connect
+        up_result = await nm.tailscale_up(
+            auth_key=auth_key or None,
+            hostname=ts_config.hostname,
+            advertise_routes=ts_config.advertise_routes or None,
+            advertise_exit_node=ts_config.advertise_exit_node,
+            accept_routes=ts_config.accept_routes,
+            ssh=ts_config.ssh,
+        )
+
+        if up_result.success:
+            results["connected"] = True
+            logger.info(f"Tailscale connected: {up_result.output}")
+
+            # Get our IP
+            ip_result = await nm.tailscale_ip()
+            if ip_result.success:
+                results["ip"] = ip_result.metadata.get("ipv4", "")
+
+        elif up_result.metadata.get("needs_auth"):
+            results["connected"] = False
+            results["needs_auth"] = True
+            results["auth_url"] = up_result.metadata.get("auth_url", "")
+            logger.warning(f"Tailscale needs auth: {results['auth_url']}")
+        else:
+            results["connected"] = False
+            results["error"] = up_result.error
+            logger.warning(f"Tailscale connection failed: {up_result.error}")
+
+        # Step 4: Set up serve endpoints (if configured and connected)
+        if results.get("connected") and ts_config.serve:
+            for svc in ts_config.serve:
+                port = svc.get("port")
+                path = svc.get("path", "/")
+                if port:
+                    serve_result = await nm.tailscale_serve(port=port, path=path)
+                    if serve_result.success:
+                        logger.info(f"Tailscale serve: :{port} at {path}")
+            results["serve_endpoints"] = len(ts_config.serve)
+
+        # Step 5: Set up funnel endpoints (if configured and connected)
+        if results.get("connected") and ts_config.funnel:
+            for funneled in ts_config.funnel:
+                port = funneled.get("port")
+                path = funneled.get("path", "/")
+                if port:
+                    funnel_result = await nm.tailscale_funnel(port=port, path=path)
+                    if funnel_result.success:
+                        logger.info(f"Tailscale funnel: :{port} at {path} (PUBLIC)")
+            results["funnel_endpoints"] = len(ts_config.funnel)
+
+        return results
 
     # ─── Status / Diagnostics ─────────────────────────────
 
