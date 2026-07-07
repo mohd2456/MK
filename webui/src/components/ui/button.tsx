@@ -50,11 +50,11 @@ const buttonVariants = cva(
         ].join(" "),
       },
       size: {
-        sm: "h-8 px-3 text-xs rounded-[4px]",
-        md: "h-9 px-4 text-sm rounded-[8px]",
-        lg: "h-11 px-6 text-base rounded-[8px]",
-        icon: "h-9 w-9 rounded-[8px]",
-        "icon-sm": "h-7 w-7 rounded-[4px]",
+        sm: "h-9 px-3 text-[13px] rounded-[6px]",
+        md: "h-10 px-4 text-sm rounded-[8px]",
+        lg: "h-12 px-6 text-base rounded-[8px]",
+        icon: "h-10 w-10 rounded-[8px]",
+        "icon-sm": "h-9 w-9 rounded-[6px]",
       },
     },
     defaultVariants: {

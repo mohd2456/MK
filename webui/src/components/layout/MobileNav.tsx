@@ -72,9 +72,9 @@ export function MobileNav() {
       {/* Drawer */}
       <nav
         className={cn(
-          "absolute top-0 left-0 bottom-0 w-64",
+          "absolute top-0 left-0 bottom-0 w-72",
           "bg-mk-surface border-r border-mk-border",
-          "flex flex-col p-4",
+          "flex flex-col px-4 pb-4 pt-[calc(env(safe-area-inset-top)+16px)]",
           "animate-slide-in-left"
         )}
       >
@@ -102,8 +102,8 @@ export function MobileNav() {
               key={path}
               to={path}
               className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-[8px] text-sm font-medium",
-                "transition-colors duration-[150ms]",
+                "flex items-center gap-3 px-3 py-3 rounded-[8px] text-[15px] font-medium",
+                "transition-colors duration-[150ms] min-h-[44px]",
                 isActive(path)
                   ? "bg-mk-accent/10 text-mk-accent border border-mk-accent/20"
                   : "text-mk-text-secondary hover:text-mk-text-primary hover:bg-mk-elevated"
@@ -116,7 +116,7 @@ export function MobileNav() {
         </div>
 
         {/* Footer */}
-        <div className="mt-auto pt-4 border-t border-mk-border">
+        <div className="mt-auto pt-4 pb-[env(safe-area-inset-bottom)] border-t border-mk-border">
           <p className="text-xs text-mk-text-muted">MK OS v2.0</p>
         </div>
       </nav>

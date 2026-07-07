@@ -57,7 +57,7 @@ export function ChatPanel() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-        body: JSON.stringify({ content, context: {} }),
+          body: JSON.stringify({ content, context: {} }),
         });
         const data = await response.json();
         setTyping(false);
@@ -99,7 +99,8 @@ export function ChatPanel() {
         "flex flex-col h-full",
         "animate-slide-in-right",
         // Mobile: full-screen overlay with safe areas
-        "max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-[300] max-lg:border-l-0"
+        "max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-[300] max-lg:border-l-0",
+        "max-lg:pt-[env(safe-area-inset-top)] max-lg:pb-[env(safe-area-inset-bottom)]"
       )}
     >
       {/* Header */}
