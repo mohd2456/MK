@@ -227,10 +227,25 @@ def create_app(
 
     # Serve static frontend (if build exists)
     if static_dir is None:
-        # Look for webui/dist relative to project root
-        candidate = Path(__file__).parent.parent.parent.parent / "webui" / "dist"
-        if candidate.exists():
-            static_dir = str(candidate)
+        # Check env var first (set during deployment), then fall back to repo-relative path
+        env_dist = os.environ.get("MK_WEBUI_DIST")
+        if env_dist and Path(env_dist).exists():
+            static_dir = env_dist
+        else:
+            # Try repo-relative path (works in development)
+            candidate = Path(__file__).parent.parent.parent.parent / "webui" / "dist"
+            if candidate.exists():
+                static_dir = str(candidate)
+            else:
+                # Try installed package layout (/opt/mk/webui/dist)
+                installed_candidate = Path("/opt/mk/webui/dist")
+                if installed_candidate.exists():
+                    static_dir = str(installed_candidate)
+                else:
+                    # Try package-relative static dir
+                    pkg_static = Path(__file__).parent / "static"
+                    if pkg_static.exists():
+                        static_dir = str(pkg_static)
 
     if static_dir and Path(static_dir).exists():
         # Serve index.html for all non-API routes (SPA fallback)
