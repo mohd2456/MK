@@ -9,7 +9,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/mk
-Environment=MK_PIN=1234
+Environment=MK_PIN=5610
 Environment=PYTHONUNBUFFERED=1
 
 # Start the web server on all interfaces (Tailscale handles security)
