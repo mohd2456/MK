@@ -16,7 +16,7 @@ interface AuthState {
   lockoutUntil: number | null;
 
   // Actions
-  login: (token: string, expires: string) => void;
+  login: (token: string, expires: string | number) => void;
   logout: () => void;
   recordFailedAttempt: () => void;
   isLockedOut: () => boolean;
@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           isAuthenticated: true,
           token,
-          tokenExpires: expires,
+          tokenExpires: String(expires),
           loginAttempts: 0,
           lockoutUntil: null,
         }),

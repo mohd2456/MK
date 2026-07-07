@@ -28,7 +28,7 @@ export function MainLayout() {
       <div className="flex flex-1 overflow-hidden">
         {/* Main content area */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="max-w-[1400px] mx-auto p-6">
+          <div className="max-w-[1400px] mx-auto p-4 sm:p-6">
             <Outlet />
           </div>
         </main>
