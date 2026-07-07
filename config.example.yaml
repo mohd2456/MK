@@ -82,3 +82,24 @@ telegram:
   enabled: false
   bot_token_ref: telegram_bot_token
   allowed_chat_ids: []
+
+
+# Tailscale - Secure mesh VPN for accessing your homelab from anywhere
+# No port forwarding, no dynamic DNS, no firewall holes needed.
+tailscale:
+  enabled: true
+  auth_key_ref: tailscale_auth_key  # From admin console: Settings → Keys → Generate auth key
+  hostname: mk-brain               # How this node appears on your tailnet
+  advertise_routes:                 # Expose local subnets to your tailnet
+    - 192.168.1.0/24               # Main LAN
+  advertise_exit_node: false        # Set true to route ALL traffic through this node
+  accept_routes: true               # Accept routes from other nodes
+  ssh: true                         # Enable Tailscale SSH (access without keys)
+  # funnel:                         # Expose services to the public internet
+  #   - port: 8080
+  #     path: /
+  # serve:                          # Expose services to your tailnet only
+  #   - port: 32400                 # Plex
+  #     path: /plex
+  #   - port: 8741                  # MK API
+  #     path: /mk

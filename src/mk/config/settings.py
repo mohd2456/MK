@@ -89,6 +89,39 @@ class TelegramConfig(BaseModel):
     )
 
 
+class TailscaleConfig(BaseModel):
+    """Tailscale mesh VPN configuration."""
+
+    enabled: bool = Field(default=False, description="Whether Tailscale is enabled")
+    auth_key_ref: Optional[str] = Field(
+        default=None, description="Auth key reference in secrets store"
+    )
+    hostname: Optional[str] = Field(
+        default=None, description="Hostname on the tailnet (e.g., 'mk-brain')"
+    )
+    advertise_routes: List[str] = Field(
+        default_factory=list,
+        description="Subnets to advertise (e.g., ['192.168.1.0/24'])",
+    )
+    advertise_exit_node: bool = Field(
+        default=False, description="Offer this node as an exit node"
+    )
+    accept_routes: bool = Field(
+        default=True, description="Accept routes from other tailnet nodes"
+    )
+    ssh: bool = Field(
+        default=True, description="Enable Tailscale SSH"
+    )
+    serve: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Services to expose on tailnet [{port, path}]",
+    )
+    funnel: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Services to expose publicly [{port, path}]",
+    )
+
+
 class Settings(BaseModel):
     """Root configuration model for MK.
 
@@ -109,6 +142,9 @@ class Settings(BaseModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig, description="Safety settings")
     telegram: TelegramConfig = Field(
         default_factory=TelegramConfig, description="Telegram settings"
+    )
+    tailscale: TailscaleConfig = Field(
+        default_factory=TailscaleConfig, description="Tailscale VPN settings"
     )
 
     @property
