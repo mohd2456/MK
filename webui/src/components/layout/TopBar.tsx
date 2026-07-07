@@ -19,6 +19,7 @@ import {
   Network,
   ShieldCheck,
   Disc3,
+  FolderInput,
   Settings,
   MessageSquare,
   HelpCircle,
@@ -37,6 +38,7 @@ const navItems = [
   { label: "Network", path: "/network", icon: Network },
   { label: "Protection", path: "/protection", icon: ShieldCheck },
   { label: "Media", path: "/media", icon: Disc3 },
+  { label: "Drops", path: "/media-manager", icon: FolderInput },
   { label: "System", path: "/system", icon: Settings },
 ];
 

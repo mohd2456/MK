@@ -49,6 +49,12 @@ const suggestions: Record<string, string[]> = {
     "How big is my library?",
     "Start ripping the disc",
   ],
+  "/media-manager": [
+    "What's in the drop queue?",
+    "Process all pending drops now",
+    "Show failed items",
+    "Trigger Jellyfin library scan",
+  ],
   "/system": [
     "What services are running?",
     "Any updates available?",

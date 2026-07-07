@@ -15,6 +15,7 @@ import { AppsPage } from "@/pages/AppsPage";
 import { NetworkPage } from "@/pages/NetworkPage";
 import { ProtectionPage } from "@/pages/ProtectionPage";
 import { MediaPage } from "@/pages/MediaPage";
+import { MediaManagerPage } from "@/pages/MediaManagerPage";
 import { SystemPage } from "@/pages/SystemPage";
 /**
  * Route guard: redirects to login if not authenticated.
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="network" element={<NetworkPage />} />
           <Route path="protection" element={<ProtectionPage />} />
           <Route path="media" element={<MediaPage />} />
+          <Route path="media-manager" element={<MediaManagerPage />} />
           <Route path="system" element={<SystemPage />} />
         </Route>
 
