@@ -239,7 +239,7 @@ class PluginLoader:
             Freshly loaded plugin instance.
         """
         # Remove old module from sys.modules
-        module_name = f"mk_plugin_{plugin.name}"
+        module_name = f"mk_plugin_{plugin.name.replace('-', '_')}"
         if module_name in sys.modules:
             del sys.modules[module_name]
 
@@ -298,7 +298,7 @@ class PluginLoader:
             return None, errors
 
         # Load the module dynamically
-        module_name = f"mk_plugin_{plugin_name}"
+        module_name = f"mk_plugin_{plugin_name.replace('-', '_')}"
         try:
             spec = importlib.util.spec_from_file_location(
                 module_name, str(module_path)
@@ -309,13 +309,22 @@ class PluginLoader:
 
             module = importlib.util.module_from_spec(spec)
 
-            # Add plugin path to the module's search path
-            # so relative imports within the plugin work
+            # Temporarily add plugin path so relative imports within the plugin work
+            path_added = False
             if str(plugin_path) not in sys.path:
                 sys.path.insert(0, str(plugin_path))
+                path_added = True
 
             sys.modules[module_name] = module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            finally:
+                # Clean up sys.path to prevent pollution across plugins
+                if path_added:
+                    try:
+                        sys.path.remove(str(plugin_path))
+                    except ValueError:
+                        pass
 
             return module, errors
         except Exception as e:

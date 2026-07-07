@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mk.policy.rules import (
+    PolicyAction,
     PolicyDecision,
     PolicyRule,
     load_policies,
@@ -400,5 +401,3 @@ class PolicyEngine:
         }
 
 
-# Need this import for builtins registration
-from mk.policy.rules import PolicyAction  # noqa: E402

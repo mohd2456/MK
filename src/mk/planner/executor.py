@@ -147,7 +147,16 @@ class PlanExecutor:
             critique_result = self._critique.review_plan(graph)
 
             if not critique_result.approved and critique_result.needs_user:
-                # Plan was blocked — return without executing
+                # Plan requires user confirmation — block identified tasks
+                # and return without executing
+                for task_id in critique_result.blocked_tasks:
+                    task = graph.get_task(task_id)
+                    if task:
+                        task.mark_blocked(
+                            f"Critique gate: requires confirmation"
+                        )
+                        graph.propagate_failure(task_id)
+
                 return ExecutionResult(
                     graph=graph,
                     success=False,

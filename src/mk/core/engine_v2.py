@@ -378,10 +378,12 @@ class MKEngineV2(MKEngine):
 
             # Create snapshot if required
             if eval_result.needs_snapshot and self._snapshot_manager:
+                from mk.policy.snapshots import SnapshotType
+
                 target = eval_result.snapshot_target or name
                 await self._snapshot_manager.create_snapshot(
                     target=target,
-                    snapshot_type="file",
+                    snapshot_type=SnapshotType.FILE,
                     description=f"Pre-execution snapshot for {name}",
                 )
 

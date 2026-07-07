@@ -196,9 +196,6 @@ class CritiqueGate:
 
             if task_risk.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
                 blocked.append(task.id)
-                task.mark_blocked(
-                    f"Critique gate: {task_risk.concerns[0] if task_risk.concerns else 'high risk'}"
-                )
 
         # Check for dangerous task chains
         chain_concerns = self._check_dangerous_chains(task_graph)

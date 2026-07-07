@@ -358,6 +358,14 @@ class VectorStore:
             # Load embeddings
             matrix = np.load(embeddings_path)
 
+            # Validate dimension matches
+            if matrix.ndim == 2 and matrix.shape[1] != self._dimension:
+                logger.error(
+                    f"VectorStore dimension mismatch: file has {matrix.shape[1]}, "
+                    f"store expects {self._dimension}. Data not loaded."
+                )
+                return False
+
             # Load metadata
             with open(metadata_path, "r") as f:
                 data = json.load(f)

@@ -344,6 +344,8 @@ class Scheduler:
         result: Optional[str] = None
 
         try:
+            if self._semaphore is None:
+                self._semaphore = asyncio.Semaphore(self._max_concurrent)
             async with self._semaphore:
                 raw_result = await job.handler()
                 success = True

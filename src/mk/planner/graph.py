@@ -160,6 +160,17 @@ class TaskNode(BaseModel):
         self.error = reason
         self.completed_at = time.time()
 
+    def reset_blocked(self) -> None:
+        """Reset a blocked task back to pending (user override).
+
+        Used when the user explicitly confirms a dangerous action
+        that was blocked by the critique gate.
+        """
+        if self.status == TaskStatus.BLOCKED:
+            self.status = TaskStatus.PENDING
+            self.error = None
+            self.completed_at = None
+
     def reset_for_retry(self) -> None:
         """Reset state for a retry attempt."""
         self.status = TaskStatus.PENDING
@@ -257,6 +268,7 @@ class TaskGraph(BaseModel):
         A task is ready when:
         - It's in PENDING status
         - All tasks in its depends_on list are COMPLETED
+        - All dependency IDs actually exist in the graph
 
         Returns:
             List of tasks ready for execution (can run in parallel).
@@ -267,12 +279,16 @@ class TaskGraph(BaseModel):
             if task.status != TaskStatus.PENDING:
                 continue
 
-            # Check all dependencies are completed
-            deps_met = all(
-                self.nodes[dep_id].status == TaskStatus.COMPLETED
-                for dep_id in task.depends_on
-                if dep_id in self.nodes
-            )
+            # Check all dependencies exist and are completed
+            deps_met = True
+            for dep_id in task.depends_on:
+                if dep_id not in self.nodes:
+                    # Missing dependency — treat as unmet (fail-safe)
+                    deps_met = False
+                    break
+                if self.nodes[dep_id].status != TaskStatus.COMPLETED:
+                    deps_met = False
+                    break
 
             if deps_met:
                 task.status = TaskStatus.READY
@@ -374,17 +390,35 @@ class TaskGraph(BaseModel):
         Returns a list of "waves" — each wave is a list of task IDs
         that can execute in parallel. Waves execute sequentially.
 
+        Tasks with invalid dependencies (referencing non-existent nodes)
+        are excluded from the ordering.
+
         Returns:
             List of parallel batches, e.g., [["a","b"], ["c"], ["d","e"]]
         """
         # Kahn's algorithm with batching
-        in_degree: Dict[str, int] = {tid: 0 for tid in self.nodes}
-        for edge in self.edges:
+        # Only consider edges where both source and target exist
+        valid_edges = [
+            e for e in self.edges
+            if e.source in self.nodes and e.target in self.nodes
+        ]
+
+        # Exclude tasks with invalid (unresolvable) dependencies
+        valid_nodes = set()
+        for tid, task in self.nodes.items():
+            has_invalid_dep = any(
+                dep_id not in self.nodes for dep_id in task.depends_on
+            )
+            if not has_invalid_dep:
+                valid_nodes.add(tid)
+
+        in_degree: Dict[str, int] = {tid: 0 for tid in valid_nodes}
+        for edge in valid_edges:
             if edge.target in in_degree:
                 in_degree[edge.target] += 1
 
         waves: List[List[str]] = []
-        remaining = set(self.nodes.keys())
+        remaining = set(valid_nodes)
 
         while remaining:
             # Find all nodes with in-degree 0 (among remaining)
@@ -402,7 +436,7 @@ class TaskGraph(BaseModel):
             # Remove this wave and update in-degrees
             for tid in wave:
                 remaining.discard(tid)
-                for edge in self.edges:
+                for edge in valid_edges:
                     if edge.source == tid and edge.target in remaining:
                         in_degree[edge.target] -= 1
 
