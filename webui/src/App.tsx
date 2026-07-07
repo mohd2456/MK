@@ -18,6 +18,7 @@ import { MediaPage } from "@/pages/MediaPage";
 import { MediaManagerPage } from "@/pages/MediaManagerPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { useAuthStore } from "@/stores/authStore";
+import { KeysPage } from "@/pages/KeysPage";
 /**
  * Route guard: redirects to login if not authenticated.
  */
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="protection" element={<ProtectionPage />} />
           <Route path="media" element={<MediaPage />} />
           <Route path="media-manager" element={<MediaManagerPage />} />
+          <Route path="keys" element={<KeysPage />} />
           <Route path="system" element={<SystemPage />} />
         </Route>
 

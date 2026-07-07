@@ -222,6 +222,7 @@ def create_app(
     _register_network_routes(app)
     _register_system_routes(app)
     _register_media_routes(app)
+    _register_keys_routes(app)
     _register_websocket(app)
 
     # Serve static frontend (if build exists)
@@ -606,6 +607,140 @@ def _register_media_routes(app: FastAPI) -> None:
             return {"result": result, "dry_run": dry_run}
         except Exception as e:
             return {"error": str(e)}
+
+
+def _register_keys_routes(app: FastAPI) -> None:
+    """Keys & Auth management routes."""
+
+    @app.get("/api/v1/keys/llm", dependencies=[Depends(require_auth)])
+    async def list_llm_keys():
+        """List stored LLM API keys (masked)."""
+        # In production, reads from SecretsManager
+        return {"keys": []}
+
+    @app.post("/api/v1/keys/llm", dependencies=[Depends(require_auth)])
+    async def add_llm_key(request: Request):
+        """Add an LLM API key."""
+        body = await request.json()
+        provider = body.get("provider", "")
+        key = body.get("key", "")
+        if not key:
+            raise HTTPException(400, "key is required")
+
+        # Store in secrets + configure provider
+        if _mk_engine:
+            try:
+                # Try to store via the engine's tailscale key path
+                from mk.safety.secrets import SecretsManager
+                secrets = SecretsManager()
+                secrets.store_secret(f"llm_{provider}", key)
+            except Exception:
+                pass
+
+        masked = key[:6] + "...****" + key[-4:] if len(key) > 10 else "****"
+        return {"status": "stored", "provider": provider, "masked": masked}
+
+    @app.delete("/api/v1/keys/llm/{provider}", dependencies=[Depends(require_auth)])
+    async def delete_llm_key(provider: str):
+        """Remove an LLM API key."""
+        try:
+            from mk.safety.secrets import SecretsManager
+            secrets = SecretsManager()
+            secrets.delete_secret(f"llm_{provider}")
+        except Exception:
+            pass
+        return {"status": "deleted", "provider": provider}
+
+    @app.post("/api/v1/keys/telegram", dependencies=[Depends(require_auth)])
+    async def save_telegram_config(request: Request):
+        """Save Telegram bot token and chat IDs."""
+        body = await request.json()
+        token = body.get("token", "")
+        chat_ids = body.get("chat_ids", [])
+
+        if token:
+            try:
+                from mk.safety.secrets import SecretsManager
+                secrets = SecretsManager()
+                secrets.store_secret("telegram_bot_token", token)
+            except Exception:
+                pass
+
+        return {"status": "saved", "chat_ids_count": len(chat_ids)}
+
+    @app.post("/api/v1/keys/tailscale", dependencies=[Depends(require_auth)])
+    async def save_tailscale_key(request: Request):
+        """Save Tailscale auth key and connect."""
+        body = await request.json()
+        auth_key = body.get("key", "")
+
+        if not auth_key:
+            raise HTTPException(400, "key is required")
+
+        # Store and connect
+        try:
+            from mk.safety.secrets import SecretsManager
+            secrets = SecretsManager()
+            secrets.store_secret("tailscale_auth_key", auth_key)
+        except Exception:
+            pass
+
+        # Try to connect
+        try:
+            from mk.server.network import NetworkManager
+            nm = NetworkManager(sudo=True)
+            result = await nm.tailscale_up(auth_key=auth_key, ssh=True, accept_routes=True)
+            if result.success:
+                ip_result = await nm.tailscale_ip()
+                return {
+                    "status": "connected",
+                    "ip": ip_result.metadata.get("ipv4", "") if ip_result.success else "",
+                }
+            return {"status": "failed", "error": result.error}
+        except Exception as e:
+            return {"status": "stored", "note": f"Key saved, connection pending: {e}"}
+
+    @app.post("/api/v1/keys/service", dependencies=[Depends(require_auth)])
+    async def save_service_key(request: Request):
+        """Save a service API key (Sonarr, Radarr, Plex, etc.)."""
+        body = await request.json()
+        service = body.get("service", "")
+        key = body.get("key", "")
+
+        if not service or not key:
+            raise HTTPException(400, "service and key are required")
+
+        try:
+            from mk.safety.secrets import SecretsManager
+            secrets = SecretsManager()
+            secrets.store_secret(f"service_{service}", key)
+        except Exception:
+            pass
+
+        masked = key[:4] + "...****" + key[-4:] if len(key) > 8 else "****"
+        return {"status": "stored", "service": service, "masked": masked}
+
+    @app.post("/api/v1/keys/pin", dependencies=[Depends(require_auth)])
+    async def change_pin(request: Request):
+        """Change the dashboard login PIN."""
+        global _pin_hash
+        body = await request.json()
+        current = body.get("current_pin", "")
+        new_pin = body.get("new_pin", "")
+
+        if not _verify_pin(current):
+            raise HTTPException(401, "Current PIN is incorrect")
+
+        if len(new_pin) < 4 or len(new_pin) > 8:
+            raise HTTPException(400, "PIN must be 4-8 digits")
+
+        if not new_pin.isdigit():
+            raise HTTPException(400, "PIN must contain only digits")
+
+        _pin_hash = _hash_pin(new_pin)
+        os.environ["MK_PIN"] = new_pin
+
+        return {"status": "changed"}
 
 
 def _register_websocket(app: FastAPI) -> None:

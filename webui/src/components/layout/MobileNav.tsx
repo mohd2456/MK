@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Disc3,
   FolderInput,
+  Key,
   Settings,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems = [
   { label: "Protection", path: "/protection", icon: ShieldCheck },
   { label: "Media", path: "/media", icon: Disc3 },
   { label: "Drops", path: "/media-manager", icon: FolderInput },
+  { label: "Keys & Auth", path: "/keys", icon: Key },
   { label: "System", path: "/system", icon: Settings },
 ];
 
