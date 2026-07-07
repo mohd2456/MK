@@ -180,7 +180,7 @@ def cli_entry() -> None:
     parser.add_argument(
         "--version",
         action="version",
-        version="mk v0.1.0",
+        version="mk v2.0.0",
     )
 
     args = parser.parse_args()

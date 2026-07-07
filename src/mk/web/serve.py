@@ -108,13 +108,31 @@ def start_server(
         os.environ["MK_PIN"] = pin
 
     # Find the static frontend build
-    project_root = Path(__file__).parent.parent.parent.parent
-    static_dir = project_root / "webui" / "dist"
-    if not static_dir.exists():
-        logger.warning(
-            f"Frontend build not found at {static_dir}. "
-            "Run 'cd webui && pnpm build' to build the frontend."
-        )
+    # Check env var first (set during deployment), then fall back to repo-relative path
+    env_dist = os.environ.get("MK_WEBUI_DIST")
+    if env_dist and Path(env_dist).exists():
+        static_dir = Path(env_dist)
+    else:
+        # Try repo-relative path (works in development)
+        project_root = Path(__file__).parent.parent.parent.parent
+        static_dir = project_root / "webui" / "dist"
+        if not static_dir.exists():
+            # Try installed path (/opt/mk/webui/dist)
+            static_dir = Path("/opt/mk/webui/dist")
+            if not static_dir.exists():
+                # Try package-relative static dir
+                pkg_static = Path(__file__).parent / "static"
+                if pkg_static.exists():
+                    static_dir = pkg_static
+                else:
+                    logger.warning(
+                        f"Frontend build not found. Searched:\n"
+                        f"  - MK_WEBUI_DIST env var (not set)\n"
+                        f"  - {project_root / 'webui' / 'dist'}\n"
+                        f"  - /opt/mk/webui/dist\n"
+                        f"  - {pkg_static}\n"
+                        "Run 'cd webui && pnpm build' to build the frontend."
+                    )
 
     print(f"""
 ╔══════════════════════════════════════════════╗

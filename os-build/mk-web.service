@@ -9,6 +9,10 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/mk
+Environment=MK_HOME=/opt/mk
+Environment=MK_CONFIG=/etc/mk/config.yaml
+Environment=MK_DATA=/var/lib/mk
+Environment=MK_WEBUI_DIST=/opt/mk/webui/dist
 Environment=MK_PIN=5610
 Environment=PYTHONUNBUFFERED=1
 

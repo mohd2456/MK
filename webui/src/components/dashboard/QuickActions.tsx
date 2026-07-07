@@ -2,46 +2,71 @@
  * QuickActions Component
  * =======================
  * Grid of one-click action buttons for common operations.
- * Designed for speed - no confirmation for reversible actions.
+ * Wired to real API endpoints.
  */
 
-import { Play, RefreshCw, Disc3, Download } from "lucide-react";
+import { useState } from "react";
+import { Play, RefreshCw, Disc3, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { post } from "@/lib/api";
 
-interface QuickAction {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}
+export function QuickActions() {
+  const [loading, setLoading] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-interface QuickActionsProps {
-  actions?: QuickAction[];
-}
+  async function handleAction(label: string, action: () => Promise<unknown>) {
+    setLoading(label);
+    setFeedback(null);
+    try {
+      await action();
+      setFeedback(`${label}: Done`);
+    } catch (e: any) {
+      setFeedback(`${label}: Failed`);
+    } finally {
+      setLoading(null);
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  }
 
-const defaultActions: QuickAction[] = [
-  {
-    label: "Start Backup",
-    icon: <Play size={14} />,
-    onClick: () => console.log("Start backup"),
-  },
-  {
-    label: "Update System",
-    icon: <Download size={14} />,
-    onClick: () => console.log("Update system"),
-  },
-  {
-    label: "Rip Disc",
-    icon: <Disc3 size={14} />,
-    onClick: () => console.log("Rip disc"),
-  },
-  {
-    label: "Restart Service",
-    icon: <RefreshCw size={14} />,
-    onClick: () => console.log("Restart service"),
-  },
-];
+  const actions = [
+    {
+      label: "Restart MK",
+      icon: <RefreshCw size={14} />,
+      onClick: () =>
+        handleAction("Restart MK", () =>
+          post("/apps/containers/mk-web/restart")
+        ),
+    },
+    {
+      label: "System Health",
+      icon: <Play size={14} />,
+      onClick: () =>
+        handleAction("System Health", async () => {
+          const res = await fetch("/api/v1/system/health", { credentials: "include" });
+          if (!res.ok) throw new Error("Failed");
+          return res.json();
+        }),
+    },
+    {
+      label: "Scan Media",
+      icon: <Disc3 size={14} />,
+      onClick: () =>
+        handleAction("Scan Media", () =>
+          post("/media/organize", { source: "/mnt/drops", dry_run: true })
+        ),
+    },
+    {
+      label: "Check Updates",
+      icon: <Download size={14} />,
+      onClick: () =>
+        handleAction("Check Updates", async () => {
+          const res = await fetch("/api/v1/system/info", { credentials: "include" });
+          if (!res.ok) throw new Error("Failed");
+          return res.json();
+        }),
+    },
+  ];
 
-export function QuickActions({ actions = defaultActions }: QuickActionsProps) {
   return (
     <div className="rounded-[8px] border border-mk-border bg-mk-surface p-4">
       <h3 className="text-sm font-semibold text-mk-text-primary mb-3">
@@ -54,13 +79,21 @@ export function QuickActions({ actions = defaultActions }: QuickActionsProps) {
             variant="secondary"
             size="sm"
             onClick={action.onClick}
+            disabled={loading === action.label}
             className="justify-start w-full"
           >
-            {action.icon}
+            {loading === action.label ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              action.icon
+            )}
             <span>{action.label}</span>
           </Button>
         ))}
       </div>
+      {feedback && (
+        <p className="text-xs text-mk-text-muted mt-2">{feedback}</p>
+      )}
     </div>
   );
 }

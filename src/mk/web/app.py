@@ -227,10 +227,25 @@ def create_app(
 
     # Serve static frontend (if build exists)
     if static_dir is None:
-        # Look for webui/dist relative to project root
-        candidate = Path(__file__).parent.parent.parent.parent / "webui" / "dist"
-        if candidate.exists():
-            static_dir = str(candidate)
+        # Check env var first (set during deployment), then fall back to repo-relative path
+        env_dist = os.environ.get("MK_WEBUI_DIST")
+        if env_dist and Path(env_dist).exists():
+            static_dir = env_dist
+        else:
+            # Try repo-relative path (works in development)
+            candidate = Path(__file__).parent.parent.parent.parent / "webui" / "dist"
+            if candidate.exists():
+                static_dir = str(candidate)
+            else:
+                # Try installed package layout (/opt/mk/webui/dist)
+                installed_candidate = Path("/opt/mk/webui/dist")
+                if installed_candidate.exists():
+                    static_dir = str(installed_candidate)
+                else:
+                    # Try package-relative static dir
+                    pkg_static = Path(__file__).parent / "static"
+                    if pkg_static.exists():
+                        static_dir = str(pkg_static)
 
     if static_dir and Path(static_dir).exists():
         # Serve index.html for all non-API routes (SPA fallback)
@@ -339,6 +354,97 @@ def _register_dashboard_routes(app: FastAPI) -> None:
         except Exception:
             pass
 
+        # System uptime from /proc/uptime (not process uptime)
+        uptime = 0.0
+        try:
+            with open("/proc/uptime") as f:
+                uptime = float(f.read().split()[0])
+        except Exception:
+            uptime = time.time() - _start_time
+
+        # Network throughput from /proc/net/dev
+        net_in_mbps = 0.0
+        net_out_mbps = 0.0
+        try:
+            with open("/proc/net/dev") as f:
+                for line in f:
+                    line = line.strip()
+                    if ":" not in line:
+                        continue
+                    iface, data = line.split(":", 1)
+                    iface = iface.strip()
+                    # Skip loopback
+                    if iface == "lo":
+                        continue
+                    parts = data.split()
+                    if len(parts) >= 9:
+                        rx_bytes = int(parts[0])
+                        tx_bytes = int(parts[8])
+                        # Convert to MB/s approximation based on uptime
+                        # This gives average throughput; for real-time you'd diff two readings
+                        if uptime > 0:
+                            net_in_mbps += rx_bytes / (1024 * 1024)
+                            net_out_mbps += tx_bytes / (1024 * 1024)
+            # If uptime is high, these will be cumulative totals not rates
+            # For a better UX, show current rates by reading twice 1s apart
+            # For now, just show 0 if we can't get a delta
+            # Actually: read /proc/net/dev twice with 1s gap
+            net_in_mbps = 0.0
+            net_out_mbps = 0.0
+            # First reading
+            rx1: dict = {}
+            tx1: dict = {}
+            with open("/proc/net/dev") as f:
+                for line in f:
+                    if ":" not in line:
+                        continue
+                    iface, data = line.split(":", 1)
+                    iface = iface.strip()
+                    if iface == "lo":
+                        continue
+                    parts = data.split()
+                    if len(parts) >= 9:
+                        rx1[iface] = int(parts[0])
+                        tx1[iface] = int(parts[8])
+            # Wait 1 second
+            await asyncio.sleep(1)
+            # Second reading
+            with open("/proc/net/dev") as f:
+                for line in f:
+                    if ":" not in line:
+                        continue
+                    iface, data = line.split(":", 1)
+                    iface = iface.strip()
+                    if iface == "lo":
+                        continue
+                    parts = data.split()
+                    if len(parts) >= 9:
+                        rx2 = int(parts[0])
+                        tx2 = int(parts[8])
+                        rx_diff = rx2 - rx1.get(iface, rx2)
+                        tx_diff = tx2 - tx1.get(iface, tx2)
+                        net_in_mbps += rx_diff / (1024 * 1024)
+                        net_out_mbps += tx_diff / (1024 * 1024)
+        except Exception:
+            pass
+
+        # Container counts
+        containers_running = 0
+        containers_total = 0
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "docker ps -a --format '{{.State}}' 2>/dev/null",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0 and stdout:
+                states = stdout.decode().strip().splitlines()
+                containers_total = len(states)
+                containers_running = sum(1 for s in states if s.strip() == "running")
+        except Exception:
+            pass
+
         # Tailscale status
         ts_connected = False
         ts_ip = ""
@@ -363,7 +469,11 @@ def _register_dashboard_routes(app: FastAPI) -> None:
             disk_used_tb=round(disk_used, 2),
             disk_total_tb=round(disk_total, 2),
             disk_percent=round((disk_used / disk_total * 100) if disk_total > 0 else 0, 1),
-            uptime_seconds=time.time() - _start_time,
+            network_in_mbps=round(net_in_mbps, 1),
+            network_out_mbps=round(net_out_mbps, 1),
+            uptime_seconds=uptime,
+            containers_running=containers_running,
+            containers_total=containers_total,
             tailscale_connected=ts_connected,
             tailscale_ip=ts_ip,
         )
@@ -544,6 +654,41 @@ def _register_system_routes(app: FastAPI) -> None:
     async def system_info():
         import platform
 
+        # Real system uptime from /proc/uptime
+        uptime = 0.0
+        try:
+            with open("/proc/uptime") as f:
+                uptime = float(f.read().split()[0])
+        except Exception:
+            uptime = time.time() - _start_time
+
+        # CPU model
+        cpu_model = ""
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        cpu_model = line.split(":", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+
+        # RAM info
+        ram_total_gb = 0.0
+        ram_used_gb = 0.0
+        try:
+            with open("/proc/meminfo") as f:
+                info = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        info[parts[0].rstrip(":")] = int(parts[1])
+                ram_total_gb = info.get("MemTotal", 0) / (1024 * 1024)
+                available = info.get("MemAvailable", info.get("MemFree", 0))
+                ram_used_gb = (info.get("MemTotal", 0) - available) / (1024 * 1024)
+        except Exception:
+            pass
+
         return {
             "hostname": platform.node(),
             "os": f"MK OS 2.0 ({platform.system()} {platform.release()})",
@@ -551,7 +696,10 @@ def _register_system_routes(app: FastAPI) -> None:
             "arch": platform.machine(),
             "python": platform.python_version(),
             "cpu_count": os.cpu_count(),
-            "uptime_seconds": time.time() - _start_time,
+            "cpu_model": cpu_model,
+            "ram_total_gb": round(ram_total_gb, 1),
+            "ram_used_gb": round(ram_used_gb, 1),
+            "uptime_seconds": uptime,
         }
 
     @app.get("/api/v1/system/health", dependencies=[Depends(require_auth)])

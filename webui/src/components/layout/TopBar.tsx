@@ -59,16 +59,16 @@ export function TopBar() {
   };
 
   return (
-    <header className="h-14 bg-mk-surface border-b border-mk-border flex items-center px-4 gap-1 shrink-0 z-[200]">
+    <header className="bg-mk-surface border-b border-mk-border flex items-center px-4 gap-1 shrink-0 z-[200] pt-[env(safe-area-inset-top)] min-h-14">
       {/* Mobile hamburger */}
       <Button
         variant="ghost"
-        size="icon-sm"
-        className="lg:hidden mr-2"
+        size="icon"
+        className="lg:hidden mr-1"
         onClick={() => setMobileNavOpen(true)}
         aria-label="Open navigation menu"
       >
-        <Menu size={20} />
+        <Menu size={22} />
       </Button>
 
       {/* Logo */}
