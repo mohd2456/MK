@@ -82,6 +82,9 @@ export interface SystemInfoResponse {
   arch: string;
   python: string;
   cpu_count: number;
+  cpu_model: string;
+  ram_total_gb: number;
+  ram_used_gb: number;
   uptime_seconds: number;
 }
 

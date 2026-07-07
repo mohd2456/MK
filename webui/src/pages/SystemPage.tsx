@@ -115,7 +115,15 @@ export function SystemPage() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm text-mk-text-muted min-w-[90px]">Cpu:</span>
-                    <span className="text-sm text-mk-text-primary">{sysInfo.cpu_count} cores</span>
+                    <span className="text-sm text-mk-text-primary">
+                      {sysInfo.cpu_model ? `${sysInfo.cpu_model} (${sysInfo.cpu_count}C)` : `${sysInfo.cpu_count} cores`}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-mk-text-muted min-w-[90px]">Ram:</span>
+                    <span className="text-sm text-mk-text-primary">
+                      {sysInfo.ram_total_gb ? `${sysInfo.ram_total_gb} GB (${sysInfo.ram_used_gb} GB used)` : "Unknown"}
+                    </span>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm text-mk-text-muted min-w-[90px]">Python:</span>
