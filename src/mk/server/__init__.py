@@ -1,21 +1,34 @@
-"""MK Server Management Module.
+"""MK Server Management Layer.
 
-TrueNAS-like layer providing home server capabilities managed
-entirely through the AI brain. Covers storage, shares, containers,
-services, network, monitoring, and backup.
-
-All functions are async and return structured data (dicts/lists).
-Each sub-module is independent and can be used standalone.
+Provides server management through natural language:
+storage, containers, network, services, backups, users.
 """
 
-from __future__ import annotations
+from mk.server.manager import ServerManager
+from mk.server.storage import StorageManager
+from mk.server.containers import ContainerManager
+from mk.server.network import NetworkManager
+from mk.server.services import ServiceManager
+from mk.server.backups import BackupManager
+from mk.server.users import UserManager
+from mk.server.vms import VMManager
+from mk.server.lxc import LXCManager
+from mk.server.homelab import HomelabManager
+from mk.server.ripper import DiscRipper
+from mk.server.tools import ServerTool, create_server_tools
 
 __all__ = [
-    "storage",
-    "shares",
-    "containers",
-    "services",
-    "network",
-    "monitor",
-    "backup",
+    "ServerManager",
+    "StorageManager",
+    "ContainerManager",
+    "NetworkManager",
+    "ServiceManager",
+    "BackupManager",
+    "UserManager",
+    "VMManager",
+    "LXCManager",
+    "HomelabManager",
+    "DiscRipper",
+    "ServerTool",
+    "create_server_tools",
 ]

@@ -1,8 +1,12 @@
 /**
- * MK Gateway - Main Entry Point
+ * MK Gateway - Multi-platform messaging hub.
  *
- * Starts the Telegram bot, health endpoint, and connects
- * to MK core engine for message processing.
+ * Connects MK to:
+ *   - Telegram (primary, rich commands)
+ *   - Discord (slash commands + DMs)
+ *   - Matrix (bridges WhatsApp, Signal, iMessage via mautrix)
+ *
+ * Each platform is optional — enable by setting the token.
  */
 
 import "dotenv/config";
@@ -10,71 +14,76 @@ import express from "express";
 import { loadConfig } from "./config.js";
 import { MKBridge } from "./bridge.js";
 import { createTelegramBot, startProactivePolling } from "./telegram.js";
+import { createDiscordBot } from "./discord.js";
 import type { GatewayConfig } from "./types.js";
 
-/**
- * Start the MK Gateway.
- *
- * Initializes all components:
- * 1. Loads configuration from environment
- * 2. Creates the bridge to MK core
- * 3. Starts the Telegram bot
- * 4. Launches the health endpoint
- * 5. Begins proactive message polling
- */
 async function main(): Promise<void> {
   console.log("MK Gateway starting...");
 
-  // Load configuration
   let config: GatewayConfig;
   try {
     config = loadConfig();
   } catch (error) {
-    console.error("Configuration error:", error);
+    console.error("Config error:", error);
     process.exit(1);
   }
 
-  // Create bridge to MK core
   const bridge = new MKBridge(config);
+  const cleanups: (() => void)[] = [];
 
-  // Create and start Telegram bot
-  const bot = createTelegramBot(config, bridge);
+  // --- Telegram ---
+  if (config.telegramBotToken) {
+    const bot = createTelegramBot(config, bridge);
+    const pollHandle = startProactivePolling(bot, bridge, config);
+    bot.launch();
+    console.log("✓ Telegram bot active");
+    cleanups.push(() => {
+      clearInterval(pollHandle);
+      bot.stop("shutdown");
+    });
+  }
 
-  // Health endpoint using Express
+  // --- Discord ---
+  if (config.discordBotToken) {
+    const client = await createDiscordBot(config, bridge);
+    if (client) {
+      console.log("✓ Discord bot active");
+      cleanups.push(() => client.destroy());
+    }
+  }
+
+  // --- Matrix (placeholder for mautrix bridge) ---
+  if (config.matrixHomeserver && config.matrixAccessToken) {
+    console.log("✓ Matrix configured (bridge mode)");
+    // Matrix integration uses mautrix bridges (open source)
+    // WhatsApp: https://github.com/mautrix/whatsapp
+    // Signal: https://github.com/mautrix/signal
+    // These run as separate services and bridge into Matrix rooms
+    // MK joins those rooms and responds like any other platform
+  }
+
+  // --- Health endpoint ---
   const app = express();
 
   app.get("/health", async (_req, res) => {
     try {
       const status = await bridge.getStatus();
-      res.json({
-        gateway: "healthy",
-        core: status.status,
-        version: status.version,
-      });
+      res.json({ gateway: "healthy", core: status.status });
     } catch {
-      res.json({
-        gateway: "healthy",
-        core: "unreachable",
-      });
+      res.json({ gateway: "healthy", core: "unreachable" });
     }
   });
 
   app.listen(config.healthPort, () => {
-    console.log(`Health endpoint listening on port ${config.healthPort}`);
+    console.log(`Health endpoint: http://0.0.0.0:${config.healthPort}/health`);
   });
 
-  // Start proactive message polling
-  const pollHandle = startProactivePolling(bot, bridge, config);
+  console.log("MK Gateway online.");
 
-  // Launch the bot
-  bot.launch();
-  console.log("MK Gateway online. Telegram bot active.");
-
-  // Graceful shutdown
+  // --- Graceful shutdown ---
   const shutdown = (signal: string) => {
-    console.log(`\n${signal} received. Shutting down gracefully...`);
-    clearInterval(pollHandle);
-    bot.stop(signal);
+    console.log(`${signal} — shutting down...`);
+    cleanups.forEach((fn) => fn());
     process.exit(0);
   };
 
@@ -83,6 +92,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  console.error("Fatal:", error);
   process.exit(1);
 });

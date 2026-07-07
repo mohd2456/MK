@@ -1,17 +1,33 @@
 /**
  * Type definitions for the MK Gateway.
  *
- * Defines message structures, configuration types, and
- * API request/response shapes for gateway-core communication.
+ * Supports multiple messaging platforms:
+ * - Telegram (primary)
+ * - Discord
+ * - Matrix (bridges to WhatsApp, Signal, iMessage via mautrix)
  */
 
-/** Incoming message from a user via Telegram or other platform. */
+/** Supported messaging platforms. */
+export type Platform = "telegram" | "discord" | "matrix" | "terminal";
+
+/** Incoming message from any platform. */
 export interface IncomingMessage {
   text: string;
   senderId: string;
-  platform: "telegram" | "terminal";
+  platform: Platform;
   timestamp: number;
+  replyToId?: string;
+  attachments?: Attachment[];
   metadata?: Record<string, unknown>;
+}
+
+/** File/media attachment. */
+export interface Attachment {
+  type: "image" | "file" | "audio" | "video";
+  url: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
 }
 
 /** Response from MK core engine. */
@@ -26,6 +42,7 @@ export interface MessageRequest {
   text: string;
   sender_id: string;
   platform: string;
+  reply_to?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -52,11 +69,39 @@ export interface ProactiveMessage {
   queued_at?: number;
 }
 
-/** Gateway configuration shape. */
+/** Gateway configuration. */
 export interface GatewayConfig {
+  // Telegram
   telegramBotToken: string;
-  mkCoreUrl: string;
   allowedChatIds: string[];
+
+  // Discord
+  discordBotToken: string;
+  discordAllowedGuilds: string[];
+  discordAllowedUsers: string[];
+
+  // Matrix (bridges WhatsApp, Signal, etc.)
+  matrixHomeserver: string;
+  matrixAccessToken: string;
+  matrixUserId: string;
+  matrixAllowedRooms: string[];
+
+  // Core connection
+  mkCoreUrl: string;
   healthPort: number;
   pollInterval: number;
+}
+
+/** Bot command definition. */
+export interface BotCommand {
+  command: string;
+  description: string;
+  handler: string;
+}
+
+/** Platform-specific message options. */
+export interface SendOptions {
+  parseMode?: "Markdown" | "HTML";
+  replyToId?: string;
+  silent?: boolean;
 }
