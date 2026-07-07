@@ -17,15 +17,14 @@ import { ProtectionPage } from "@/pages/ProtectionPage";
 import { MediaPage } from "@/pages/MediaPage";
 import { MediaManagerPage } from "@/pages/MediaManagerPage";
 import { SystemPage } from "@/pages/SystemPage";
+import { useAuthStore } from "@/stores/authStore";
+import { KeysPage } from "@/pages/KeysPage";
 /**
  * Route guard: redirects to login if not authenticated.
- * For demo purposes, we bypass auth (always authenticated).
  */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  // For demo/development: skip auth check
-  // In production, uncomment the auth check below:
-  // const { isAuthenticated } = useAuthStore();
-  // if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const { isAuthenticated } = useAuthStore();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
@@ -51,6 +50,7 @@ export default function App() {
           <Route path="protection" element={<ProtectionPage />} />
           <Route path="media" element={<MediaPage />} />
           <Route path="media-manager" element={<MediaManagerPage />} />
+          <Route path="keys" element={<KeysPage />} />
           <Route path="system" element={<SystemPage />} />
         </Route>
 

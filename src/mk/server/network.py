@@ -582,3 +582,392 @@ PersistentKeepalive = 25
             output=out if out else "No results",
             metadata={"target": target, "ports": ports},
         )
+
+
+    # ═══════════════════════════════════════════════════════════════
+    # Tailscale — Secure mesh VPN (replaces manual WireGuard for
+    # zero-config remote access to the homelab from anywhere)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def tailscale_install(self) -> ToolResult:
+        """Install Tailscale if not already present.
+
+        Uses the official Tailscale installer script.
+        Idempotent — safe to call multiple times.
+        """
+        # Check if already installed
+        rc, out, _ = await self._run("which tailscale", check=False)
+        if rc == 0:
+            return ToolResult(
+                success=True,
+                output="Tailscale is already installed",
+                metadata={"already_installed": True},
+            )
+
+        # Install via official script
+        rc, out, err = await self._run(
+            "curl -fsSL https://tailscale.com/install.sh | sh"
+        )
+        if rc != 0:
+            return ToolResult(
+                success=False,
+                error=f"Tailscale installation failed: {err}",
+            )
+
+        # Enable and start tailscaled
+        await self._run("systemctl enable --now tailscaled", check=False)
+
+        return ToolResult(
+            success=True,
+            output="Tailscale installed and tailscaled service started",
+            side_effects=[
+                "Tailscale package installed",
+                "tailscaled service enabled and started",
+            ],
+            metadata={"installed": True},
+        )
+
+    async def tailscale_up(
+        self,
+        auth_key: Optional[str] = None,
+        hostname: Optional[str] = None,
+        advertise_routes: Optional[List[str]] = None,
+        advertise_exit_node: bool = False,
+        accept_routes: bool = True,
+        ssh: bool = True,
+        shields_up: bool = False,
+        reset: bool = False,
+    ) -> ToolResult:
+        """Connect to Tailscale (bring the node online).
+
+        Args:
+            auth_key: Pre-auth key for unattended setup (from Tailscale admin).
+            hostname: Custom hostname on the tailnet.
+            advertise_routes: Subnets to advertise (e.g., ["192.168.1.0/24"]).
+            advertise_exit_node: Whether to offer this node as an exit node.
+            accept_routes: Accept routes advertised by other nodes.
+            ssh: Enable Tailscale SSH (access via `ssh user@hostname` over tailnet).
+            shields_up: Block incoming connections (outbound only).
+            reset: Reset settings to defaults before connecting.
+        """
+        cmd_parts = ["tailscale up"]
+
+        if auth_key:
+            cmd_parts.append(f"--auth-key={safe_quote(auth_key)}")
+        if hostname:
+            validate_name(hostname, "hostname")
+            cmd_parts.append(f"--hostname={safe_quote(hostname)}")
+        if advertise_routes:
+            routes = ",".join(advertise_routes)
+            cmd_parts.append(f"--advertise-routes={safe_quote(routes)}")
+        if advertise_exit_node:
+            cmd_parts.append("--advertise-exit-node")
+        if accept_routes:
+            cmd_parts.append("--accept-routes")
+        if ssh:
+            cmd_parts.append("--ssh")
+        if shields_up:
+            cmd_parts.append("--shields-up")
+        if reset:
+            cmd_parts.append("--reset")
+
+        cmd = " ".join(cmd_parts)
+        rc, out, err = await self._run(cmd)
+        if rc != 0:
+            # Check if it needs interactive auth
+            if "https://login.tailscale.com" in (out + err):
+                auth_url = ""
+                for line in (out + err).splitlines():
+                    if "https://login.tailscale.com" in line:
+                        auth_url = line.strip()
+                        break
+                return ToolResult(
+                    success=False,
+                    output=f"Tailscale needs authentication. Visit:\n{auth_url}",
+                    error="Authentication required",
+                    metadata={"auth_url": auth_url, "needs_auth": True},
+                )
+            return ToolResult(success=False, error=f"tailscale up failed: {err or out}")
+
+        side_effects = ["Connected to Tailscale tailnet"]
+        if advertise_routes:
+            side_effects.append(f"Advertising routes: {advertise_routes}")
+        if advertise_exit_node:
+            side_effects.append("Advertising as exit node")
+        if ssh:
+            side_effects.append("Tailscale SSH enabled")
+
+        return ToolResult(
+            success=True,
+            output=f"Tailscale connected. {out}".strip(),
+            side_effects=side_effects,
+            metadata={
+                "hostname": hostname,
+                "exit_node": advertise_exit_node,
+                "ssh": ssh,
+                "routes": advertise_routes,
+            },
+        )
+
+    async def tailscale_down(self) -> ToolResult:
+        """Disconnect from Tailscale (take node offline)."""
+        rc, out, err = await self._run("tailscale down")
+        if rc != 0:
+            return ToolResult(success=False, error=f"tailscale down failed: {err}")
+
+        return ToolResult(
+            success=True,
+            output="Tailscale disconnected",
+            side_effects=["Node taken offline from tailnet"],
+        )
+
+    async def tailscale_status(self) -> ToolResult:
+        """Get Tailscale connection status and peer list.
+
+        Returns the current node status, IP addresses, and all
+        connected peers with their online/offline state.
+        """
+        rc, out, err = await self._run("tailscale status --json", check=False)
+        if rc != 0:
+            # Try non-JSON format
+            rc2, out2, err2 = await self._run("tailscale status", check=False)
+            if rc2 != 0:
+                return ToolResult(
+                    success=False,
+                    error=f"Tailscale not running or not connected: {err2 or err}",
+                    metadata={"connected": False},
+                )
+            return ToolResult(
+                success=True,
+                output=out2,
+                metadata={"connected": True, "format": "text"},
+            )
+
+        return ToolResult(
+            success=True,
+            output=out,
+            metadata={"connected": True, "format": "json"},
+        )
+
+    async def tailscale_ip(self) -> ToolResult:
+        """Get this node's Tailscale IP addresses."""
+        rc, out, err = await self._run("tailscale ip", check=False)
+        if rc != 0:
+            return ToolResult(success=False, error=f"Failed to get Tailscale IP: {err}")
+
+        ips = [ip.strip() for ip in out.splitlines() if ip.strip()]
+        return ToolResult(
+            success=True,
+            output=f"Tailscale IPs: {', '.join(ips)}",
+            metadata={"ips": ips, "ipv4": ips[0] if ips else None},
+        )
+
+    async def tailscale_peers(self) -> ToolResult:
+        """List all peers on the tailnet with their status."""
+        rc, out, err = await self._run("tailscale status", check=False)
+        if rc != 0:
+            return ToolResult(success=False, error=f"Cannot get peers: {err}")
+
+        # Parse the output into structured data
+        peers = []
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and not line.startswith("#"):
+                peers.append({
+                    "ip": parts[0],
+                    "hostname": parts[1],
+                    "user": parts[2] if len(parts) > 2 else "",
+                    "os": parts[3] if len(parts) > 3 else "",
+                    "online": "offline" not in line.lower(),
+                })
+
+        return ToolResult(
+            success=True,
+            output=out,
+            metadata={"peers": peers, "peer_count": len(peers)},
+        )
+
+    async def tailscale_ping(self, target: str) -> ToolResult:
+        """Ping a peer via Tailscale (tests direct connection)."""
+        rc, out, err = await self._run(
+            f"tailscale ping --c 3 {safe_quote(target)}", check=False
+        )
+        success = rc == 0 or "pong" in (out + err).lower()
+
+        return ToolResult(
+            success=success,
+            output=out or err,
+            metadata={"target": target, "reachable": success},
+        )
+
+    async def tailscale_serve(
+        self,
+        port: int,
+        protocol: str = "https",
+        path: str = "/",
+        bg: bool = True,
+    ) -> ToolResult:
+        """Expose a local service via Tailscale Serve (tailnet only).
+
+        Makes a local port accessible to other nodes on your tailnet
+        without opening any firewall ports.
+
+        Args:
+            port: Local port to expose.
+            protocol: "https" (default) or "http".
+            path: URL path to serve at (default "/").
+            bg: Run in background mode.
+        """
+        bg_flag = "--bg" if bg else ""
+        target = f"{protocol}://localhost:{int(port)}"
+
+        rc, out, err = await self._run(
+            f"tailscale serve {bg_flag} {safe_quote(path)} {safe_quote(target)}",
+            check=False,
+        )
+        if rc != 0:
+            return ToolResult(success=False, error=f"tailscale serve failed: {err or out}")
+
+        return ToolResult(
+            success=True,
+            output=f"Serving localhost:{port} on tailnet at {path}",
+            side_effects=[f"Port {port} exposed to tailnet via Tailscale Serve"],
+            metadata={"port": port, "protocol": protocol, "path": path},
+        )
+
+    async def tailscale_serve_status(self) -> ToolResult:
+        """Show what's currently being served via Tailscale Serve."""
+        rc, out, err = await self._run("tailscale serve status", check=False)
+        if rc != 0:
+            return ToolResult(
+                success=True,
+                output="No services currently served via Tailscale",
+                metadata={"serving": []},
+            )
+
+        return ToolResult(
+            success=True,
+            output=out,
+            metadata={"format": "serve_status"},
+        )
+
+    async def tailscale_serve_off(self, path: str = "/") -> ToolResult:
+        """Stop serving a path via Tailscale Serve."""
+        rc, out, err = await self._run(
+            f"tailscale serve off {safe_quote(path)}", check=False
+        )
+        return ToolResult(
+            success=True,
+            output=f"Stopped serving at {path}",
+            side_effects=[f"Tailscale Serve at {path} disabled"],
+        )
+
+    async def tailscale_funnel(
+        self,
+        port: int,
+        protocol: str = "https",
+        path: str = "/",
+        bg: bool = True,
+    ) -> ToolResult:
+        """Expose a local service to the PUBLIC internet via Tailscale Funnel.
+
+        ⚠️ DANGEROUS: This makes the service accessible to anyone on the internet.
+        Only use for services designed for public access.
+
+        Args:
+            port: Local port to funnel.
+            protocol: "https" only (Funnel always uses HTTPS).
+            path: URL path.
+            bg: Run in background.
+        """
+        bg_flag = "--bg" if bg else ""
+        target = f"https://localhost:{int(port)}"
+
+        rc, out, err = await self._run(
+            f"tailscale funnel {bg_flag} {safe_quote(path)} {safe_quote(target)}",
+            check=False,
+        )
+        if rc != 0:
+            return ToolResult(success=False, error=f"tailscale funnel failed: {err or out}")
+
+        return ToolResult(
+            success=True,
+            output=f"Funneling localhost:{port} to the public internet at {path}\n⚠️ This is publicly accessible!",
+            side_effects=[
+                f"Port {port} exposed to PUBLIC INTERNET via Tailscale Funnel",
+                "Anyone with the URL can access this service",
+            ],
+            metadata={"port": port, "public": True, "path": path},
+        )
+
+    async def tailscale_funnel_off(self, path: str = "/") -> ToolResult:
+        """Stop funneling a path to the public internet."""
+        rc, out, err = await self._run(
+            f"tailscale funnel off {safe_quote(path)}", check=False
+        )
+        return ToolResult(
+            success=True,
+            output=f"Funnel stopped at {path} — no longer publicly accessible",
+            side_effects=[f"Public Funnel at {path} disabled"],
+        )
+
+    async def tailscale_set_exit_node(self, node: str) -> ToolResult:
+        """Route all traffic through a Tailscale exit node.
+
+        Args:
+            node: Hostname or IP of the exit node (use "" to disable).
+        """
+        if node:
+            rc, out, err = await self._run(
+                f"tailscale set --exit-node={safe_quote(node)}"
+            )
+        else:
+            rc, out, err = await self._run("tailscale set --exit-node=")
+
+        if rc != 0:
+            return ToolResult(success=False, error=f"Failed to set exit node: {err}")
+
+        if node:
+            return ToolResult(
+                success=True,
+                output=f"All traffic now routed through exit node: {node}",
+                side_effects=[f"Exit node set to {node}"],
+                metadata={"exit_node": node},
+            )
+        else:
+            return ToolResult(
+                success=True,
+                output="Exit node disabled — using direct routing",
+                side_effects=["Exit node routing disabled"],
+            )
+
+    async def tailscale_cert(self, domain: str) -> ToolResult:
+        """Get a TLS certificate for a Tailscale domain.
+
+        Tailscale can provision HTTPS certs for *.ts.net domains.
+        These auto-renew and are trusted by browsers.
+
+        Args:
+            domain: The domain to get a cert for (e.g., "mk.tail12345.ts.net").
+        """
+        rc, out, err = await self._run(
+            f"tailscale cert {safe_quote(domain)}", check=False
+        )
+        if rc != 0:
+            return ToolResult(success=False, error=f"Failed to get cert: {err or out}")
+
+        return ToolResult(
+            success=True,
+            output=f"TLS certificate provisioned for {domain}",
+            side_effects=[f"Certificate files created for {domain}"],
+            metadata={"domain": domain},
+        )
+
+    async def tailscale_lock_status(self) -> ToolResult:
+        """Check Tailscale network lock (tailnet lock) status."""
+        rc, out, err = await self._run("tailscale lock status", check=False)
+        return ToolResult(
+            success=True,
+            output=out or "Tailnet lock not enabled",
+            metadata={"format": "lock_status"},
+        )

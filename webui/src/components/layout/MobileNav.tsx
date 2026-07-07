@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Disc3,
   FolderInput,
+  Key,
   Settings,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems = [
   { label: "Protection", path: "/protection", icon: ShieldCheck },
   { label: "Media", path: "/media", icon: Disc3 },
   { label: "Drops", path: "/media-manager", icon: FolderInput },
+  { label: "Keys & Auth", path: "/keys", icon: Key },
   { label: "System", path: "/system", icon: Settings },
 ];
 
@@ -73,7 +75,7 @@ export function MobileNav() {
           "absolute top-0 left-0 bottom-0 w-64",
           "bg-mk-surface border-r border-mk-border",
           "flex flex-col p-4",
-          "animate-slide-in-right"
+          "animate-slide-in-left"
         )}
       >
         {/* Header */}
@@ -115,7 +117,7 @@ export function MobileNav() {
 
         {/* Footer */}
         <div className="mt-auto pt-4 border-t border-mk-border">
-          <p className="text-xs text-mk-text-muted">MK OS v1.0</p>
+          <p className="text-xs text-mk-text-muted">MK OS v2.0</p>
         </div>
       </nav>
     </div>

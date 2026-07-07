@@ -500,3 +500,155 @@ async def service_health() -> CheckResult:
         message=f"All {len(services)} services responding normally",
         data={"services": services},
     )
+
+
+
+async def tailscale_health() -> CheckResult:
+    """Check Tailscale connection health.
+
+    Verifies:
+    - tailscaled is running
+    - Node is connected to the tailnet
+    - Key is not expiring soon
+    - Peers are reachable
+
+    In production: parses `tailscale status --json` for full status.
+    """
+    import asyncio
+
+    # Check if tailscale is installed and running
+    proc = await asyncio.create_subprocess_shell(
+        "tailscale status --json 2>/dev/null",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        # Try basic status
+        proc2 = await asyncio.create_subprocess_shell(
+            "tailscale status 2>/dev/null",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout2, _ = await proc2.communicate()
+
+        if proc2.returncode != 0:
+            return CheckResult(
+                name="tailscale_health",
+                severity=CheckSeverity.WARNING,
+                message="Tailscale not running or not installed",
+                recommendations=[
+                    "Install: curl -fsSL https://tailscale.com/install.sh | sh",
+                    "Start: sudo systemctl start tailscaled",
+                    "Connect: sudo tailscale up",
+                ],
+            )
+
+        # Basic status available but not JSON
+        output = stdout2.decode().strip()
+        if "offline" in output.lower() or not output:
+            return CheckResult(
+                name="tailscale_health",
+                severity=CheckSeverity.WARNING,
+                message="Tailscale installed but not connected",
+                recommendations=["Connect: sudo tailscale up"],
+            )
+
+        # Connected — count peers
+        lines = [l for l in output.splitlines() if l.strip() and not l.startswith("#")]
+        peer_count = max(0, len(lines) - 1)  # Subtract self
+
+        return CheckResult(
+            name="tailscale_health",
+            severity=CheckSeverity.OK,
+            message=f"Tailscale connected ({peer_count} peers)",
+            data={"peer_count": peer_count, "connected": True},
+        )
+
+    # Full JSON status available
+    import json as _json
+    try:
+        status = _json.loads(stdout.decode())
+    except Exception:
+        return CheckResult(
+            name="tailscale_health",
+            severity=CheckSeverity.UNKNOWN,
+            message="Tailscale status returned invalid JSON",
+        )
+
+    # Check backend state
+    backend_state = status.get("BackendState", "")
+    if backend_state != "Running":
+        return CheckResult(
+            name="tailscale_health",
+            severity=CheckSeverity.WARNING,
+            message=f"Tailscale state: {backend_state} (expected: Running)",
+            data={"state": backend_state},
+            recommendations=["Run: sudo tailscale up"],
+        )
+
+    # Check key expiry
+    self_status = status.get("Self", {})
+    key_expiry = self_status.get("KeyExpiry", "")
+    tailscale_ips = self_status.get("TailscaleIPs", [])
+    hostname = self_status.get("HostName", "unknown")
+
+    # Count online peers
+    peer_map = status.get("Peer", {})
+    online_peers = sum(1 for p in peer_map.values() if p.get("Online", False))
+    total_peers = len(peer_map)
+
+    data = {
+        "connected": True,
+        "state": backend_state,
+        "hostname": hostname,
+        "ips": tailscale_ips,
+        "online_peers": online_peers,
+        "total_peers": total_peers,
+        "key_expiry": key_expiry,
+    }
+
+    # Check if key is expiring soon (within 7 days)
+    if key_expiry:
+        from datetime import datetime
+        try:
+            # Tailscale uses RFC3339 format
+            expiry_str = key_expiry.replace("Z", "+00:00")
+            expiry = datetime.fromisoformat(expiry_str)
+            now = datetime.now(expiry.tzinfo)
+            days_remaining = (expiry - now).days
+
+            data["key_days_remaining"] = days_remaining
+
+            if days_remaining < 0:
+                return CheckResult(
+                    name="tailscale_health",
+                    severity=CheckSeverity.CRITICAL,
+                    message=f"Tailscale key EXPIRED ({abs(days_remaining)} days ago)",
+                    data=data,
+                    recommendations=[
+                        "Re-authenticate: sudo tailscale up --reset",
+                        "Or generate a new auth key in admin console",
+                    ],
+                )
+            elif days_remaining < 7:
+                return CheckResult(
+                    name="tailscale_health",
+                    severity=CheckSeverity.WARNING,
+                    message=f"Tailscale key expires in {days_remaining} days",
+                    data=data,
+                    recommendations=[
+                        "Renew key: visit admin console or re-auth",
+                        "Consider disabling key expiry for servers",
+                    ],
+                )
+        except (ValueError, TypeError):
+            pass  # Can't parse expiry — not critical
+
+    return CheckResult(
+        name="tailscale_health",
+        severity=CheckSeverity.OK,
+        message=f"Tailscale connected: {hostname} ({', '.join(tailscale_ips[:2])}) | {online_peers}/{total_peers} peers online",
+        data=data,
+    )

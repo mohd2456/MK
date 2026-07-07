@@ -28,6 +28,7 @@ from mk.ops.checks import (
     cert_expiry,
     cost_tracking,
     service_health,
+    tailscale_health,
 )
 from mk.ops.alerts import AlertManager, Alert, AlertChannel, AlertState
 from mk.ops.events import EventBus, Event, EventHandler
@@ -47,6 +48,7 @@ __all__ = [
     "cert_expiry",
     "cost_tracking",
     "service_health",
+    "tailscale_health",
     "AlertManager",
     "Alert",
     "AlertChannel",

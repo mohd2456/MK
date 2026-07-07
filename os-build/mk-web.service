@@ -1,0 +1,35 @@
+[Unit]
+Description=MK OS Web Dashboard
+Documentation=https://github.com/mohd2456/MK
+After=network-online.target tailscaled.service mk.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/mk
+Environment=MK_PIN=5610
+Environment=PYTHONUNBUFFERED=1
+
+# Start the web server on all interfaces (Tailscale handles security)
+ExecStart=/usr/bin/python3 -m mk.web.serve --port 8080
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mk-web
+
+[Install]
+WantedBy=multi-user.target

@@ -168,7 +168,7 @@ export function LoginPage() {
         </div>
 
         {/* Number pad */}
-        <div className="grid grid-cols-3 gap-3 w-full max-w-[240px]">
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[280px] mx-auto">
           {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"].map(
             (key) => {
               if (key === "") return <div key="empty" />;
@@ -197,13 +197,14 @@ export function LoginPage() {
                   onClick={() => handleDigit(key)}
                   disabled={locked || isSubmitting || pin.length >= PIN_LENGTH}
                   className={cn(
-                    "h-14 rounded-[12px] flex items-center justify-center",
+                    "h-14 sm:h-14 min-h-[56px] rounded-[12px] flex items-center justify-center",
                     "text-lg font-medium text-mk-text-primary",
                     "bg-mk-surface border border-mk-border",
                     "hover:bg-mk-elevated hover:border-mk-border-strong",
                     "active:scale-[0.95] active:bg-mk-overlay",
                     "transition-all duration-[150ms]",
-                    "disabled:opacity-30 disabled:pointer-events-none"
+                    "disabled:opacity-30 disabled:pointer-events-none",
+                    "touch-manipulation"
                   )}
                 >
                   {key}

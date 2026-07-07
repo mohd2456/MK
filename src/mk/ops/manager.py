@@ -31,6 +31,7 @@ from mk.ops.checks import (
     cost_tracking,
     disk_prediction,
     service_health,
+    tailscale_health,
 )
 from mk.ops.events import Event, EventBus
 from mk.ops.scheduler import ScheduleInterval, Scheduler
@@ -173,6 +174,21 @@ class OpsManager:
             interval=ScheduleInterval.EVERY_5_MINUTES,
             description="Service health pings",
             jitter_seconds=15,
+        )
+
+        # Tailscale — every 15 minutes
+        self.checks.register(
+            name="tailscale_health",
+            handler=tailscale_health,
+            description="Tailscale VPN connection and peer status",
+            category="network",
+        )
+        self.scheduler.register(
+            name="check:tailscale_health",
+            handler=self._wrap_check("tailscale_health"),
+            interval=ScheduleInterval.EVERY_15_MINUTES,
+            description="Tailscale connection health",
+            jitter_seconds=30,
         )
 
     def _register_default_events(self) -> None:

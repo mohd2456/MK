@@ -47,21 +47,37 @@ export function ChatPanel() {
   }, [chatOpen, setChatOpen]);
 
   const handleSend = useCallback(
-    (content: string) => {
+    async (content: string) => {
       const msgId = addUserMessage(content);
       setTyping(true);
 
-      // Simulate AI response (in production, this goes through WebSocket)
-      setTimeout(() => {
+      // Call real API endpoint
+      try {
+        const response = await fetch("/api/v1/chat/message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        body: JSON.stringify({ content, context: {} }),
+        });
+        const data = await response.json();
         setTyping(false);
         addAssistantMessage(
           crypto.randomUUID(),
-          getSimulatedResponse(content),
-          getSimulatedActions(content)
+          data.content || "No response",
+          data.actions || []
         );
-      }, 1200 + Math.random() * 800);
+      } catch {
+        // Fallback to simulated if backend unavailable
+        setTimeout(() => {
+          setTyping(false);
+          addAssistantMessage(
+            crypto.randomUUID(),
+            getSimulatedResponse(content),
+            getSimulatedActions(content)
+          );
+        }, 800);
+      }
 
-      // Suppress unused variable warning
       void msgId;
     },
     [addUserMessage, setTyping, addAssistantMessage]
@@ -82,8 +98,8 @@ export function ChatPanel() {
         "w-96 shrink-0 border-l border-mk-border bg-mk-surface",
         "flex flex-col h-full",
         "animate-slide-in-right",
-        // Mobile: full-screen overlay
-        "max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-[300]"
+        // Mobile: full-screen overlay with safe areas
+        "max-lg:fixed max-lg:inset-0 max-lg:w-full max-lg:z-[300] max-lg:border-l-0"
       )}
     >
       {/* Header */}

@@ -21,6 +21,7 @@ import {
   Disc3,
   FolderInput,
   Settings,
+  Key,
   MessageSquare,
   HelpCircle,
   Menu,
@@ -39,6 +40,7 @@ const navItems = [
   { label: "Protection", path: "/protection", icon: ShieldCheck },
   { label: "Media", path: "/media", icon: Disc3 },
   { label: "Drops", path: "/media-manager", icon: FolderInput },
+  { label: "Keys", path: "/keys", icon: Key },
   { label: "System", path: "/system", icon: Settings },
 ];
 
