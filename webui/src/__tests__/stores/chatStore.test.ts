@@ -128,4 +128,39 @@ describe("chatStore", () => {
     const state = useChatStore.getState();
     expect(state.isTyping).toBe(false);
   });
+
+  it("defaults assistant messages to a trusted (ok) non-degraded state", () => {
+    const store = useChatStore.getState();
+    store.addAssistantMessage("msg-1", "All good");
+
+    const msg = useChatStore.getState().messages[0];
+    expect(msg.ok).toBe(true);
+    expect(msg.failureType).toBeNull();
+    expect(msg.degraded).toBe(false);
+  });
+
+  it("stores AI-failure metadata on assistant messages", () => {
+    const store = useChatStore.getState();
+    store.addAssistantMessage("msg-1", "Fallback text", [], {
+      ok: false,
+      failureType: "timeout",
+      degraded: false,
+    });
+
+    const msg = useChatStore.getState().messages[0];
+    expect(msg.ok).toBe(false);
+    expect(msg.failureType).toBe("timeout");
+  });
+
+  it("stores degraded (no-LLM) metadata on assistant messages", () => {
+    const store = useChatStore.getState();
+    store.addAssistantMessage("msg-1", "Command-only reply", [], {
+      ok: true,
+      degraded: true,
+    });
+
+    const msg = useChatStore.getState().messages[0];
+    expect(msg.ok).toBe(true);
+    expect(msg.degraded).toBe(true);
+  });
 });
