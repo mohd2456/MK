@@ -8,6 +8,31 @@
 import useSWR from "swr";
 import { fetcher, post } from "@/lib/api";
 import { METRICS_REFRESH_INTERVAL, DATA_REFRESH_INTERVAL } from "@/lib/constants";
+import type { SuggestionsResponse } from "@/types/chat";
+
+// ─── Chat: Context-aware Suggestions ─────────────────────────────────
+
+/**
+ * Fetch page-aware suggested actions for the assistant from
+ * `GET /api/v1/chat/suggestions`. The backend (`mk.wrapper.context`) owns the
+ * mapping so suggestions stay in sync with the assistant's real capabilities.
+ *
+ * @param path  The current route/page path (e.g. "/storage").
+ * @param limit Maximum number of suggestions to request (0–12).
+ */
+export function useSuggestions(path: string, limit = 4) {
+  const query = `?path=${encodeURIComponent(path)}&limit=${limit}`;
+  return useSWR<SuggestionsResponse>(
+    `/chat/suggestions${query}`,
+    fetcher,
+    {
+      // Suggestions are static per-page; avoid noisy refetching but revalidate
+      // when the user returns to the tab.
+      revalidateOnFocus: false,
+      dedupingInterval: 60_000,
+    }
+  );
+}
 
 // ─── Dashboard ───────────────────────────────────────────────────────
 
