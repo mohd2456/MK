@@ -7,7 +7,7 @@ Supports pushing configs and scripts to remote targets.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from mk.tools.base import Tool, ToolResult
 

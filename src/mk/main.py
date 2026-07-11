@@ -18,7 +18,6 @@ import sys
 from typing import Optional
 
 from rich.console import Console
-from rich.text import Text
 
 from mk.boot import boot_sequence
 from mk.config.settings import Settings
@@ -50,9 +49,7 @@ async def repl_loop(engine: MKEngine) -> None:
         try:
             # Prompt
             console.print("[bold cyan]MK>[/bold cyan] ", end="")
-            user_input = await asyncio.get_event_loop().run_in_executor(
-                None, input, ""
-            )
+            user_input = await asyncio.get_event_loop().run_in_executor(None, input, "")
 
             # Exit commands
             if user_input.strip().lower() in ("exit", "quit", "bye", "shutdown"):
@@ -71,10 +68,7 @@ async def repl_loop(engine: MKEngine) -> None:
 
             # Token/cost info
             if response.tokens_used > 0:
-                console.print(
-                    f"[dim]({response.tokens_used} tokens, "
-                    f"${response.cost:.4f})[/dim]"
-                )
+                console.print(f"[dim]({response.tokens_used} tokens, ${response.cost:.4f})[/dim]")
             console.print()
 
         except KeyboardInterrupt:

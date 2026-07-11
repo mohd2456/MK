@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import RestartPolicy, ServiceInfo, ServiceState
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +78,9 @@ class ServiceManager:
         if not name.endswith(".service"):
             name = f"{name}.service"
 
-        rc, out, err = await self._run(f"systemctl status {safe_quote(name)} --no-pager", check=False)
+        rc, out, err = await self._run(
+            f"systemctl status {safe_quote(name)} --no-pager", check=False
+        )
 
         if not out and rc != 0:
             return ToolResult(success=False, error=f"Service '{name}' not found: {err}")
@@ -332,9 +332,7 @@ class ServiceManager:
 
     async def list_timers(self) -> ToolResult:
         """List all systemd timers."""
-        rc, out, err = await self._run(
-            "systemctl list-timers --all --no-pager"
-        )
+        rc, out, err = await self._run("systemctl list-timers --all --no-pager")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to list timers: {err}")
 
@@ -357,11 +355,11 @@ class ServiceManager:
         target_service = service_name or name
 
         timer_content = f"""[Unit]
-Description={description or f'Timer for {target_service}'}
+Description={description or f"Timer for {target_service}"}
 
 [Timer]
 OnCalendar={on_calendar}
-Persistent={'true' if persistent else 'false'}
+Persistent={"true" if persistent else "false"}
 Unit={target_service}.service
 
 [Install]
@@ -392,9 +390,7 @@ WantedBy=timers.target
 
     async def failed_services(self) -> ToolResult:
         """List all failed services."""
-        rc, out, err = await self._run(
-            "systemctl list-units --state=failed --no-pager --plain"
-        )
+        rc, out, err = await self._run("systemctl list-units --state=failed --no-pager --plain")
 
         return ToolResult(
             success=True,

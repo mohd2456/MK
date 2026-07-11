@@ -116,9 +116,7 @@ class SecretsManager:
             decrypted = self._fernet.decrypt(encrypted_data)
             return json.loads(decrypted.decode("utf-8"))
         except InvalidToken:
-            raise SecretsError(
-                "Failed to decrypt vault. Wrong passphrase or corrupted file."
-            )
+            raise SecretsError("Failed to decrypt vault. Wrong passphrase or corrupted file.")
 
     def _save_vault(self, vault: Dict[str, str]) -> None:
         """Encrypt and save the secrets vault.

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
-from mk.core.command_router import CommandRouter, CommandPattern, RouteResult
+from mk.core.command_router import CommandRouter, CommandPattern
 
 
 class TestCommandRouter:
@@ -69,8 +68,7 @@ class TestCommandRouter:
     def test_multi_sentence_not_routed(self) -> None:
         """Multi-sentence inputs are not routed directly."""
         result = self.router.route(
-            "I want to set up a new download client. "
-            "Can you help me configure transmission?"
+            "I want to set up a new download client. Can you help me configure transmission?"
         )
         assert result.is_direct is False
 

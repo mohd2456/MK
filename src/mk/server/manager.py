@@ -215,7 +215,9 @@ class ServerManager:
             if "No failed" in services_result.output or not services_result.output.strip():
                 checks_passed += 1
             else:
-                failed_lines = [line for line in services_result.output.splitlines() if ".service" in line]
+                failed_lines = [
+                    line for line in services_result.output.splitlines() if ".service" in line
+                ]
                 for line in failed_lines[:5]:
                     issues.append(f"SERVICE: {line.strip()}")
         else:
@@ -375,9 +377,7 @@ class ServerManager:
 
     async def check_updates(self) -> ToolResult:
         """Check for available system package updates."""
-        rc, out, err = await self._run(
-            "apt list --upgradable 2>/dev/null", check=False
-        )
+        rc, out, err = await self._run("apt list --upgradable 2>/dev/null", check=False)
         if rc == 0 and "upgradable" in out.lower():
             return ToolResult(
                 success=True,
@@ -385,9 +385,7 @@ class ServerManager:
                 metadata={"package_manager": "apt"},
             )
 
-        rc, out, err = await self._run(
-            "dnf check-update 2>/dev/null", check=False
-        )
+        rc, out, err = await self._run("dnf check-update 2>/dev/null", check=False)
         if out:
             return ToolResult(
                 success=True,
@@ -411,9 +409,7 @@ class ServerManager:
             result_output = out
             pkg_mgr = "apt"
         else:
-            rc, out, err = await self._run(
-                "dnf upgrade -y 2>/dev/null", check=False
-            )
+            rc, out, err = await self._run("dnf upgrade -y 2>/dev/null", check=False)
             result_output = out
             pkg_mgr = "dnf"
 
@@ -430,9 +426,7 @@ class ServerManager:
             )
             reboot_needed = reboot_check.strip() == "yes"
         elif pkg_mgr == "dnf":
-            rc2, needs, _ = await self._run(
-                "needs-restarting -r 2>/dev/null; echo $?", check=False
-            )
+            rc2, needs, _ = await self._run("needs-restarting -r 2>/dev/null; echo $?", check=False)
             reboot_needed = "1" in needs
 
         if reboot_needed:

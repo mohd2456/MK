@@ -6,13 +6,11 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import BackupJob, BackupSchedule, BackupType, RestorePoint
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +51,7 @@ class BackupManager:
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
             return 1, "", f"Command timed out after {timeout}s"
@@ -96,7 +92,9 @@ class BackupManager:
         if out:
             for config_file in out.splitlines():
                 if config_file.strip():
-                    rc2, content, _ = await self._run(f"cat {safe_quote(config_file.strip())}", check=False)
+                    rc2, content, _ = await self._run(
+                        f"cat {safe_quote(config_file.strip())}", check=False
+                    )
                     if rc2 == 0:
                         try:
                             job = json.loads(content)
@@ -176,7 +174,11 @@ class BackupManager:
             "weekly": "Mon *-*-* 02:00:00",
             "monthly": "*-*-01 02:00:00",
         }
-        on_calendar = cron_expression if schedule == "custom" else calendar_map.get(schedule, "*-*-* 02:00:00")
+        on_calendar = (
+            cron_expression
+            if schedule == "custom"
+            else calendar_map.get(schedule, "*-*-* 02:00:00")
+        )
 
         service_content = f"""[Unit]
 Description=MK Backup Job: {name}
@@ -216,7 +218,12 @@ WantedBy=timers.target
                 "Systemd timer created and enabled",
                 f"Next run scheduled: {on_calendar}",
             ],
-            metadata={"job": name, "type": backup_type, "schedule": schedule, "config_path": config_path},
+            metadata={
+                "job": name,
+                "type": backup_type,
+                "schedule": schedule,
+                "config_path": config_path,
+            },
         )
 
     async def delete_job(self, name: str) -> ToolResult:
@@ -226,8 +233,12 @@ WantedBy=timers.target
         await self._run(f"systemctl stop mk-backup-{safe_quote(name)}.timer", check=False)
         await self._run(f"systemctl disable mk-backup-{safe_quote(name)}.timer", check=False)
 
-        await self._run(f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.service')}", check=False)
-        await self._run(f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.timer')}", check=False)
+        await self._run(
+            f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.service')}", check=False
+        )
+        await self._run(
+            f"rm -f {safe_quote(f'/etc/systemd/system/mk-backup-{name}.timer')}", check=False
+        )
         await self._run(f"rm -f {safe_quote(f'{self._config_dir}/{name}.json')}", check=False)
         await self._run("systemctl daemon-reload")
 
@@ -315,7 +326,9 @@ WantedBy=timers.target
                 f"ssh {safe_quote(host)} zfs receive -F {safe_quote(target)}"
             )
         else:
-            cmd = f"zfs send -R {safe_quote(latest_snap)} | zfs receive -F {safe_quote(destination)}"
+            cmd = (
+                f"zfs send -R {safe_quote(latest_snap)} | zfs receive -F {safe_quote(destination)}"
+            )
 
         rc, out, err = await self._run(cmd, timeout=7200)
         if rc != 0:
@@ -384,8 +397,9 @@ WantedBy=timers.target
         if backup_type in ("zfs_snapshot", "zfs_send"):
             rc, out, err = await self._run(
                 f"zfs list -t snapshot -H -o name -S creation -r {safe_quote(source)} 2>/dev/null | "
-                f"grep 'mk-backup-{job_name}'"
-            , check=False)
+                f"grep 'mk-backup-{job_name}'",
+                check=False,
+            )
 
             if rc == 0 and out:
                 snapshots = [s.strip() for s in out.splitlines() if s.strip()]
@@ -407,7 +421,9 @@ WantedBy=timers.target
         return ToolResult(
             success=True,
             output=f"Retention applied for '{job_name}': removed {len(removed)} old backups",
-            side_effects=[f"Removed: {snap}" for snap in removed] if removed else ["Nothing to remove"],
+            side_effects=[f"Removed: {snap}" for snap in removed]
+            if removed
+            else ["Nothing to remove"],
             metadata={"job": job_name, "removed_count": len(removed), "retention": retention},
         )
 
@@ -442,11 +458,13 @@ WantedBy=timers.target
                 for line in out.splitlines():
                     parts = line.split("\t")
                     if len(parts) >= 3:
-                        points.append({
-                            "id": parts[0],
-                            "size_bytes": int(parts[1]),
-                            "created": parts[2],
-                        })
+                        points.append(
+                            {
+                                "id": parts[0],
+                                "size_bytes": int(parts[1]),
+                                "created": parts[2],
+                            }
+                        )
 
         elif backup_type == "restic":
             rc, out, _ = await self._run(
@@ -457,11 +475,13 @@ WantedBy=timers.target
                 try:
                     snapshots = json.loads(out)
                     for snap in snapshots:
-                        points.append({
-                            "id": snap.get("short_id", snap.get("id", "")),
-                            "created": snap.get("time", ""),
-                            "paths": snap.get("paths", []),
-                        })
+                        points.append(
+                            {
+                                "id": snap.get("short_id", snap.get("id", "")),
+                                "created": snap.get("time", ""),
+                                "paths": snap.get("paths", []),
+                            }
+                        )
                 except json.JSONDecodeError:
                     pass
 
@@ -522,7 +542,11 @@ WantedBy=timers.target
                 success=True,
                 output=f"Restored from restic snapshot {restore_point_id} to {restore_target}",
                 side_effects=[f"Files restored to {restore_target}"],
-                metadata={"restore_point": restore_point_id, "target": restore_target, "type": "restic"},
+                metadata={
+                    "restore_point": restore_point_id,
+                    "target": restore_target,
+                    "type": "restic",
+                },
             )
 
         elif backup_type == "rsync":

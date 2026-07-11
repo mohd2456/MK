@@ -17,7 +17,6 @@ Design choices:
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,16 +33,34 @@ from mk.plugins.media_organizer.parser import (
 
 # Files to always ignore
 IGNORE_FILES: Set[str] = {
-    ".ds_store", "thumbs.db", "desktop.ini", ".nfo",
-    ".txt", ".url", ".lnk", ".exe", ".bat", ".sh",
+    ".ds_store",
+    "thumbs.db",
+    "desktop.ini",
+    ".nfo",
+    ".txt",
+    ".url",
+    ".lnk",
+    ".exe",
+    ".bat",
+    ".sh",
 }
 
 # Folders to skip entirely
 IGNORE_FOLDERS: Set[str] = {
-    ".git", ".svn", "__pycache__", "node_modules",
-    "@eadir", "#recycle", ".trash", "$recycle.bin",
-    "sample", "samples", "extras", "featurettes",
-    "behind the scenes", "metadata",
+    ".git",
+    ".svn",
+    "__pycache__",
+    "node_modules",
+    "@eadir",
+    "#recycle",
+    ".trash",
+    "$recycle.bin",
+    "sample",
+    "samples",
+    "extras",
+    "featurettes",
+    "behind the scenes",
+    "metadata",
 }
 
 
@@ -51,10 +68,10 @@ IGNORE_FOLDERS: Set[str] = {
 class ScannedFile:
     """A single file found during scanning."""
 
-    path: str            # Full absolute path
-    relative_path: str   # Path relative to scan root
-    filename: str        # Just the filename
-    size_bytes: int      # File size
+    path: str  # Full absolute path
+    relative_path: str  # Path relative to scan root
+    filename: str  # Just the filename
+    size_bytes: int  # File size
     parsed: ParsedMedia  # Parsed metadata
     is_media: bool = True
     is_subtitle: bool = False
@@ -130,7 +147,6 @@ class ScanResult:
     def get_subtitles(self) -> List[ScannedFile]:
         """Get all subtitle files."""
         return [f for f in self.files if f.is_subtitle]
-
 
     def get_duplicates(self) -> Dict[str, List[ScannedFile]]:
         """Find potential duplicates (same title+episode, different files).
@@ -232,10 +248,7 @@ class FolderScanner:
         result.scan_duration_seconds = time.time() - start_time
         return result
 
-
-    def _walk_directory(
-        self, current: Path, root: Path, depth: int, result: ScanResult
-    ) -> None:
+    def _walk_directory(self, current: Path, root: Path, depth: int, result: ScanResult) -> None:
         """Recursively walk a directory, processing files.
 
         Args:
@@ -258,7 +271,7 @@ class FolderScanner:
                 if entry.name.lower() in IGNORE_FOLDERS:
                     continue
                 # Skip hidden folders
-                if entry.name.startswith('.'):
+                if entry.name.startswith("."):
                     continue
                 self._walk_directory(entry, root, depth + 1, result)
 
@@ -312,7 +325,7 @@ class FolderScanner:
         if (not parsed.title or parsed.title == "Unknown") and filepath.parent != root:
             parent_name = filepath.parent.name
             # Try parsing the parent folder name for title info
-            if not any(c in parent_name.lower() for c in ['sample', 'sub', 'extra']):
+            if not any(c in parent_name.lower() for c in ["sample", "sub", "extra"]):
                 folder_parsed = self._parser.parse(parent_name + ext)
                 if folder_parsed.title and folder_parsed.title != "Unknown":
                     parsed.title = folder_parsed.title

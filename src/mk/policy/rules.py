@@ -25,11 +25,11 @@ import yaml
 class PolicyDecision(str, Enum):
     """What the policy engine decides about an action."""
 
-    ALLOW = "allow"              # Action is permitted
-    DENY = "deny"               # Action is blocked
+    ALLOW = "allow"  # Action is permitted
+    DENY = "deny"  # Action is blocked
     REQUIRE_CONFIRM = "require_confirm"  # User must confirm
     REQUIRE_SNAPSHOT = "require_snapshot"  # Must snapshot before proceeding
-    WARN = "warn"               # Allow but log a warning
+    WARN = "warn"  # Allow but log a warning
     RATE_LIMITED = "rate_limited"  # Exceeded rate limit
 
 
@@ -51,11 +51,11 @@ class PolicyMatch:
     Unspecified conditions are wildcards (match anything).
     """
 
-    tool: Optional[str] = None          # Tool name pattern (glob)
-    action: Optional[str] = None        # Action within the tool
+    tool: Optional[str] = None  # Tool name pattern (glob)
+    action: Optional[str] = None  # Action within the tool
     args_pattern: Dict[str, str] = field(default_factory=dict)  # Arg key→regex
     command_pattern: Optional[str] = None  # Regex for command strings
-    agent: Optional[str] = None         # Which sub-agent is executing
+    agent: Optional[str] = None  # Which sub-agent is executing
     is_dangerous: Optional[bool] = None  # Match on dangerous flag
 
     def matches(
@@ -130,10 +130,10 @@ class PolicyMatch:
 class RateLimit:
     """Rate limiting configuration for a rule."""
 
-    count: int = 3              # Maximum invocations
+    count: int = 3  # Maximum invocations
     period_seconds: int = 3600  # Time window (default: 1 hour)
-    per: str = ""               # What to track per (e.g., "container", "machine")
-    message: str = ""           # Message when limit exceeded
+    per: str = ""  # What to track per (e.g., "container", "machine")
+    message: str = ""  # Message when limit exceeded
 
     # Runtime tracking
     _invocations: Dict[str, List[float]] = field(default_factory=dict)
@@ -154,9 +154,7 @@ class RateLimit:
             self._invocations[key] = []
 
         # Remove expired entries
-        self._invocations[key] = [
-            t for t in self._invocations[key] if t > cutoff
-        ]
+        self._invocations[key] = [t for t in self._invocations[key] if t > cutoff]
 
         return len(self._invocations[key]) < self.count
 
@@ -304,7 +302,11 @@ class PolicyRule:
 
         # Parse action
         action_str = data.get("action", "deny")
-        action = PolicyAction(action_str) if action_str in PolicyAction.__members__.values() else PolicyAction.DENY
+        action = (
+            PolicyAction(action_str)
+            if action_str in PolicyAction.__members__.values()
+            else PolicyAction.DENY
+        )
 
         return cls(
             name=data.get("name", "unnamed"),
@@ -373,8 +375,7 @@ def load_policies(path: str) -> List[PolicyRule]:
             rules.append(rule)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning(
-                f"Failed to parse policy rule: {e}"
-            )
+
+            logging.getLogger(__name__).warning(f"Failed to parse policy rule: {e}")
 
     return rules

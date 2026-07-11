@@ -21,16 +21,12 @@ class ToolResult(BaseModel):
 
     success: bool = Field(description="Whether the tool execution succeeded")
     output: str = Field(default="", description="Tool output content")
-    error: Optional[str] = Field(
-        default=None, description="Error message if execution failed"
-    )
+    error: Optional[str] = Field(default=None, description="Error message if execution failed")
     side_effects: List[str] = Field(
         default_factory=list,
         description="Description of side effects (e.g., 'file created at /tmp/x')",
     )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional result metadata"
-    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional result metadata")
 
 
 class Tool(ABC):

@@ -10,17 +10,16 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
 from mk.llm.base import AuthenticationError, ProviderError, RateLimitError
-from mk.llm.keys import KeyManager, PROVIDER_ENDPOINTS, PROVIDER_MODELS
+from mk.llm.keys import KeyManager, PROVIDER_ENDPOINTS
 from mk.llm.models import (
     LLMMessage,
     LLMRequest,
-    LLMResponse,
     MessageRole,
     ProviderConfig,
 )
@@ -65,13 +64,15 @@ def make_config(name: str, base_url: str = "http://test.local") -> ProviderConfi
 def mock_openai_response(content: str = "Hello from provider!") -> Dict[str, Any]:
     """Standard OpenAI-compatible response."""
     return {
-        "choices": [{
-            "message": {
-                "content": content,
-                "tool_calls": [],
-            },
-            "finish_reason": "stop",
-        }],
+        "choices": [
+            {
+                "message": {
+                    "content": content,
+                    "tool_calls": [],
+                },
+                "finish_reason": "stop",
+            }
+        ],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
 
@@ -116,9 +117,7 @@ class TestUniversalProvider:
             return httpx.Response(200, json=mock_openai_response("Groq fast"))
 
         transport = httpx.MockTransport(handler)
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Groq fast"
@@ -138,9 +137,7 @@ class TestUniversalProvider:
             return httpx.Response(200, json=mock_openai_response("Search result"))
 
         transport = httpx.MockTransport(handler)
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Search result"
@@ -160,9 +157,7 @@ class TestUniversalProvider:
             return httpx.Response(200, json=mock_openai_response("Custom"))
 
         transport = httpx.MockTransport(handler)
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Custom"
@@ -174,27 +169,27 @@ class TestUniversalProvider:
         provider = UniversalProvider(config)
 
         mock_data = {
-            "choices": [{
-                "message": {
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "call_abc",
-                        "function": {
-                            "name": "search",
-                            "arguments": '{"query": "test"}',
-                        },
-                    }],
-                },
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_abc",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"query": "test"}',
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
             "usage": {"prompt_tokens": 20, "completion_tokens": 10},
         }
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=mock_data)
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=mock_data))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert len(response.tool_calls) == 1
@@ -209,9 +204,7 @@ class TestUniversalProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(401, json={"error": "invalid key"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(AuthenticationError):
             await provider.complete(make_request())
@@ -224,9 +217,7 @@ class TestUniversalProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(429, headers={"retry-after": "1"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(RateLimitError):
             await provider.complete(make_request())
@@ -239,9 +230,7 @@ class TestUniversalProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(500, text="Internal Server Error")
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(ProviderError) as exc_info:
             await provider.complete(make_request())
@@ -253,12 +242,8 @@ class TestUniversalProvider:
         config = make_config("together", "http://test.local")
         provider = UniversalProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json={"data": []})
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"data": []}))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         assert await provider.health_check() is True
 
@@ -267,12 +252,8 @@ class TestUniversalProvider:
         config = make_config("together", "http://test.local")
         provider = UniversalProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(500, text="error")
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(500, text="error"))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         assert await provider.health_check() is False
 
@@ -288,9 +269,7 @@ class TestUniversalProvider:
             return httpx.Response(200, json={"data": []})
 
         transport = httpx.MockTransport(handler)
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         await provider.health_check()
         assert called_paths == ["/openai/v1/models"]
@@ -300,12 +279,8 @@ class TestUniversalProvider:
         config = make_config("mistral", "http://test.local")
         provider = UniversalProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(503, text="Service Unavailable")
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(503, text="Service Unavailable"))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(ProviderError) as exc_info:
             await provider.complete(make_request())
@@ -503,14 +478,19 @@ class TestEngineSetupLLMProviders:
         """Test that setup_llm_providers configures the router."""
         # Write a test keys file
         keys_file = tmp_path / "keys.json"
-        keys_file.write_text(json.dumps({
-            "keys": {
-                "openai": ["sk-test-key-1"],
-                "groq": ["gsk_test_key_2"],
-            }
-        }))
+        keys_file.write_text(
+            json.dumps(
+                {
+                    "keys": {
+                        "openai": ["sk-test-key-1"],
+                        "groq": ["gsk_test_key_2"],
+                    }
+                }
+            )
+        )
 
         from mk.core.engine import MKEngine
+
         engine = MKEngine()
         engine.setup_llm_providers(keys_file=str(keys_file))
 
@@ -525,6 +505,7 @@ class TestEngineSetupLLMProviders:
         keys_file.write_text(json.dumps({"keys": {}}))
 
         from mk.core.engine import MKEngine
+
         engine = MKEngine()
         engine.setup_llm_providers(keys_file=str(keys_file))
 
@@ -533,6 +514,7 @@ class TestEngineSetupLLMProviders:
     def test_setup_llm_providers_missing_file(self, tmp_path: Any) -> None:
         """Test that setup_llm_providers handles missing keys file."""
         from mk.core.engine import MKEngine
+
         engine = MKEngine()
         engine.setup_llm_providers(keys_file=str(tmp_path / "nonexistent.json"))
 

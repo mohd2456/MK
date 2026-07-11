@@ -6,21 +6,11 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import (
-    Dataset,
-    PoolStatus,
-    Share,
-    ShareType,
-    Snapshot,
-    VDevType,
-    ZPool,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +61,7 @@ class StorageManager:
 
     async def list_pools(self) -> ToolResult:
         """List all ZFS pools with their status and usage."""
-        rc, out, err = await self._run(
-            "zpool list -Hp -o name,size,alloc,free,frag,health"
-        )
+        rc, out, err = await self._run("zpool list -Hp -o name,size,alloc,free,frag,health")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to list pools: {err}")
 
@@ -84,14 +72,16 @@ class StorageManager:
             parts = line.split("\t")
             if len(parts) >= 6:
                 name, size, alloc, free, frag, health = parts[:6]
-                pools.append({
-                    "name": name,
-                    "size_bytes": int(size),
-                    "used_bytes": int(alloc),
-                    "free_bytes": int(free),
-                    "fragmentation": int(frag.rstrip("%")) if frag != "-" else 0,
-                    "status": health.lower(),
-                })
+                pools.append(
+                    {
+                        "name": name,
+                        "size_bytes": int(size),
+                        "used_bytes": int(alloc),
+                        "free_bytes": int(free),
+                        "fragmentation": int(frag.rstrip("%")) if frag != "-" else 0,
+                        "status": health.lower(),
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -202,14 +192,16 @@ class StorageManager:
                 continue
             parts = line.split("\t")
             if len(parts) >= 6:
-                datasets.append({
-                    "name": parts[0],
-                    "used_bytes": int(parts[1]),
-                    "available_bytes": int(parts[2]),
-                    "referenced_bytes": int(parts[3]),
-                    "mountpoint": parts[4],
-                    "compression": parts[5],
-                })
+                datasets.append(
+                    {
+                        "name": parts[0],
+                        "used_bytes": int(parts[1]),
+                        "available_bytes": int(parts[2]),
+                        "referenced_bytes": int(parts[3]),
+                        "mountpoint": parts[4],
+                        "compression": parts[5],
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -301,12 +293,14 @@ class StorageManager:
                 continue
             parts = line.split("\t")
             if len(parts) >= 4:
-                snapshots.append({
-                    "name": parts[0],
-                    "used_bytes": int(parts[1]),
-                    "referenced_bytes": int(parts[2]),
-                    "created": parts[3],
-                })
+                snapshots.append(
+                    {
+                        "name": parts[0],
+                        "used_bytes": int(parts[1]),
+                        "referenced_bytes": int(parts[2]),
+                        "created": parts[3],
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -471,9 +465,7 @@ class StorageManager:
                 return ToolResult(success=False, error=f"Failed to remove SMB share: {err}")
             await self._run("systemctl restart smbd")
         elif share_type == "nfs":
-            rc, out, err = await self._run(
-                f"sed -i '\\|^{escaped_name}|d' /etc/exports"
-            )
+            rc, out, err = await self._run(f"sed -i '\\|^{escaped_name}|d' /etc/exports")
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to remove NFS export: {err}")
             await self._run("exportfs -ra")
@@ -491,9 +483,7 @@ class StorageManager:
 
     async def list_disks(self) -> ToolResult:
         """List all block devices with size and model info."""
-        rc, out, err = await self._run(
-            "lsblk -Jb -o NAME,SIZE,TYPE,MODEL,SERIAL,ROTA,TRAN"
-        )
+        rc, out, err = await self._run("lsblk -Jb -o NAME,SIZE,TYPE,MODEL,SERIAL,ROTA,TRAN")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to list disks: {err}")
 
@@ -545,5 +535,9 @@ class StorageManager:
             success=True,
             output=f"Snapshot '{snapshot}' replicated to '{destination}'",
             side_effects=[f"Data replicated to {destination}"],
-            metadata={"snapshot": snapshot, "destination": destination, "incremental": bool(incremental_from)},
+            metadata={
+                "snapshot": snapshot,
+                "destination": destination,
+                "incremental": bool(incremental_from),
+            },
         )

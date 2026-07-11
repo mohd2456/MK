@@ -70,10 +70,12 @@ class GeminiProvider(LLMProvider):
                 system_instruction = {"parts": [{"text": msg.content}]}
             else:
                 role = "user" if msg.role in (MessageRole.USER, MessageRole.TOOL) else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": msg.content}],
-                })
+                contents.append(
+                    {
+                        "role": role,
+                        "parts": [{"text": msg.content}],
+                    }
+                )
 
         return system_instruction, contents
 
@@ -81,11 +83,13 @@ class GeminiProvider(LLMProvider):
         """Convert tool definitions to Gemini function declarations."""
         declarations = []
         for tool in tools:
-            declarations.append({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters if tool.parameters else {"type": "object"},
-            })
+            declarations.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters if tool.parameters else {"type": "object"},
+                }
+            )
         return [{"functionDeclarations": declarations}]
 
     def _parse_response(self, data: Dict[str, Any]) -> tuple:
@@ -106,11 +110,13 @@ class GeminiProvider(LLMProvider):
                     text_parts.append(part["text"])
                 elif "functionCall" in part:
                     fc = part["functionCall"]
-                    tool_calls.append(ToolCall(
-                        id=f"gemini_{fc.get('name', '')}",
-                        name=fc.get("name", ""),
-                        arguments=fc.get("args", {}),
-                    ))
+                    tool_calls.append(
+                        ToolCall(
+                            id=f"gemini_{fc.get('name', '')}",
+                            name=fc.get("name", ""),
+                            arguments=fc.get("args", {}),
+                        )
+                    )
 
         usage = data.get("usageMetadata", {})
         input_tokens = usage.get("promptTokenCount", 0)
@@ -160,8 +166,8 @@ class GeminiProvider(LLMProvider):
 
                 if response.status_code == 200:
                     data = response.json()
-                    text_content, tool_calls, (input_tokens, output_tokens) = (
-                        self._parse_response(data)
+                    text_content, tool_calls, (input_tokens, output_tokens) = self._parse_response(
+                        data
                     )
 
                     return LLMResponse(
@@ -177,9 +183,7 @@ class GeminiProvider(LLMProvider):
                     )
 
                 elif response.status_code == 429:
-                    retry_after = float(
-                        response.headers.get("retry-after", str(2 ** attempt))
-                    )
+                    retry_after = float(response.headers.get("retry-after", str(2**attempt)))
                     if attempt < self.config.max_retries - 1:
                         await asyncio.sleep(retry_after)
                         continue
@@ -200,14 +204,14 @@ class GeminiProvider(LLMProvider):
             except httpx.TimeoutException:
                 last_error = ProviderTimeoutError(self.name, self.config.timeout_seconds)
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
             except (RateLimitError, AuthenticationError, ProviderError):
                 raise
             except Exception as e:
                 last_error = e
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
 
         if last_error:

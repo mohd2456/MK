@@ -31,10 +31,10 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 from mk.plugins.manifest import PluginManifest
-from mk.tools.base import Tool, ToolResult
+from mk.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,9 @@ class PluginLoader:
                     if manifest_path_alt.exists():
                         discovered.append(entry)
 
-        logger.info(f"Discovered {len(discovered)} plugins across {len(self._plugin_dirs)} directories")
+        logger.info(
+            f"Discovered {len(discovered)} plugins across {len(self._plugin_dirs)} directories"
+        )
         return discovered
 
     def load_plugin(self, plugin_path: Path) -> LoadedPlugin:
@@ -194,9 +196,7 @@ class PluginLoader:
         extraction_errors: List[str] = []
 
         if module:
-            handlers, extraction_errors = self._extract_handlers(
-                module, manifest
-            )
+            handlers, extraction_errors = self._extract_handlers(module, manifest)
 
         all_errors = module_errors + extraction_errors
 
@@ -210,8 +210,7 @@ class PluginLoader:
 
         if all_errors:
             logger.warning(
-                f"Plugin '{manifest.name}' loaded with {len(all_errors)} errors: "
-                f"{all_errors}"
+                f"Plugin '{manifest.name}' loaded with {len(all_errors)} errors: {all_errors}"
             )
         else:
             logger.info(
@@ -283,13 +282,9 @@ class PluginLoader:
             if manifest_path.exists():
                 return PluginManifest.from_yaml(manifest_path)
 
-        raise FileNotFoundError(
-            f"No plugin.yaml or plugin.yml found in {plugin_path}"
-        )
+        raise FileNotFoundError(f"No plugin.yaml or plugin.yml found in {plugin_path}")
 
-    def _load_module(
-        self, plugin_path: Path, plugin_name: str
-    ) -> tuple:
+    def _load_module(self, plugin_path: Path, plugin_name: str) -> tuple:
         """Load the plugin's Python module.
 
         Looks for tools.py or tools/__init__.py in the plugin directory.
@@ -318,9 +313,7 @@ class PluginLoader:
         # Load the module dynamically
         module_name = f"mk_plugin_{plugin_name.replace('-', '_')}"
         try:
-            spec = importlib.util.spec_from_file_location(
-                module_name, str(module_path)
-            )
+            spec = importlib.util.spec_from_file_location(module_name, str(module_path))
             if spec is None or spec.loader is None:
                 errors.append(f"Failed to create module spec from {module_path}")
                 return None, errors
@@ -349,9 +342,7 @@ class PluginLoader:
             errors.append(f"Module import failed: {type(e).__name__}: {e}")
             return None, errors
 
-    def _extract_handlers(
-        self, module: Any, manifest: PluginManifest
-    ) -> tuple:
+    def _extract_handlers(self, module: Any, manifest: PluginManifest) -> tuple:
         """Extract tool handler functions from the loaded module.
 
         Matching strategy:
@@ -377,9 +368,7 @@ class PluginLoader:
                     if callable(handler):
                         handlers[tool_name] = handler
                     else:
-                        errors.append(
-                            f"Tool '{tool_name}' in module.tools is not callable"
-                        )
+                        errors.append(f"Tool '{tool_name}' in module.tools is not callable")
 
         # Strategy 2: Look for functions matching tool names
         for tool_def in manifest.tools:
@@ -406,11 +395,7 @@ class PluginLoader:
 
         # Strategy 3: Look for Tool subclasses (legacy compatibility)
         for _, obj in inspect.getmembers(module, inspect.isclass):
-            if (
-                issubclass(obj, Tool)
-                and obj is not Tool
-                and not inspect.isabstract(obj)
-            ):
+            if issubclass(obj, Tool) and obj is not Tool and not inspect.isabstract(obj):
                 try:
                     instance = obj()
                     if instance.name in manifest.tool_names and instance.name not in handlers:
@@ -422,8 +407,6 @@ class PluginLoader:
         # Report missing handlers
         for tool_def in manifest.tools:
             if tool_def.name not in handlers:
-                errors.append(
-                    f"No handler found for declared tool '{tool_def.name}'"
-                )
+                errors.append(f"No handler found for declared tool '{tool_def.name}'")
 
         return handlers, errors

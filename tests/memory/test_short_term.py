@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from mk.memory.short_term import ShortTermMemory, _estimate_tokens
 

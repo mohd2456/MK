@@ -36,12 +36,8 @@ class MemoryEntry(BaseModel):
     timestamp: datetime = Field(
         default_factory=datetime.utcnow, description="When this memory was created"
     )
-    relevance_score: float = Field(
-        default=1.0, description="Relevance score (0.0 to 1.0)"
-    )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
+    relevance_score: float = Field(default=1.0, description="Relevance score (0.0 to 1.0)")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class ConversationTurn(BaseModel):
@@ -56,12 +52,8 @@ class ConversationTurn(BaseModel):
     timestamp: datetime = Field(
         default_factory=datetime.utcnow, description="When this turn occurred"
     )
-    summary: Optional[str] = Field(
-        default=None, description="Compressed summary of this turn"
-    )
-    token_count: int = Field(
-        default=0, description="Estimated token count for this turn"
-    )
+    summary: Optional[str] = Field(default=None, description="Compressed summary of this turn")
+    token_count: int = Field(default=0, description="Estimated token count for this turn")
 
 
 class UserKnowledge(BaseModel):
@@ -73,24 +65,16 @@ class UserKnowledge(BaseModel):
 
     key: str = Field(description="Knowledge identifier/topic")
     value: str = Field(description="The knowledge content")
-    confidence: float = Field(
-        default=1.0, description="Confidence score (0.0 to 1.0)"
-    )
+    confidence: float = Field(default=1.0, description="Confidence score (0.0 to 1.0)")
     learned_at: datetime = Field(
         default_factory=datetime.utcnow, description="When this was learned"
     )
     last_accessed: datetime = Field(
         default_factory=datetime.utcnow, description="When this was last retrieved"
     )
-    access_count: int = Field(
-        default=0, description="Number of times this was retrieved"
-    )
-    source: str = Field(
-        default="conversation", description="Where this knowledge came from"
-    )
-    tags: List[str] = Field(
-        default_factory=list, description="Tags for categorization"
-    )
+    access_count: int = Field(default=0, description="Number of times this was retrieved")
+    source: str = Field(default="conversation", description="Where this knowledge came from")
+    tags: List[str] = Field(default_factory=list, description="Tags for categorization")
 
 
 class ServiceStatus(str, Enum):
@@ -106,12 +90,8 @@ class ServiceInfo(BaseModel):
     """Information about a monitored service."""
 
     name: str = Field(description="Service name")
-    status: ServiceStatus = Field(
-        default=ServiceStatus.UNKNOWN, description="Current status"
-    )
-    last_check: datetime = Field(
-        default_factory=datetime.utcnow, description="Last status check"
-    )
+    status: ServiceStatus = Field(default=ServiceStatus.UNKNOWN, description="Current status")
+    last_check: datetime = Field(default_factory=datetime.utcnow, description="Last status check")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional service metadata"
     )

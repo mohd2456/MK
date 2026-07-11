@@ -19,11 +19,13 @@ dependencies = [
     "numpy>=1.24.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.20.0",
+    "aiosqlite>=0.19.0",
 ]
 
 [project.scripts]
 mk = "mk.main:cli_entry"
 mk-web = "mk.web.serve:start_server"
+mk-validate-config = "mk.config.validate:cli_validate"
 
 [build-system]
 requires = ["hatchling"]

@@ -14,14 +14,12 @@ MK is actively watching the infrastructure.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
-from mk.ops.alerts import AlertManager, Alert
+from mk.ops.alerts import AlertManager
 from mk.ops.checks import (
-    Check,
     CheckRegistry,
     CheckResult,
     CheckSeverity,
@@ -251,7 +249,7 @@ class OpsManager:
             # Emit event if check failed
             if result.needs_alert:
                 await self.events.emit_simple(
-                    f"check:failed",
+                    "check:failed",
                     source="ops",
                     check=check_name,
                     severity=result.severity.value,

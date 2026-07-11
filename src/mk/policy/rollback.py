@@ -27,7 +27,7 @@ class RollbackStep:
 
     description: str
     command: str  # Command to execute for rollback
-    target: str   # What is being rolled back
+    target: str  # What is being rolled back
     snapshot_id: str
     order: int = 0  # Execution order (lower = first)
     executed: bool = False
@@ -148,12 +148,14 @@ class RollbackHandler:
                 id=f"plan-{int(time.time())}",
                 description=description,
             )
-            plan.steps.append(RollbackStep(
-                description="No snapshot available — manual intervention required",
-                command="# No automatic rollback available",
-                target=target or "unknown",
-                snapshot_id="none",
-            ))
+            plan.steps.append(
+                RollbackStep(
+                    description="No snapshot available — manual intervention required",
+                    command="# No automatic rollback available",
+                    target=target or "unknown",
+                    snapshot_id="none",
+                )
+            )
             return plan
 
         # Build plan from snapshot
@@ -165,31 +167,37 @@ class RollbackHandler:
             for i, sub_id in enumerate(reversed(sub_ids)):
                 sub = self._snapshots.get_snapshot(sub_id)
                 if sub and sub.rollback_command:
-                    steps.append(RollbackStep(
-                        description=f"Restore {sub.target} from {sub.id}",
-                        command=sub.rollback_command,
-                        target=sub.target,
-                        snapshot_id=sub.id,
-                        order=i,
-                    ))
+                    steps.append(
+                        RollbackStep(
+                            description=f"Restore {sub.target} from {sub.id}",
+                            command=sub.rollback_command,
+                            target=sub.target,
+                            snapshot_id=sub.id,
+                            order=i,
+                        )
+                    )
         elif snapshot.rollback_command:
             # Single snapshot with rollback command
-            steps.append(RollbackStep(
-                description=f"Restore {snapshot.target} from snapshot {snapshot.id}",
-                command=snapshot.rollback_command,
-                target=snapshot.target,
-                snapshot_id=snapshot.id,
-                order=0,
-            ))
+            steps.append(
+                RollbackStep(
+                    description=f"Restore {snapshot.target} from snapshot {snapshot.id}",
+                    command=snapshot.rollback_command,
+                    target=snapshot.target,
+                    snapshot_id=snapshot.id,
+                    order=0,
+                )
+            )
 
         # Add verification step
-        steps.append(RollbackStep(
-            description="Verify rollback succeeded",
-            command=f"# Verify {snapshot.target} is restored correctly",
-            target=snapshot.target,
-            snapshot_id=snapshot.id,
-            order=len(steps),
-        ))
+        steps.append(
+            RollbackStep(
+                description="Verify rollback succeeded",
+                command=f"# Verify {snapshot.target} is restored correctly",
+                target=snapshot.target,
+                snapshot_id=snapshot.id,
+                order=len(steps),
+            )
+        )
 
         plan = RollbackPlan(
             id=f"plan-{int(time.time())}",
@@ -229,11 +237,13 @@ class RollbackHandler:
                 # Comment/manual step — skip
                 step.executed = True
                 step.success = True
-                results.append({
-                    "step": step.description,
-                    "skipped": True,
-                    "reason": "Manual/verification step",
-                })
+                results.append(
+                    {
+                        "step": step.description,
+                        "skipped": True,
+                        "reason": "Manual/verification step",
+                    }
+                )
                 continue
 
             logger.info(f"Rollback step: {step.description}")
@@ -243,30 +253,36 @@ class RollbackHandler:
                     output = await self._executor(step.command)
                     step.executed = True
                     step.success = True
-                    results.append({
-                        "step": step.description,
-                        "success": True,
-                        "output": output,
-                    })
+                    results.append(
+                        {
+                            "step": step.description,
+                            "success": True,
+                            "output": output,
+                        }
+                    )
                 except Exception as e:
                     step.executed = True
                     step.success = False
                     step.error = str(e)
                     all_success = False
-                    results.append({
-                        "step": step.description,
-                        "success": False,
-                        "error": str(e),
-                    })
+                    results.append(
+                        {
+                            "step": step.description,
+                            "success": False,
+                            "error": str(e),
+                        }
+                    )
             else:
                 # No executor — just mark as executed (simulated)
                 step.executed = True
                 step.success = True
-                results.append({
-                    "step": step.description,
-                    "simulated": True,
-                    "command": step.command,
-                })
+                results.append(
+                    {
+                        "step": step.description,
+                        "simulated": True,
+                        "command": step.command,
+                    }
+                )
 
         plan.executed = True
         plan.executed_at = time.time()
@@ -287,9 +303,7 @@ class RollbackHandler:
 
     def get_recent_plans(self, limit: int = 10) -> List[RollbackPlan]:
         """Get recent rollback plans."""
-        return sorted(
-            self._plans, key=lambda p: p.created_at, reverse=True
-        )[:limit]
+        return sorted(self._plans, key=lambda p: p.created_at, reverse=True)[:limit]
 
     def can_rollback(self, target: str) -> bool:
         """Check if a rollback is possible for a target.

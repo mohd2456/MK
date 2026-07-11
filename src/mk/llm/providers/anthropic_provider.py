@@ -63,9 +63,7 @@ class AnthropicProvider(LLMProvider):
             )
         return self._client
 
-    def _format_messages(
-        self, messages: List[LLMMessage]
-    ) -> tuple:
+    def _format_messages(self, messages: List[LLMMessage]) -> tuple:
         """Convert messages to Anthropic format (system separate from messages).
 
         Returns:
@@ -79,10 +77,12 @@ class AnthropicProvider(LLMProvider):
                 system_prompt = msg.content
             else:
                 role = "user" if msg.role in (MessageRole.USER, MessageRole.TOOL) else "assistant"
-                formatted.append({
-                    "role": role,
-                    "content": msg.content,
-                })
+                formatted.append(
+                    {
+                        "role": role,
+                        "content": msg.content,
+                    }
+                )
 
         return system_prompt, formatted
 
@@ -90,11 +90,13 @@ class AnthropicProvider(LLMProvider):
         """Convert tool definitions to Anthropic tool format."""
         formatted = []
         for tool in tools:
-            formatted.append({
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.parameters if tool.parameters else {"type": "object"},
-            })
+            formatted.append(
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.parameters if tool.parameters else {"type": "object"},
+                }
+            )
         return formatted
 
     def _parse_response_content(self, content_blocks: List[Dict[str, Any]]) -> tuple:
@@ -110,11 +112,13 @@ class AnthropicProvider(LLMProvider):
             if block.get("type") == "text":
                 text_parts.append(block.get("text", ""))
             elif block.get("type") == "tool_use":
-                tool_calls.append(ToolCall(
-                    id=block.get("id", ""),
-                    name=block.get("name", ""),
-                    arguments=block.get("input", {}),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=block.get("id", ""),
+                        name=block.get("name", ""),
+                        arguments=block.get("input", {}),
+                    )
+                )
 
         return " ".join(text_parts), tool_calls
 
@@ -177,9 +181,7 @@ class AnthropicProvider(LLMProvider):
                     )
 
                 elif response.status_code == 429:
-                    retry_after = float(
-                        response.headers.get("retry-after", str(2 ** attempt))
-                    )
+                    retry_after = float(response.headers.get("retry-after", str(2**attempt)))
                     if attempt < self.config.max_retries - 1:
                         await asyncio.sleep(retry_after)
                         continue
@@ -200,14 +202,14 @@ class AnthropicProvider(LLMProvider):
             except httpx.TimeoutException:
                 last_error = ProviderTimeoutError(self.name, self.config.timeout_seconds)
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
             except (RateLimitError, AuthenticationError, ProviderError):
                 raise
             except Exception as e:
                 last_error = e
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
 
         if last_error:
@@ -282,11 +284,14 @@ class AnthropicProvider(LLMProvider):
             client = self._get_client()
             # Anthropic doesn't have a simple health endpoint,
             # so we send a minimal request
-            response = await client.post("/v1/messages", json={
-                "model": self.config.default_model or "claude-3-haiku-20240307",
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-            })
+            response = await client.post(
+                "/v1/messages",
+                json={
+                    "model": self.config.default_model or "claude-3-haiku-20240307",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                },
+            )
             return response.status_code == 200
         except Exception:
             return False

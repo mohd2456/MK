@@ -6,8 +6,7 @@ Covers normal completion, streaming, error handling, and rate limit retry.
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import httpx
 import pytest
@@ -60,13 +59,15 @@ class TestOpenAIProvider:
 
     def _mock_response(self, content: str = "Hello!") -> Dict[str, Any]:
         return {
-            "choices": [{
-                "message": {
-                    "content": content,
-                    "tool_calls": [],
-                },
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": content,
+                        "tool_calls": [],
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
         }
 
@@ -75,9 +76,7 @@ class TestOpenAIProvider:
         config = make_config("openai", "http://test.local")
         provider = OpenAIProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
         provider._client = httpx.AsyncClient(
             base_url="http://test.local",
             transport=transport,
@@ -97,27 +96,27 @@ class TestOpenAIProvider:
         provider = OpenAIProvider(config)
 
         mock_data = {
-            "choices": [{
-                "message": {
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "call_123",
-                        "function": {
-                            "name": "get_weather",
-                            "arguments": '{"city": "London"}',
-                        },
-                    }],
-                },
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"city": "London"}',
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
             "usage": {"prompt_tokens": 20, "completion_tokens": 10},
         }
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=mock_data)
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=mock_data))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert len(response.tool_calls) == 1
@@ -132,9 +131,7 @@ class TestOpenAIProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(401, json={"error": "unauthorized"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(AuthenticationError):
             await provider.complete(make_request())
@@ -148,9 +145,7 @@ class TestOpenAIProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(429, headers={"retry-after": "1"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(RateLimitError):
             await provider.complete(make_request())
@@ -164,9 +159,7 @@ class TestOpenAIProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(500, text="Internal Server Error")
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(ProviderError) as exc_info:
             await provider.complete(make_request())
@@ -177,12 +170,8 @@ class TestOpenAIProvider:
         config = make_config("openai")
         provider = OpenAIProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json={"data": []})
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"data": []}))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         assert await provider.health_check() is True
 
@@ -191,12 +180,8 @@ class TestOpenAIProvider:
         config = make_config("openai")
         provider = OpenAIProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(500, text="error")
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(500, text="error"))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         assert await provider.health_check() is False
 
@@ -227,9 +212,7 @@ class TestAnthropicProvider:
         config = make_config("anthropic", "http://test.local")
         provider = AnthropicProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
         provider._client = httpx.AsyncClient(
             base_url="http://test.local",
             transport=transport,
@@ -260,12 +243,8 @@ class TestAnthropicProvider:
             "usage": {"input_tokens": 20, "output_tokens": 15},
         }
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=mock_data)
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=mock_data))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert "Let me check that." in response.content
@@ -282,9 +261,7 @@ class TestAnthropicProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(401, json={"error": "invalid_api_key"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(AuthenticationError):
             await provider.complete(make_request())
@@ -301,12 +278,8 @@ class TestAnthropicProvider:
             ],
         )
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         # Should not raise - system message handled
         response = await provider.complete(request)
@@ -321,12 +294,14 @@ class TestGeminiProvider:
 
     def _mock_response(self, content: str = "Hello!") -> Dict[str, Any]:
         return {
-            "candidates": [{
-                "content": {
-                    "parts": [{"text": content}],
-                    "role": "model",
-                },
-            }],
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": content}],
+                        "role": "model",
+                    },
+                }
+            ],
             "usageMetadata": {
                 "promptTokenCount": 8,
                 "candidatesTokenCount": 4,
@@ -338,12 +313,8 @@ class TestGeminiProvider:
         config = make_config("gemini", "http://test.local")
         provider = GeminiProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Hello!"
@@ -357,25 +328,25 @@ class TestGeminiProvider:
         provider = GeminiProvider(config)
 
         mock_data = {
-            "candidates": [{
-                "content": {
-                    "parts": [{
-                        "functionCall": {
-                            "name": "get_weather",
-                            "args": {"location": "NYC"},
-                        }
-                    }],
-                },
-            }],
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "get_weather",
+                                    "args": {"location": "NYC"},
+                                }
+                            }
+                        ],
+                    },
+                }
+            ],
             "usageMetadata": {"promptTokenCount": 15, "candidatesTokenCount": 8},
         }
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=mock_data)
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=mock_data))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert len(response.tool_calls) == 1
@@ -390,9 +361,7 @@ class TestGeminiProvider:
         transport = httpx.MockTransport(
             lambda req: httpx.Response(429, headers={"retry-after": "2"})
         )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(RateLimitError):
             await provider.complete(make_request())
@@ -406,10 +375,12 @@ class TestGroqProvider:
 
     def _mock_response(self, content: str = "Fast response!") -> Dict[str, Any]:
         return {
-            "choices": [{
-                "message": {"content": content, "tool_calls": []},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"content": content, "tool_calls": []},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 5, "completion_tokens": 3},
         }
 
@@ -418,12 +389,8 @@ class TestGroqProvider:
         config = make_config("groq", "http://test.local")
         provider = GroqProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Fast response!"
@@ -436,12 +403,8 @@ class TestGroqProvider:
         config = config.model_copy(update={"max_retries": 1})
         provider = GroqProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(401, text="Unauthorized")
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(401, text="Unauthorized"))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         with pytest.raises(AuthenticationError):
             await provider.complete(make_request())
@@ -455,10 +418,12 @@ class TestMistralProvider:
 
     def _mock_response(self, content: str = "Bonjour!") -> Dict[str, Any]:
         return {
-            "choices": [{
-                "message": {"content": content, "tool_calls": []},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"content": content, "tool_calls": []},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 7, "completion_tokens": 4},
         }
 
@@ -467,12 +432,8 @@ class TestMistralProvider:
         config = make_config("mistral", "http://test.local")
         provider = MistralProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Bonjour!"
@@ -494,12 +455,8 @@ class TestMistralProvider:
             ],
         )
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://test.local", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://test.local", transport=transport)
 
         response = await provider.complete(request)
         assert response.content == "Bonjour!"
@@ -525,12 +482,8 @@ class TestOllamaProvider:
         config = config.model_copy(update={"api_key": ""})
         provider = OllamaProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json=self._mock_response())
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://localhost:11434", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json=self._mock_response()))
+        provider._client = httpx.AsyncClient(base_url="http://localhost:11434", transport=transport)
 
         response = await provider.complete(make_request())
         assert response.content == "Local response"
@@ -544,12 +497,8 @@ class TestOllamaProvider:
         config = make_config("ollama", "http://localhost:11434")
         provider = OllamaProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(500, text="model not found")
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://localhost:11434", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(500, text="model not found"))
+        provider._client = httpx.AsyncClient(base_url="http://localhost:11434", transport=transport)
 
         with pytest.raises(ProviderError):
             await provider.complete(make_request())
@@ -559,12 +508,8 @@ class TestOllamaProvider:
         config = make_config("ollama", "http://localhost:11434")
         provider = OllamaProvider(config)
 
-        transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json={"models": []})
-        )
-        provider._client = httpx.AsyncClient(
-            base_url="http://localhost:11434", transport=transport
-        )
+        transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"models": []}))
+        provider._client = httpx.AsyncClient(base_url="http://localhost:11434", transport=transport)
 
         assert await provider.health_check() is True
 
@@ -577,9 +522,7 @@ class TestOllamaProvider:
             raise httpx.ConnectError("Connection refused")
 
         transport = httpx.MockTransport(raise_error)
-        provider._client = httpx.AsyncClient(
-            base_url="http://localhost:11434", transport=transport
-        )
+        provider._client = httpx.AsyncClient(base_url="http://localhost:11434", transport=transport)
 
         assert await provider.health_check() is False
 

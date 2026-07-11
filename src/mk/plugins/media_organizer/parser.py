@@ -18,14 +18,15 @@ Naming patterns handled:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 class MediaType(str, Enum):
     """Classification of a media file."""
+
     MOVIE = "movie"
     TV_SHOW = "tv_show"
     ANIME = "anime"
@@ -34,11 +35,30 @@ class MediaType(str, Enum):
 
 # File extensions we care about
 MEDIA_EXTENSIONS = {
-    ".mkv", ".mp4", ".avi", ".m4v", ".wmv", ".flv", ".mov",
-    ".ts", ".m2ts", ".webm", ".ogv", ".divx", ".mpg", ".mpeg",
+    ".mkv",
+    ".mp4",
+    ".avi",
+    ".m4v",
+    ".wmv",
+    ".flv",
+    ".mov",
+    ".ts",
+    ".m2ts",
+    ".webm",
+    ".ogv",
+    ".divx",
+    ".mpg",
+    ".mpeg",
 }
 SUBTITLE_EXTENSIONS = {
-    ".srt", ".sub", ".idx", ".ass", ".ssa", ".vtt", ".sup", ".pgs",
+    ".srt",
+    ".sub",
+    ".idx",
+    ".ass",
+    ".ssa",
+    ".vtt",
+    ".sup",
+    ".pgs",
 }
 
 
@@ -85,19 +105,49 @@ AUDIO_PATTERNS = [
 
 # Known anime fansub groups (partial list — helps classify as anime)
 ANIME_GROUPS = {
-    "subsplease", "erai-raws", "horriblesubs", "commie",
-    "damedesuyo", "gg", "coalgirls", "hi10", "anime",
-    "judas", "ember", "sallysubs", "setsugen", "yameii",
-    "cerberus", "tenshi", "anidl", "bonkai77", "kawaiisubs",
-    "nyanpasu", "ohys-raws", "leopard-raws", "animetime",
+    "subsplease",
+    "erai-raws",
+    "horriblesubs",
+    "commie",
+    "damedesuyo",
+    "gg",
+    "coalgirls",
+    "hi10",
+    "anime",
+    "judas",
+    "ember",
+    "sallysubs",
+    "setsugen",
+    "yameii",
+    "cerberus",
+    "tenshi",
+    "anidl",
+    "bonkai77",
+    "kawaiisubs",
+    "nyanpasu",
+    "ohys-raws",
+    "leopard-raws",
+    "animetime",
 }
 
 
 # Anime indicators in title/filename
 ANIME_INDICATORS = {
-    "ova", "ona", "special", "specials", "nced", "ncop",
-    "batch", "complete", "dual audio", "multi-sub",
-    "jp", "jpn", "japanese", "eng sub", "engsub",
+    "ova",
+    "ona",
+    "special",
+    "specials",
+    "nced",
+    "ncop",
+    "batch",
+    "complete",
+    "dual audio",
+    "multi-sub",
+    "jp",
+    "jpn",
+    "japanese",
+    "eng sub",
+    "engsub",
 }
 
 # Words that indicate it's NOT a year (to avoid 1080 being parsed as year)
@@ -110,6 +160,7 @@ class ParsedMedia:
 
     Contains all extracted metadata plus confidence in the classification.
     """
+
     original_filename: str
     media_type: MediaType = MediaType.UNKNOWN
     title: str = ""
@@ -143,7 +194,9 @@ class ParsedMedia:
     @property
     def has_episode_info(self) -> bool:
         """Whether this has season/episode data (TV/anime indicator)."""
-        return self.season is not None or self.episode is not None or self.absolute_episode is not None
+        return (
+            self.season is not None or self.episode is not None or self.absolute_episode is not None
+        )
 
     @property
     def is_movie(self) -> bool:
@@ -156,7 +209,6 @@ class ParsedMedia:
     @property
     def is_anime(self) -> bool:
         return self.media_type == MediaType.ANIME
-
 
 
 class MediaParser:
@@ -208,7 +260,7 @@ class MediaParser:
             result.subtitle_lang = self._detect_subtitle_lang(filename)
 
         # Check for sample files
-        if re.search(r'\bsample\b', filename, re.I):
+        if re.search(r"\bsample\b", filename, re.I):
             result.is_sample = True
 
         # Stage 1: Extract anime fansub group tag [GroupName]
@@ -230,7 +282,6 @@ class MediaParser:
 
         return result
 
-
     def parse_batch(self, filepaths: List[str]) -> List[ParsedMedia]:
         """Parse multiple files.
 
@@ -248,10 +299,10 @@ class MediaParser:
         Returns the cleaned filename and the group name (if found).
         """
         # Match [GroupName] at the start
-        match = re.match(r'^\[([^\]]+)\]\s*', filename)
+        match = re.match(r"^\[([^\]]+)\]\s*", filename)
         if match:
             group = match.group(1).strip()
-            cleaned = filename[match.end():]
+            cleaned = filename[match.end() :]
             # Check if it's a known anime group or looks like one
             if group.lower() in ANIME_GROUPS or len(group) < 20:
                 return cleaned, group
@@ -259,7 +310,7 @@ class MediaParser:
 
         # Also check for group at end: filename [hash]
         # Remove trailing [hash] (8-char hex)
-        filename = re.sub(r'\s*\[[0-9a-fA-F]{6,8}\]\s*$', '', filename)
+        filename = re.sub(r"\s*\[[0-9a-fA-F]{6,8}\]\s*$", "", filename)
         return filename, None
 
     def _extract_technical(self, filename: str, result: ParsedMedia) -> str:
@@ -268,45 +319,47 @@ class MediaParser:
         Removes matched tags and returns the cleaned filename.
         """
         # Extract release group from end (e.g., -GROUP or .GROUP)
-        group_match = re.search(r'[-.]([A-Za-z0-9]+)$', filename)
+        group_match = re.search(r"[-.]([A-Za-z0-9]+)$", filename)
         if group_match and not result.release_group:
             potential_group = group_match.group(1)
             # Only if it looks like a group (not a common word)
-            if (len(potential_group) >= 2 and len(potential_group) <= 15
-                    and potential_group.upper() not in {'MKV', 'AVI', 'MP4', 'THE', 'AND'}):
+            if (
+                len(potential_group) >= 2
+                and len(potential_group) <= 15
+                and potential_group.upper() not in {"MKV", "AVI", "MP4", "THE", "AND"}
+            ):
                 result.release_group = potential_group
-                filename = filename[:group_match.start()]
+                filename = filename[: group_match.start()]
 
         # Extract quality
         for pattern, value in self._quality_re:
             if pattern.search(filename):
                 result.quality = value
-                filename = pattern.sub('', filename)
+                filename = pattern.sub("", filename)
                 break
 
         # Extract source
         for pattern, value in self._source_re:
             if pattern.search(filename):
                 result.source = value
-                filename = pattern.sub('', filename)
+                filename = pattern.sub("", filename)
                 break
 
         # Extract codec
         for pattern, value in self._codec_re:
             if pattern.search(filename):
                 result.codec = value
-                filename = pattern.sub('', filename)
+                filename = pattern.sub("", filename)
                 break
 
         # Extract audio
         for pattern, value in self._audio_re:
             if pattern.search(filename):
                 result.audio = value
-                filename = pattern.sub('', filename)
+                filename = pattern.sub("", filename)
                 break
 
         return filename
-
 
     def _compile_episode_patterns(self) -> List[Tuple[re.Pattern, str]]:
         """Compile episode detection patterns.
@@ -316,23 +369,23 @@ class MediaParser:
         """
         patterns = [
             # S01E01-E03 (multi-episode)
-            (r'[Ss](\d{1,2})[Ee](\d{1,3})[-–]?[Ee](\d{1,3})', 'multi_ep'),
+            (r"[Ss](\d{1,2})[Ee](\d{1,3})[-–]?[Ee](\d{1,3})", "multi_ep"),
             # S01E01 (standard)
-            (r'[Ss](\d{1,2})[Ee](\d{1,3})', 'standard'),
+            (r"[Ss](\d{1,2})[Ee](\d{1,3})", "standard"),
             # S01.E01 or S01_E01
-            (r'[Ss](\d{1,2})[._][Ee](\d{1,3})', 'standard_sep'),
+            (r"[Ss](\d{1,2})[._][Ee](\d{1,3})", "standard_sep"),
             # 1x01 format
-            (r'(\d{1,2})[xX](\d{1,3})', 'x_format'),
+            (r"(\d{1,2})[xX](\d{1,3})", "x_format"),
             # Season 1 Episode 5 (verbose)
-            (r'[Ss]eason\s*(\d{1,2})\s*[Ee]pisode\s*(\d{1,3})', 'verbose'),
+            (r"[Ss]eason\s*(\d{1,2})\s*[Ee]pisode\s*(\d{1,3})", "verbose"),
             # Daily show: 2024.03.15 or 2024-03-15
-            (r'(\d{4})[.\-](\d{2})[.\-](\d{2})', 'daily'),
+            (r"(\d{4})[.\-](\d{2})[.\-](\d{2})", "daily"),
             # Anime: " - 01" or " - 145" (absolute, preceded by title)
-            (r'\s*[-–]\s*(\d{1,4})\s*(?:\(|\[|$|v\d)', 'absolute'),
+            (r"\s*[-–]\s*(\d{1,4})\s*(?:\(|\[|$|v\d)", "absolute"),
             # Anime: "E01" without S (sometimes used, up to 4 digits for long anime)
-            (r'(?<![Ss])(?:EP?|ep?)(\d{1,4})(?:\s|$|[._\-\[\(])', 'ep_only'),
+            (r"(?<![Ss])(?:EP?|ep?)(\d{1,4})(?:\s|$|[._\-\[\(])", "ep_only"),
             # Part number: Part 1, Part.2, pt1, pt.2
-            (r'(?:Part|Pt)\.?\s*(\d{1,2})', 'part'),
+            (r"(?:Part|Pt)\.?\s*(\d{1,2})", "part"),
         ]
         return [(re.compile(p), name) for p, name in patterns]
 
@@ -346,28 +399,28 @@ class MediaParser:
             if not match:
                 continue
 
-            if ptype == 'multi_ep':
+            if ptype == "multi_ep":
                 result.season = int(match.group(1))
                 result.episode = int(match.group(2))
                 result.episode_end = int(match.group(3))
-                return filename[:match.start()]
+                return filename[: match.start()]
 
-            elif ptype in ('standard', 'standard_sep'):
+            elif ptype in ("standard", "standard_sep"):
                 result.season = int(match.group(1))
                 result.episode = int(match.group(2))
-                return filename[:match.start()]
+                return filename[: match.start()]
 
-            elif ptype == 'x_format':
+            elif ptype == "x_format":
                 result.season = int(match.group(1))
                 result.episode = int(match.group(2))
-                return filename[:match.start()]
+                return filename[: match.start()]
 
-            elif ptype == 'verbose':
+            elif ptype == "verbose":
                 result.season = int(match.group(1))
                 result.episode = int(match.group(2))
-                return filename[:match.start()]
+                return filename[: match.start()]
 
-            elif ptype == 'daily':
+            elif ptype == "daily":
                 # Daily shows — store as season = year, episode from date
                 year = int(match.group(1))
                 month = int(match.group(2))
@@ -379,32 +432,31 @@ class MediaParser:
                     # Use ordinal day as episode (not perfect but functional)
                     result.episode = month * 100 + day
                     result.episode_title = f"{year}-{month:02d}-{day:02d}"
-                    return filename[:match.start()]
+                    return filename[: match.start()]
 
-            elif ptype == 'absolute':
+            elif ptype == "absolute":
                 ep_num = int(match.group(1))
                 # Sanity check: absolute eps are usually < 2000
                 if ep_num < 2000:
                     result.absolute_episode = ep_num
                     result.season = 1  # Default to season 1 for absolute
                     result.episode = ep_num
-                    return filename[:match.start()]
+                    return filename[: match.start()]
 
-            elif ptype == 'ep_only':
+            elif ptype == "ep_only":
                 ep_num = int(match.group(1))
                 if ep_num < 2000:
                     result.episode = ep_num
                     result.season = 1
                     result.absolute_episode = ep_num
-                    return filename[:match.start()]
+                    return filename[: match.start()]
 
-            elif ptype == 'part':
+            elif ptype == "part":
                 result.is_multi_part = True
                 result.part_number = int(match.group(1))
                 # Don't remove — title extraction still needs the rest
 
         return filename
-
 
     def _extract_title_year(self, filename: str, result: ParsedMedia) -> None:
         """Extract title and year from the remaining filename.
@@ -414,14 +466,14 @@ class MediaParser:
         """
         # Clean up separators
         # Replace dots, underscores with spaces (scene naming)
-        cleaned = re.sub(r'[._]', ' ', filename)
+        cleaned = re.sub(r"[._]", " ", filename)
         # Remove extra whitespace
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         # Remove trailing/leading dashes and brackets
-        cleaned = re.sub(r'^[-–\s]+|[-–\s]+$', '', cleaned)
+        cleaned = re.sub(r"^[-–\s]+|[-–\s]+$", "", cleaned)
 
         # Extract year from parentheses BEFORE stripping them: Title (2023)
-        paren_year_match = re.search(r'\((\d{4})\)', cleaned)
+        paren_year_match = re.search(r"\((\d{4})\)", cleaned)
         if paren_year_match:
             year_str = paren_year_match.group(1)
             if year_str not in NOT_YEAR_WORDS:
@@ -429,18 +481,18 @@ class MediaParser:
                 if 1920 <= year_val <= 2030:
                     if result.year is None:
                         result.year = year_val
-                    title_part = cleaned[:paren_year_match.start()].strip()
+                    title_part = cleaned[: paren_year_match.start()].strip()
                     if title_part:
                         # Remove any remaining brackets
-                        title_part = re.sub(r'\s*[\(\[\{].*?[\)\]\}]\s*', ' ', title_part).strip()
+                        title_part = re.sub(r"\s*[\(\[\{].*?[\)\]\}]\s*", " ", title_part).strip()
                         result.title = self._clean_title(title_part)
                         return
 
         # Remove remaining bracket content
-        cleaned = re.sub(r'\s*[\(\[\{].*?[\)\]\}]\s*', ' ', cleaned).strip()
+        cleaned = re.sub(r"\s*[\(\[\{].*?[\)\]\}]\s*", " ", cleaned).strip()
 
         # Try to extract year (4 digits, 1920-2030)
-        year_match = re.search(r'\b((?:19|20)\d{2})\b', cleaned)
+        year_match = re.search(r"\b((?:19|20)\d{2})\b", cleaned)
         if year_match:
             year_str = year_match.group(1)
             if year_str not in NOT_YEAR_WORDS:
@@ -449,12 +501,12 @@ class MediaParser:
                     if result.year is None:
                         result.year = year_val
                     # Title is everything before the year
-                    title_part = cleaned[:year_match.start()].strip()
+                    title_part = cleaned[: year_match.start()].strip()
                     if title_part:
                         result.title = self._clean_title(title_part)
                         return
                     # Year at the start — title is after
-                    title_part = cleaned[year_match.end():].strip()
+                    title_part = cleaned[year_match.end() :].strip()
                     if title_part:
                         result.title = self._clean_title(title_part)
                         return
@@ -465,7 +517,7 @@ class MediaParser:
         else:
             # Last resort: use original filename
             result.title = self._clean_title(
-                re.sub(r'[._]', ' ', Path(result.original_filename).stem)
+                re.sub(r"[._]", " ", Path(result.original_filename).stem)
             )
 
     def _clean_title(self, title: str) -> str:
@@ -476,11 +528,16 @@ class MediaParser:
         - Fix common issues
         """
         # Remove trailing/leading separators
-        title = re.sub(r'^[-–.\s]+|[-–.\s]+$', '', title)
+        title = re.sub(r"^[-–.\s]+|[-–.\s]+$", "", title)
         # Remove common noise words at the end
-        title = re.sub(r'\s+(proper|repack|internal|limited|extended|unrated|directors\s*cut)\s*$', '', title, flags=re.I)
+        title = re.sub(
+            r"\s+(proper|repack|internal|limited|extended|unrated|directors\s*cut)\s*$",
+            "",
+            title,
+            flags=re.I,
+        )
         # Collapse whitespace
-        title = re.sub(r'\s+', ' ', title).strip()
+        title = re.sub(r"\s+", " ", title).strip()
 
         if not title:
             return "Unknown"
@@ -496,8 +553,7 @@ class MediaParser:
             else:
                 result_words.append(word)
 
-        return ' '.join(result_words)
-
+        return " ".join(result_words)
 
     def _classify(self, result: ParsedMedia) -> None:
         """Classify the media type based on all extracted evidence.
@@ -526,7 +582,7 @@ class MediaParser:
             if group_lower in ANIME_GROUPS:
                 score_anime += 5.0
             # Bracket groups at start are typically anime
-            if re.match(r'^[A-Z]', result.release_group or ''):
+            if re.match(r"^[A-Z]", result.release_group or ""):
                 score_anime += 0.5
 
         # Title contains anime indicators
@@ -537,7 +593,7 @@ class MediaParser:
                 break
 
         # Japanese characters in title → anime
-        if result.title and re.search(r'[\u3000-\u9fff\uff00-\uffef]', result.title):
+        if result.title and re.search(r"[\u3000-\u9fff\uff00-\uffef]", result.title):
             score_anime += 5.0
 
         # Year without episode → movie
@@ -549,7 +605,7 @@ class MediaParser:
             score_movie += 2.0
 
         # Common movie sources/quality without episodes → movie
-        if result.source in ('BluRay', 'REMUX', 'WEB-DL') and not result.has_episode_info:
+        if result.source in ("BluRay", "REMUX", "WEB-DL") and not result.has_episode_info:
             score_movie += 1.0
 
         # Multi-part → movie (parts of a movie, not episodes)
@@ -584,18 +640,18 @@ class MediaParser:
         """Detect subtitle language from filename."""
         # Common patterns: movie.en.srt, movie.eng.srt, movie.English.srt
         lang_patterns = {
-            r'\.en(?:g(?:lish)?)?\.': 'en',
-            r'\.ar(?:abic)?\.': 'ar',
-            r'\.fr(?:ench|a)?\.': 'fr',
-            r'\.es(?:panish|p)?\.': 'es',
-            r'\.de(?:utsch|u)?\.': 'de',
-            r'\.it(?:alian|a)?\.': 'it',
-            r'\.pt(?:b|r)?\.': 'pt',
-            r'\.ja(?:p(?:anese)?)?\.': 'ja',
-            r'\.zh|\.chi(?:nese)?\.': 'zh',
-            r'\.ko(?:r(?:ean)?)?\.': 'ko',
-            r'\.ru(?:s(?:sian)?)?\.': 'ru',
-            r'\.hi(?:ndi)?\.': 'hi',
+            r"\.en(?:g(?:lish)?)?\.": "en",
+            r"\.ar(?:abic)?\.": "ar",
+            r"\.fr(?:ench|a)?\.": "fr",
+            r"\.es(?:panish|p)?\.": "es",
+            r"\.de(?:utsch|u)?\.": "de",
+            r"\.it(?:alian|a)?\.": "it",
+            r"\.pt(?:b|r)?\.": "pt",
+            r"\.ja(?:p(?:anese)?)?\.": "ja",
+            r"\.zh|\.chi(?:nese)?\.": "zh",
+            r"\.ko(?:r(?:ean)?)?\.": "ko",
+            r"\.ru(?:s(?:sian)?)?\.": "ru",
+            r"\.hi(?:ndi)?\.": "hi",
         }
         for pattern, lang in lang_patterns.items():
             if re.search(pattern, filename, re.I):

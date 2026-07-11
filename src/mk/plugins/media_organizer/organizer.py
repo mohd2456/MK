@@ -18,7 +18,6 @@ Safety features:
 
 from __future__ import annotations
 
-import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -26,18 +25,18 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from mk.plugins.media_organizer.normalizer import MediaNormalizer, PlexPath
+from mk.plugins.media_organizer.normalizer import MediaNormalizer
 from mk.plugins.media_organizer.parser import MediaParser, MediaType, ParsedMedia
-from mk.plugins.media_organizer.scanner import FolderScanner, ScanResult, ScannedFile
-
+from mk.plugins.media_organizer.scanner import FolderScanner
 
 
 class MoveStatus(str, Enum):
     """Status of a single file move operation."""
+
     PENDING = "pending"
     SUCCESS = "success"
-    SKIPPED = "skipped"      # Already exists at destination
-    CONFLICT = "conflict"    # Another file targets the same destination
+    SKIPPED = "skipped"  # Already exists at destination
+    CONFLICT = "conflict"  # Another file targets the same destination
     ERROR = "error"
     UNDONE = "undone"
 
@@ -46,9 +45,9 @@ class MoveStatus(str, Enum):
 class MoveAction:
     """A single file move action in the plan."""
 
-    source: str          # Original file path
-    destination: str     # Target path (full)
-    relative_dest: str   # Relative path (for display)
+    source: str  # Original file path
+    destination: str  # Target path (full)
+    relative_dest: str  # Relative path (for display)
     parsed: ParsedMedia  # Parsed metadata
     status: MoveStatus = MoveStatus.PENDING
     error: Optional[str] = None
@@ -73,7 +72,11 @@ class MoveAction:
             MoveStatus.ERROR: "✗ ",
             MoveStatus.UNDONE: "↩ ",
         }[self.status]
-        size = f"({self.size_bytes / (1024**3):.2f}GB)" if self.size_bytes > 1024**3 else f"({self.size_bytes / (1024**2):.0f}MB)"
+        size = (
+            f"({self.size_bytes / (1024**3):.2f}GB)"
+            if self.size_bytes > 1024**3
+            else f"({self.size_bytes / (1024**2):.0f}MB)"
+        )
         return f"{icon}{self.filename} {size}\n    → {self.relative_dest}"
 
 
@@ -119,21 +122,28 @@ class OrganizePlan:
 
     @property
     def movies(self) -> List[MoveAction]:
-        return [a for a in self.actions if a.parsed.media_type == MediaType.MOVIE and not a.is_subtitle]
+        return [
+            a for a in self.actions if a.parsed.media_type == MediaType.MOVIE and not a.is_subtitle
+        ]
 
     @property
     def tv_shows(self) -> List[MoveAction]:
-        return [a for a in self.actions if a.parsed.media_type == MediaType.TV_SHOW and not a.is_subtitle]
+        return [
+            a
+            for a in self.actions
+            if a.parsed.media_type == MediaType.TV_SHOW and not a.is_subtitle
+        ]
 
     @property
     def anime(self) -> List[MoveAction]:
-        return [a for a in self.actions if a.parsed.media_type == MediaType.ANIME and not a.is_subtitle]
-
+        return [
+            a for a in self.actions if a.parsed.media_type == MediaType.ANIME and not a.is_subtitle
+        ]
 
     def preview(self) -> str:
         """Generate a human-readable preview of the plan."""
         lines = [
-            f"📋 Organization Plan",
+            "📋 Organization Plan",
             f"   Source: {self.source_root}",
             f"   Destination: {self.dest_root}",
             f"   Total files: {self.total_actions}",
@@ -175,7 +185,7 @@ class OrganizePlan:
             lines.append(f"⚠️  Conflicts ({len(self.conflicts)}):")
             for c in self.conflicts[:5]:
                 lines.append(f"  • {c['dest']}: {len(c['sources'])} files target this path")
-                for src in c['sources'][:3]:
+                for src in c["sources"][:3]:
                     lines.append(f"    - {Path(src).name}")
             lines.append("")
 
@@ -184,7 +194,7 @@ class OrganizePlan:
     def execution_summary(self) -> str:
         """Summary after execution."""
         lines = [
-            f"✅ Organization Complete",
+            "✅ Organization Complete",
             f"   Moved: {self.success_count}/{self.total_actions}",
             f"   Errors: {self.error_count}",
             f"   Skipped: {sum(1 for a in self.actions if a.status == MoveStatus.SKIPPED)}",
@@ -195,7 +205,6 @@ class OrganizePlan:
                 if a.status == MoveStatus.ERROR:
                     lines.append(f"     ✗ {a.filename}: {a.error}")
         return "\n".join(lines)
-
 
 
 class MediaOrganizer:
@@ -300,10 +309,12 @@ class MediaOrganizer:
         # Detect conflicts
         for dest, sources in dest_map.items():
             if len(sources) > 1:
-                plan.conflicts.append({
-                    "dest": dest,
-                    "sources": sources,
-                })
+                plan.conflicts.append(
+                    {
+                        "dest": dest,
+                        "sources": sources,
+                    }
+                )
                 # Mark conflicting actions
                 for action in plan.actions:
                     if action.destination == dest:
@@ -314,7 +325,6 @@ class MediaOrganizer:
 
         self._last_plan = plan
         return plan
-
 
     def execute(
         self,
@@ -410,12 +420,10 @@ class MediaOrganizer:
         """
         for conflict in plan.conflicts:
             dest = conflict["dest"]
-            sources = conflict["sources"]
 
             # Find all actions targeting this destination
             conflicting = [
-                a for a in plan.actions
-                if a.destination == dest and a.status == MoveStatus.CONFLICT
+                a for a in plan.actions if a.destination == dest and a.status == MoveStatus.CONFLICT
             ]
 
             if not conflicting:

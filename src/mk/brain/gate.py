@@ -19,8 +19,8 @@ from mk.brain.router import BrainResponse, BrainRouter
 class GateResult:
     """Final result after the brain + gate process."""
 
-    source: str              # "brain" or "api"
-    response: str = ""       # Final text response
+    source: str  # "brain" or "api"
+    response: str = ""  # Final text response
     tool_call: Optional[Dict[str, Any]] = None  # Tool to execute
     needs_confirmation: bool = False
     risk_message: str = ""
@@ -74,9 +74,7 @@ class APIGate:
             api_request=api_request,
         )
 
-    def _prepare_api_request(
-        self, user_input: str, brain_result: BrainResponse
-    ) -> Dict[str, Any]:
+    def _prepare_api_request(self, user_input: str, brain_result: BrainResponse) -> Dict[str, Any]:
         """Prepare an efficient API request with graph context.
 
         Keeps tokens LOW by only including relevant context.
@@ -95,17 +93,13 @@ class APIGate:
         # Add machine context
         machines = self.graph.get_nodes_by_kind("machine")
         if machines:
-            machine_list = ", ".join(
-                f"{m.id}({m.data.get('host', '?')})" for m in machines
-            )
+            machine_list = ", ".join(f"{m.id}({m.data.get('host', '?')})" for m in machines)
             system_parts.append(f"Homelab machines: {machine_list}")
 
         # Add relevant entities from brain context
         if brain_result.context.get("relevant_entities"):
             entities = brain_result.context["relevant_entities"]
-            entity_str = ", ".join(
-                f"{e['id']}({e['kind']})" for e in entities
-            )
+            entity_str = ", ".join(f"{e['id']}({e['kind']})" for e in entities)
             system_parts.append(f"Relevant: {entity_str}")
 
         # Add tool list (short form)
@@ -117,9 +111,7 @@ class APIGate:
         # Add user preferences if any
         prefs = self.graph.get_nodes_by_kind("preference")
         if prefs:
-            pref_str = "; ".join(
-                f"{p.id}={p.data.get('value', '')}" for p in prefs[:5]
-            )
+            pref_str = "; ".join(f"{p.id}={p.data.get('value', '')}" for p in prefs[:5])
             system_parts.append(f"User prefs: {pref_str}")
 
         system_prompt = " ".join(system_parts)

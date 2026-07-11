@@ -1,7 +1,8 @@
 """Long-term user knowledge store.
 
 A key-value store for user preferences, patterns, and facts
-learned over time. Backed by JSON file storage for persistence.
+learned over time. Backed by JSON file storage for persistence,
+with optional SQLite backend for improved durability and search.
 Includes relevance scoring for intelligent memory retrieval.
 """
 
@@ -24,7 +25,12 @@ class LongTermMemory:
     knowledge. Data is persisted to JSON files on disk.
     """
 
-    def __init__(self, storage_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        storage_path: Optional[str] = None,
+        backend: str = "file",
+        sqlite_path: Optional[str] = None,
+    ) -> None:
         """Initialize long-term memory.
 
         Args:
@@ -34,6 +40,9 @@ class LongTermMemory:
                     2. MK_DATA env var + /memory
                     3. /var/lib/mk/memory (deployed install)
                     4. ~/.mk/memory (development fallback)
+            backend: Storage backend - "file" (default) or "sqlite".
+            sqlite_path: Path to the SQLite database file (only used if backend="sqlite").
+                Defaults to storage_path/memories.db.
         """
         if storage_path:
             self._storage_path = Path(storage_path)
@@ -47,6 +56,25 @@ class LongTermMemory:
                 self._storage_path = Path.home() / ".mk" / "memory"
         self._knowledge: Dict[str, UserKnowledge] = {}
         self._loaded = False
+        self._backend = backend
+        self._sqlite_path = sqlite_path
+        self._sqlite_store: Optional[Any] = None
+
+        if self._backend == "sqlite":
+            from mk.memory.sqlite_store import SQLiteMemoryStore
+
+            db_path = self._sqlite_path or str(self._storage_path / "memories.db")
+            self._sqlite_store = SQLiteMemoryStore(db_path=db_path)
+
+    @property
+    def backend(self) -> str:
+        """Return the configured backend type ('file' or 'sqlite')."""
+        return self._backend
+
+    @property
+    def sqlite_store(self) -> Optional[Any]:
+        """Return the SQLite store instance, or None if not using SQLite."""
+        return self._sqlite_store
 
     @property
     def knowledge_count(self) -> int:
@@ -58,7 +86,9 @@ class LongTermMemory:
         """Return the storage path."""
         return self._storage_path
 
-    def learn(self, key: str, value: str, source: str = "conversation", tags: Optional[List[str]] = None) -> UserKnowledge:
+    def learn(
+        self, key: str, value: str, source: str = "conversation", tags: Optional[List[str]] = None
+    ) -> UserKnowledge:
         """Store a new piece of knowledge about the user.
 
         If the key already exists, updates the value and increases

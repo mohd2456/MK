@@ -7,7 +7,7 @@ viewing logs, and deploying compose files.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from mk.tools.base import Tool, ToolResult
 

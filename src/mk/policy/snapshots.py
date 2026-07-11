@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 class SnapshotType(str, Enum):
     """Types of snapshots MK can create."""
 
-    ZFS = "zfs"                 # ZFS snapshot (instant, atomic)
-    FILE = "file"               # File/config backup (copy)
-    CONTAINER = "container"     # Docker container commit
-    SERVICE_STATE = "service"   # Service configuration state
-    COMPOSITE = "composite"     # Multiple snapshots grouped together
+    ZFS = "zfs"  # ZFS snapshot (instant, atomic)
+    FILE = "file"  # File/config backup (copy)
+    CONTAINER = "container"  # Docker container commit
+    SERVICE_STATE = "service"  # Service configuration state
+    COMPOSITE = "composite"  # Multiple snapshots grouped together
 
 
 @dataclass
@@ -113,9 +113,7 @@ class SnapshotManager:
             max_snapshots: Maximum snapshots to keep.
             retention_hours: How long to keep snapshots.
         """
-        self._storage_path = Path(
-            storage_path or Path.home() / ".mk" / "snapshots"
-        )
+        self._storage_path = Path(storage_path or Path.home() / ".mk" / "snapshots")
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._snapshots: Dict[str, Snapshot] = {}
         self._max_snapshots = max_snapshots
@@ -153,9 +151,7 @@ class SnapshotManager:
         snapshot_id = f"snap-{uuid.uuid4().hex[:8]}"
 
         # Determine rollback command based on type
-        rollback_command = self._build_rollback_command(
-            snapshot_type, target, snapshot_id
-        )
+        rollback_command = self._build_rollback_command(snapshot_type, target, snapshot_id)
 
         snapshot = Snapshot(
             id=snapshot_id,
@@ -208,9 +204,7 @@ class SnapshotManager:
             target="composite",
             description=description,
             metadata={"sub_snapshots": sub_snapshots},
-            rollback_steps=[
-                f"rollback {sid}" for sid in reversed(sub_snapshots)
-            ],
+            rollback_steps=[f"rollback {sid}" for sid in reversed(sub_snapshots)],
         )
         self._snapshots[composite_id] = composite
         return composite
@@ -228,10 +222,7 @@ class SnapshotManager:
         Returns:
             Most recent Snapshot for this target, or None.
         """
-        matching = [
-            s for s in self._snapshots.values()
-            if s.target == target and not s.expired
-        ]
+        matching = [s for s in self._snapshots.values() if s.target == target and not s.expired]
         if not matching:
             return None
         return max(matching, key=lambda s: s.created_at)
@@ -309,11 +300,8 @@ class SnapshotManager:
 
         # Remove expired if over max
         if len(self._snapshots) > self._max_snapshots:
-            expired = [
-                sid for sid, s in self._snapshots.items()
-                if s.expired
-            ]
-            for sid in expired[:len(self._snapshots) - self._max_snapshots]:
+            expired = [sid for sid, s in self._snapshots.items() if s.expired]
+            for sid in expired[: len(self._snapshots) - self._max_snapshots]:
                 # Clean up disk
                 snap_dir = self._storage_path / sid
                 if snap_dir.exists():

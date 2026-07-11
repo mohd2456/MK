@@ -21,7 +21,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from mk.plugins.media_organizer.parser import MediaType, ParsedMedia
 
@@ -29,8 +28,8 @@ from mk.plugins.media_organizer.parser import MediaType, ParsedMedia
 # Characters not allowed in filenames (Windows + Linux safe)
 ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 # Multiple spaces/dots
-MULTI_SPACE = re.compile(r'\s{2,}')
-TRAILING_DOTS = re.compile(r'\.+$')
+MULTI_SPACE = re.compile(r"\s{2,}")
+TRAILING_DOTS = re.compile(r"\.+$")
 
 
 @dataclass
@@ -42,10 +41,10 @@ class PlexPath:
     """
 
     library_folder: str  # "movies", "tv", "anime"
-    show_folder: str     # "Title (Year)" or "Show Name"
-    season_folder: str   # "" for movies, "Season XX" for TV/anime
-    filename: str        # Final filename with extension
-    original: str        # Original filename for reference
+    show_folder: str  # "Title (Year)" or "Show Name"
+    season_folder: str  # "" for movies, "Season XX" for TV/anime
+    filename: str  # Final filename with extension
+    original: str  # Original filename for reference
 
     @property
     def relative_path(self) -> str:
@@ -74,7 +73,6 @@ class PlexPath:
             Full path string.
         """
         return str(Path(base) / self.relative_path)
-
 
 
 class MediaNormalizer:
@@ -156,7 +154,6 @@ class MediaNormalizer:
             filename=subtitle_filename,
             original=parsed.original_filename,
         )
-
 
     def _normalize_movie(self, parsed: ParsedMedia) -> PlexPath:
         """Normalize a movie into Plex structure.
@@ -274,7 +271,6 @@ class MediaNormalizer:
             original=parsed.original_filename,
         )
 
-
     def _safe_filename(self, name: str) -> str:
         """Make a string safe for use as a filename.
 
@@ -288,11 +284,11 @@ class MediaNormalizer:
             Filesystem-safe string.
         """
         # Remove illegal characters
-        safe = ILLEGAL_CHARS.sub('', name)
+        safe = ILLEGAL_CHARS.sub("", name)
         # Collapse multiple spaces
-        safe = MULTI_SPACE.sub(' ', safe)
+        safe = MULTI_SPACE.sub(" ", safe)
         # Remove trailing dots (Windows)
-        safe = TRAILING_DOTS.sub('', safe)
+        safe = TRAILING_DOTS.sub("", safe)
         # Strip leading/trailing whitespace
         safe = safe.strip()
         # Ensure not empty
@@ -316,7 +312,4 @@ class MediaNormalizer:
             MediaType.UNKNOWN: "❓",
         }[parsed.media_type]
 
-        return (
-            f"{icon} {parsed.original_filename}\n"
-            f"   → {plex_path.relative_path}"
-        )
+        return f"{icon} {parsed.original_filename}\n   → {plex_path.relative_path}"

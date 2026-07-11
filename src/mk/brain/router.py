@@ -24,13 +24,13 @@ from mk.brain.graph import KnowledgeGraph
 class BrainResponse:
     """Result from the brain router."""
 
-    handled: bool = False          # Did the brain handle this locally?
-    response: str = ""             # Text response (if handled)
+    handled: bool = False  # Did the brain handle this locally?
+    response: str = ""  # Text response (if handled)
     tool_call: Optional[Dict[str, Any]] = None  # Tool to execute (if applicable)
     needs_confirmation: bool = False  # Is this dangerous?
-    risk_message: str = ""         # Why it's dangerous
-    send_to_api: bool = False      # Should this go to an API?
-    api_reason: str = ""           # Why it needs an API
+    risk_message: str = ""  # Why it's dangerous
+    send_to_api: bool = False  # Should this go to an API?
+    api_reason: str = ""  # Why it needs an API
     context: Dict[str, Any] = field(default_factory=dict)  # Extra context for API
 
 
@@ -267,13 +267,25 @@ class BrainRouter:
     def _build_danger_patterns(self) -> List[Dict[str, str]]:
         """Patterns that indicate dangerous operations."""
         return [
-            {"pattern": r"(?:delete|remove|rm)\s+(?:all|everything|\*|-rf)", "risk": "Permanent data deletion"},
+            {
+                "pattern": r"(?:delete|remove|rm)\s+(?:all|everything|\*|-rf)",
+                "risk": "Permanent data deletion",
+            },
             {"pattern": r"(?:wipe|format|nuke)", "risk": "Permanent data destruction"},
-            {"pattern": r"(?:shutdown|shut\s*down|power\s*off)\s+(?:the\s+)?server", "risk": "All services go offline"},
+            {
+                "pattern": r"(?:shutdown|shut\s*down|power\s*off)\s+(?:the\s+)?server",
+                "risk": "All services go offline",
+            },
             {"pattern": r"drop\s+(?:the\s+)?(?:database|db|table)", "risk": "Database destruction"},
             {"pattern": r"chmod\s+777", "risk": "Security vulnerability — world-writable files"},
-            {"pattern": r"(?:disable|turn\s*off)\s+(?:the\s+)?firewall", "risk": "Server exposed to attacks"},
-            {"pattern": r"(?:expose|open)\s+.*(?:internet|public|0\.0\.0\.0)", "risk": "Service exposed to internet"},
+            {
+                "pattern": r"(?:disable|turn\s*off)\s+(?:the\s+)?firewall",
+                "risk": "Server exposed to attacks",
+            },
+            {
+                "pattern": r"(?:expose|open)\s+.*(?:internet|public|0\.0\.0\.0)",
+                "risk": "Service exposed to internet",
+            },
             {"pattern": r"reset\s+.*(?:to\s+default|factory)", "risk": "All configuration lost"},
             {"pattern": r"rm\s+-rf", "risk": "Recursive forced deletion"},
             {"pattern": r"mkfs", "risk": "Drive format — all data lost"},
@@ -361,8 +373,7 @@ class BrainRouter:
         mentioned_nodes = self.graph.find_nodes(text)
         if mentioned_nodes:
             context["relevant_entities"] = [
-                {"id": n.id, "kind": n.kind, "data": n.data}
-                for n in mentioned_nodes[:5]
+                {"id": n.id, "kind": n.kind, "data": n.data} for n in mentioned_nodes[:5]
             ]
 
         # Always include machine list

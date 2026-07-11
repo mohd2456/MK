@@ -80,19 +80,13 @@ class MemoryManager:
         state_budget = int(budget * 0.2)
 
         # Short-term: recent conversation
-        entries.extend(
-            self._retrieve_conversation(conversation_budget)
-        )
+        entries.extend(self._retrieve_conversation(conversation_budget))
 
         # Long-term: relevant user knowledge
-        entries.extend(
-            self._retrieve_knowledge(query, knowledge_budget)
-        )
+        entries.extend(self._retrieve_knowledge(query, knowledge_budget))
 
         # System state: relevant machine/service info
-        entries.extend(
-            self._retrieve_system_state(query, state_budget)
-        )
+        entries.extend(self._retrieve_system_state(query, state_budget))
 
         return entries
 
@@ -166,12 +160,14 @@ class MemoryManager:
             summary_tokens = _estimate_tokens(summary)
             if tokens_used + summary_tokens > budget:
                 break
-            entries.append(MemoryEntry(
-                id=f"conv_summary_{len(entries)}",
-                content=summary,
-                category=MemoryCategory.CONVERSATION,
-                relevance_score=0.6,
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=f"conv_summary_{len(entries)}",
+                    content=summary,
+                    category=MemoryCategory.CONVERSATION,
+                    relevance_score=0.6,
+                )
+            )
             tokens_used += summary_tokens
 
         # Include recent turns
@@ -181,12 +177,14 @@ class MemoryManager:
             entry_tokens = _estimate_tokens(content)
             if tokens_used + entry_tokens > budget:
                 break
-            entries.append(MemoryEntry(
-                id=f"conv_turn_{i}",
-                content=content,
-                category=MemoryCategory.CONVERSATION,
-                relevance_score=0.8 + (i * 0.01),
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=f"conv_turn_{i}",
+                    content=content,
+                    category=MemoryCategory.CONVERSATION,
+                    relevance_score=0.8 + (i * 0.01),
+                )
+            )
             tokens_used += entry_tokens
 
         return entries
@@ -210,13 +208,15 @@ class MemoryManager:
             entry_tokens = _estimate_tokens(content)
             if tokens_used + entry_tokens > budget:
                 break
-            entries.append(MemoryEntry(
-                id=f"knowledge_{knowledge.key}",
-                content=content,
-                category=MemoryCategory.USER_KNOWLEDGE,
-                relevance_score=knowledge.confidence,
-                metadata={"source": knowledge.source, "tags": knowledge.tags},
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=f"knowledge_{knowledge.key}",
+                    content=content,
+                    category=MemoryCategory.USER_KNOWLEDGE,
+                    relevance_score=knowledge.confidence,
+                    metadata={"source": knowledge.source, "tags": knowledge.tags},
+                )
+            )
             tokens_used += entry_tokens
 
         return entries
@@ -246,13 +246,8 @@ class MemoryManager:
                 relevance = 0.9
 
             # Build state description
-            services_str = ", ".join(
-                f"{s.name}={s.status.value}" for s in state.services
-            )
-            content = (
-                f"Machine '{state.machine_name}' ({state.host}): "
-                f"status={state.status}"
-            )
+            services_str = ", ".join(f"{s.name}={s.status.value}" for s in state.services)
+            content = f"Machine '{state.machine_name}' ({state.host}): status={state.status}"
             if services_str:
                 content += f", services=[{services_str}]"
 
@@ -260,13 +255,15 @@ class MemoryManager:
             if tokens_used + entry_tokens > budget:
                 break
 
-            entries.append(MemoryEntry(
-                id=f"state_{state.machine_name}",
-                content=content,
-                category=MemoryCategory.SYSTEM_STATE,
-                relevance_score=relevance,
-                metadata={"machine": state.machine_name, "status": state.status},
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=f"state_{state.machine_name}",
+                    content=content,
+                    category=MemoryCategory.SYSTEM_STATE,
+                    relevance_score=relevance,
+                    metadata={"machine": state.machine_name, "status": state.status},
+                )
+            )
             tokens_used += entry_tokens
 
         # Sort by relevance

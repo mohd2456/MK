@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from mk.core.context import ContextBuilder
 from mk.core.models import Conversation, Role
@@ -94,10 +93,6 @@ class TestContextBuilder:
             user_input="Latest message",
             conversation=conv,
         )
-
-        # Calculate total tokens used
-        total_text = " ".join(m["content"] for m in messages)
-        total_tokens = builder.estimate_tokens(total_text)
 
         # Should be within budget (with some tolerance for system prompt)
         # The key check is that not all 100 messages were included

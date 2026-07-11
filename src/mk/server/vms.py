@@ -22,9 +22,8 @@ Capabilities:
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 from mk.tools.base import ToolResult
 from ._shell import safe_quote, validate_name
@@ -131,7 +130,9 @@ class VMManager:
         return ToolResult(
             success=True,
             output=f"VM '{name}' deleted",
-            side_effects=[f"VM '{name}' undefined" + (", storage removed" if remove_storage else "")],
+            side_effects=[
+                f"VM '{name}' undefined" + (", storage removed" if remove_storage else "")
+            ],
         )
 
     # --- VM Creation ---
@@ -180,15 +181,11 @@ class VMManager:
             # Cloud image: copy it as the VM disk and use cloud-init
             disk_path = f"/var/lib/libvirt/images/{name}.qcow2"
             # Copy and resize the cloud image
-            rc, _, err = await run_cmd(
-                f"cp {safe_quote(cloud_image)} {safe_quote(disk_path)}"
-            )
+            rc, _, err = await run_cmd(f"cp {safe_quote(cloud_image)} {safe_quote(disk_path)}")
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to copy cloud image: {err}")
 
-            rc, _, err = await run_cmd(
-                f"qemu-img resize {safe_quote(disk_path)} {disk_size_gb}G"
-            )
+            rc, _, err = await run_cmd(f"qemu-img resize {safe_quote(disk_path)} {disk_size_gb}G")
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to resize disk: {err}")
 
@@ -234,7 +231,9 @@ class VMManager:
             return ToolResult(success=False, error=f"Failed to list snapshots: {err}")
         return ToolResult(success=True, output=out, metadata={"vm": name})
 
-    async def create_snapshot(self, name: str, snap_name: Optional[str] = None, description: str = "") -> ToolResult:
+    async def create_snapshot(
+        self, name: str, snap_name: Optional[str] = None, description: str = ""
+    ) -> ToolResult:
         """Create a VM snapshot."""
         validate_name(name, "VM name")
         if snap_name:
@@ -251,7 +250,7 @@ class VMManager:
         return ToolResult(
             success=True,
             output=f"Snapshot created for VM '{name}'",
-            side_effects=[f"VM snapshot created"],
+            side_effects=["VM snapshot created"],
         )
 
     async def revert_snapshot(self, name: str, snap_name: str) -> ToolResult:
@@ -266,7 +265,7 @@ class VMManager:
         return ToolResult(
             success=True,
             output=f"VM '{name}' reverted to snapshot '{snap_name}'",
-            side_effects=[f"VM state rolled back"],
+            side_effects=["VM state rolled back"],
         )
 
     async def delete_snapshot(self, name: str, snap_name: str) -> ToolResult:
@@ -297,13 +296,13 @@ class VMManager:
         validate_name(name, "VM name")
         # Convert to KB for virsh
         ram_kb = ram_mb * 1024
-        rc, out, err = await self._virsh_cmd(
-            f"setmaxmem {safe_quote(name)} {ram_kb} --config"
-        )
+        rc, out, err = await self._virsh_cmd(f"setmaxmem {safe_quote(name)} {ram_kb} --config")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set memory: {err}")
         await self._virsh_cmd(f"setmem {safe_quote(name)} {ram_kb} --config")
-        return ToolResult(success=True, output=f"VM '{name}' set to {ram_mb}MB RAM (restart to apply)")
+        return ToolResult(
+            success=True, output=f"VM '{name}' set to {ram_mb}MB RAM (restart to apply)"
+        )
 
     async def add_disk(self, name: str, size_gb: int, target: str = "vdb") -> ToolResult:
         """Add a new disk to a VM."""
@@ -354,7 +353,9 @@ class VMManager:
         rc, out, err = await self._virsh_cmd(f"domdisplay {safe_quote(name)}")
         if rc != 0:
             return ToolResult(success=False, error=f"No console available: {err}")
-        return ToolResult(success=True, output=f"Console: {out}", metadata={"vm": name, "display": out})
+        return ToolResult(
+            success=True, output=f"Console: {out}", metadata={"vm": name, "display": out}
+        )
 
     # --- Autostart ---
 

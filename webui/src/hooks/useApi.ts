@@ -186,3 +186,220 @@ export function useSystemServices() {
     { refreshInterval: DATA_REFRESH_INTERVAL }
   );
 }
+
+// ─── Firewall Rules ──────────────────────────────────────────────────
+
+export interface FirewallRule {
+  id: string;
+  chain: string;
+  source: string;
+  dest: string;
+  port: string;
+  action: string;
+}
+
+export function useFirewallRules() {
+  return useSWR<FirewallRule[]>(
+    "/network/firewall",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── WireGuard Peers ─────────────────────────────────────────────────
+
+export interface WireGuardPeer {
+  name: string;
+  publicKey: string;
+  endpoint: string;
+  lastSeen: string;
+}
+
+export interface WireGuardInterface {
+  name: string;
+  peers: WireGuardPeer[];
+}
+
+export function useWireGuardPeers() {
+  return useSWR<WireGuardInterface[]>(
+    "/network/wireguard",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── DNS Config ──────────────────────────────────────────────────────
+
+export interface DNSConfig {
+  primary: string;
+  secondary: string;
+  search_domain: string;
+  overrides: Array<{ hostname: string; ip: string }>;
+}
+
+export function useDNSConfig() {
+  return useSWR<DNSConfig>(
+    "/network/dns",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Proxy Sites ─────────────────────────────────────────────────────
+
+export interface ProxySite {
+  domain: string;
+  backend: string;
+  ssl: string;
+  status: string;
+}
+
+export function useProxySites() {
+  return useSWR<ProxySite[]>(
+    "/network/proxy",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Protection: Backup Jobs ─────────────────────────────────────────
+
+export interface BackupJob {
+  name: string;
+  source: string;
+  dest: string;
+  schedule: string;
+  status: string;
+  lastRun: string;
+  nextRun: string;
+}
+
+export function useProtectionJobs() {
+  return useSWR<BackupJob[]>(
+    "/protection/jobs",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Protection: Scrubs ──────────────────────────────────────────────
+
+export interface ScrubSchedule {
+  pool: string;
+  schedule: string;
+  lastRun: string;
+  duration: string;
+  errors: number;
+}
+
+export function useProtectionScrubs() {
+  return useSWR<ScrubSchedule[]>(
+    "/protection/scrubs/all",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Protection: Replication ─────────────────────────────────────────
+
+export interface ReplicationTask {
+  task: string;
+  source: string;
+  target: string;
+  status: string;
+  lag: string;
+}
+
+export function useProtectionReplication() {
+  return useSWR<ReplicationTask[]>(
+    "/protection/replication",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Protection: Retention ───────────────────────────────────────────
+
+export interface RetentionPolicy {
+  name: string;
+  keepDaily: number;
+  keepWeekly: number;
+  keepMonthly: number;
+}
+
+export function useProtectionRetention() {
+  return useSWR<RetentionPolicy[]>(
+    "/protection/retention",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Media: Drives ───────────────────────────────────────────────────
+
+export interface MediaDrive {
+  device: string;
+  type: string;
+  label: string;
+  status: string;
+}
+
+export function useMediaDrives() {
+  return useSWR<MediaDrive[]>(
+    "/media/drives",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── Media: Rip Status ──────────────────────────────────────────────
+
+export interface RipStatus {
+  active: boolean;
+  device?: string;
+  title?: string;
+  progress?: number;
+  eta?: string;
+}
+
+export function useMediaRipStatus() {
+  return useSWR<RipStatus>(
+    "/media/rip/status",
+    fetcher,
+    { refreshInterval: METRICS_REFRESH_INTERVAL }
+  );
+}
+
+// ─── System Updates ──────────────────────────────────────────────────
+
+export interface SystemUpdates {
+  available: number;
+  packages: Array<{ name: string; current: string; available: string }>;
+  last_check: string;
+}
+
+export function useSystemUpdates() {
+  return useSWR<SystemUpdates>(
+    "/system/updates",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}
+
+// ─── AI Settings ─────────────────────────────────────────────────────
+
+export interface AISettings {
+  model: string;
+  provider: string;
+  temperature: number;
+  max_tokens: number;
+  system_prompt: string;
+}
+
+export function useAISettings() {
+  return useSWR<AISettings>(
+    "/system/ai/settings",
+    fetcher,
+    { refreshInterval: DATA_REFRESH_INTERVAL }
+  );
+}

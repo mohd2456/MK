@@ -7,7 +7,7 @@ Includes a safety layer for dangerous commands.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from mk.tools.base import Tool, ToolResult
 

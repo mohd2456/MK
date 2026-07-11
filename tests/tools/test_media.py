@@ -94,9 +94,7 @@ class TestMediaTool:
     async def test_request_show(self) -> None:
         """request_show with configured Sonarr succeeds."""
         tool = self._configured_tool()
-        result = await tool.execute(
-            action="request_show", title="Game of Thrones", season=1
-        )
+        result = await tool.execute(action="request_show", title="Game of Thrones", season=1)
         assert result.success is True
         assert "Game of Thrones" in result.output
         assert "Season 1" in result.output

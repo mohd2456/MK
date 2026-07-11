@@ -94,6 +94,8 @@ export function ChatPanel() {
 
   return (
     <aside
+      role="complementary"
+      aria-label="MK Chat Assistant"
       className={cn(
         "w-96 shrink-0 border-l border-mk-border bg-mk-surface",
         "flex flex-col h-full",

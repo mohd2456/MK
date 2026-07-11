@@ -22,9 +22,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
-from mk.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -136,127 +135,145 @@ class SubAgentRegistry:
         """Register the built-in specialist sub-agents."""
 
         # DevOps Agent — containers, services, system management
-        self.register(SubAgent(
-            name="devops",
-            description=(
-                "Infrastructure specialist. Manages Docker containers, "
-                "systemd services, system packages, and server health."
-            ),
-            capabilities={
-                AgentCapability.CONTAINERS,
-                AgentCapability.SERVICES,
-                AgentCapability.STORAGE,
-                AgentCapability.SSH,
-                AgentCapability.MONITORING,
-            },
-            allowed_tools={
-                "docker", "ssh", "system_monitor", "files",
-                "backup-verifier",  # Plugin tools too
-            },
-            system_prompt=(
-                "You are MK's DevOps specialist. You manage Docker containers, "
-                "systemd services, ZFS storage, and server infrastructure. "
-                "You are precise, careful, and always verify before destructive actions. "
-                "Prefer `docker compose` over raw `docker run`. "
-                "Always check service health after changes."
-            ),
-            priority=10,
-        ))
+        self.register(
+            SubAgent(
+                name="devops",
+                description=(
+                    "Infrastructure specialist. Manages Docker containers, "
+                    "systemd services, system packages, and server health."
+                ),
+                capabilities={
+                    AgentCapability.CONTAINERS,
+                    AgentCapability.SERVICES,
+                    AgentCapability.STORAGE,
+                    AgentCapability.SSH,
+                    AgentCapability.MONITORING,
+                },
+                allowed_tools={
+                    "docker",
+                    "ssh",
+                    "system_monitor",
+                    "files",
+                    "backup-verifier",  # Plugin tools too
+                },
+                system_prompt=(
+                    "You are MK's DevOps specialist. You manage Docker containers, "
+                    "systemd services, ZFS storage, and server infrastructure. "
+                    "You are precise, careful, and always verify before destructive actions. "
+                    "Prefer `docker compose` over raw `docker run`. "
+                    "Always check service health after changes."
+                ),
+                priority=10,
+            )
+        )
 
         # Media Agent — Plex, Sonarr, Radarr, file organization
-        self.register(SubAgent(
-            name="media",
-            description=(
-                "Media management specialist. Handles Plex, Sonarr, Radarr, "
-                "disc ripping, file naming, and media library organization."
-            ),
-            capabilities={
-                AgentCapability.MEDIA,
-                AgentCapability.FILES,
-            },
-            allowed_tools={
-                "media", "files", "ssh",
-            },
-            system_prompt=(
-                "You are MK's Media specialist. You manage the Plex media server, "
-                "Sonarr (TV), Radarr (movies), and disc ripping workflows. "
-                "You know Plex naming conventions perfectly. "
-                "Always organize files as: Movies → 'Title (Year)/Title (Year).ext' "
-                "and TV → 'Show/Season XX/Show - SXXEXX - Title.ext'. "
-                "After any file move, trigger a Plex library scan."
-            ),
-            priority=10,
-        ))
+        self.register(
+            SubAgent(
+                name="media",
+                description=(
+                    "Media management specialist. Handles Plex, Sonarr, Radarr, "
+                    "disc ripping, file naming, and media library organization."
+                ),
+                capabilities={
+                    AgentCapability.MEDIA,
+                    AgentCapability.FILES,
+                },
+                allowed_tools={
+                    "media",
+                    "files",
+                    "ssh",
+                },
+                system_prompt=(
+                    "You are MK's Media specialist. You manage the Plex media server, "
+                    "Sonarr (TV), Radarr (movies), and disc ripping workflows. "
+                    "You know Plex naming conventions perfectly. "
+                    "Always organize files as: Movies → 'Title (Year)/Title (Year).ext' "
+                    "and TV → 'Show/Season XX/Show - SXXEXX - Title.ext'. "
+                    "After any file move, trigger a Plex library scan."
+                ),
+                priority=10,
+            )
+        )
 
         # Network Agent — DNS, firewall, certificates, routing
-        self.register(SubAgent(
-            name="network",
-            description=(
-                "Network specialist. Manages DNS records, firewall rules, "
-                "reverse proxies, VPN, and TLS certificates."
-            ),
-            capabilities={
-                AgentCapability.NETWORKING,
-                AgentCapability.DNS,
-                AgentCapability.CERTIFICATES,
-                AgentCapability.SECURITY,
-            },
-            allowed_tools={
-                "ssh", "files",
-            },
-            system_prompt=(
-                "You are MK's Network specialist. You manage DNS, firewall rules, "
-                "reverse proxy (Traefik/Nginx), VPN (WireGuard), and TLS certificates. "
-                "Always use the private network for inter-machine traffic. "
-                "Never expose services to 0.0.0.0 without explicit confirmation. "
-                "Prefer Let's Encrypt for certificates."
-            ),
-            priority=10,
-        ))
+        self.register(
+            SubAgent(
+                name="network",
+                description=(
+                    "Network specialist. Manages DNS records, firewall rules, "
+                    "reverse proxies, VPN, and TLS certificates."
+                ),
+                capabilities={
+                    AgentCapability.NETWORKING,
+                    AgentCapability.DNS,
+                    AgentCapability.CERTIFICATES,
+                    AgentCapability.SECURITY,
+                },
+                allowed_tools={
+                    "ssh",
+                    "files",
+                },
+                system_prompt=(
+                    "You are MK's Network specialist. You manage DNS, firewall rules, "
+                    "reverse proxy (Traefik/Nginx), VPN (WireGuard), and TLS certificates. "
+                    "Always use the private network for inter-machine traffic. "
+                    "Never expose services to 0.0.0.0 without explicit confirmation. "
+                    "Prefer Let's Encrypt for certificates."
+                ),
+                priority=10,
+            )
+        )
 
         # Backup Agent — backups, snapshots, disaster recovery
-        self.register(SubAgent(
-            name="backup",
-            description=(
-                "Backup and recovery specialist. Manages ZFS snapshots, "
-                "restic backups, verification, and disaster recovery."
-            ),
-            capabilities={
-                AgentCapability.BACKUP,
-                AgentCapability.STORAGE,
-            },
-            allowed_tools={
-                "ssh", "files", "backup-verifier",
-            },
-            system_prompt=(
-                "You are MK's Backup specialist. You manage ZFS snapshots, "
-                "restic backups, and disaster recovery. "
-                "Always verify backups after creation. "
-                "Keep at least 7 daily, 4 weekly, and 12 monthly snapshots. "
-                "Test restores regularly."
-            ),
-            priority=8,
-        ))
+        self.register(
+            SubAgent(
+                name="backup",
+                description=(
+                    "Backup and recovery specialist. Manages ZFS snapshots, "
+                    "restic backups, verification, and disaster recovery."
+                ),
+                capabilities={
+                    AgentCapability.BACKUP,
+                    AgentCapability.STORAGE,
+                },
+                allowed_tools={
+                    "ssh",
+                    "files",
+                    "backup-verifier",
+                },
+                system_prompt=(
+                    "You are MK's Backup specialist. You manage ZFS snapshots, "
+                    "restic backups, and disaster recovery. "
+                    "Always verify backups after creation. "
+                    "Keep at least 7 daily, 4 weekly, and 12 monthly snapshots. "
+                    "Test restores regularly."
+                ),
+                priority=8,
+            )
+        )
 
         # General Agent — fallback for everything else
-        self.register(SubAgent(
-            name="general",
-            description=(
-                "General-purpose agent. Handles tasks that don't fit "
-                "a specialist, creative requests, and user interaction."
-            ),
-            capabilities={
-                AgentCapability.LLM_REASONING,
-                AgentCapability.USER_INTERACTION,
-                AgentCapability.FILES,
-            },
-            allowed_tools=set(),  # Empty = can use everything
-            system_prompt=(
-                "You are MK, a personal AI operating system. "
-                "Handle this task directly — be concise and actionable."
-            ),
-            priority=0,  # Lowest priority — only used if no specialist matches
-        ))
+        self.register(
+            SubAgent(
+                name="general",
+                description=(
+                    "General-purpose agent. Handles tasks that don't fit "
+                    "a specialist, creative requests, and user interaction."
+                ),
+                capabilities={
+                    AgentCapability.LLM_REASONING,
+                    AgentCapability.USER_INTERACTION,
+                    AgentCapability.FILES,
+                },
+                allowed_tools=set(),  # Empty = can use everything
+                system_prompt=(
+                    "You are MK, a personal AI operating system. "
+                    "Handle this task directly — be concise and actionable."
+                ),
+                priority=0,  # Lowest priority — only used if no specialist matches
+            )
+        )
 
     def register(self, agent: SubAgent) -> None:
         """Register a sub-agent.

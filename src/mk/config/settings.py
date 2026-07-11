@@ -55,9 +55,7 @@ class MemoryConfig(BaseModel):
     long_term_storage_path: str = Field(
         default="~/.mk/memory", description="Path for long-term memory storage"
     )
-    context_window_budget: int = Field(
-        default=8000, description="Token budget for context window"
-    )
+    context_window_budget: int = Field(default=8000, description="Token budget for context window")
     summary_threshold: int = Field(
         default=20, description="Messages before triggering summarization"
     )
@@ -69,12 +67,8 @@ class SafetyConfig(BaseModel):
     confirm_destructive: bool = Field(
         default=True, description="Require confirmation for destructive actions"
     )
-    audit_log_path: str = Field(
-        default="~/.mk/audit.log", description="Path for audit log"
-    )
-    max_iterations: int = Field(
-        default=10, description="Maximum agent loop iterations"
-    )
+    audit_log_path: str = Field(default="~/.mk/audit.log", description="Path for audit log")
+    max_iterations: int = Field(default=10, description="Maximum agent loop iterations")
     secrets_path: str = Field(
         default="~/.mk/secrets.enc", description="Path to encrypted secrets file"
     )
@@ -104,15 +98,9 @@ class TailscaleConfig(BaseModel):
         default_factory=list,
         description="Subnets to advertise (e.g., ['192.168.1.0/24'])",
     )
-    advertise_exit_node: bool = Field(
-        default=False, description="Offer this node as an exit node"
-    )
-    accept_routes: bool = Field(
-        default=True, description="Accept routes from other tailnet nodes"
-    )
-    ssh: bool = Field(
-        default=True, description="Enable Tailscale SSH"
-    )
+    advertise_exit_node: bool = Field(default=False, description="Offer this node as an exit node")
+    accept_routes: bool = Field(default=True, description="Accept routes from other tailnet nodes")
+    ssh: bool = Field(default=True, description="Enable Tailscale SSH")
     serve: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Services to expose on tailnet [{port, path}]",
@@ -133,12 +121,8 @@ class Settings(BaseModel):
     llm_providers: List[LLMProviderConfig] = Field(
         default_factory=list, description="Configured LLM providers"
     )
-    machines: List[MachineConfig] = Field(
-        default_factory=list, description="Managed machines"
-    )
-    services: List[ServiceConfig] = Field(
-        default_factory=list, description="Managed services"
-    )
+    machines: List[MachineConfig] = Field(default_factory=list, description="Managed machines")
+    services: List[ServiceConfig] = Field(default_factory=list, description="Managed services")
     memory: MemoryConfig = Field(default_factory=MemoryConfig, description="Memory settings")
     safety: SafetyConfig = Field(default_factory=SafetyConfig, description="Safety settings")
     telegram: TelegramConfig = Field(
@@ -185,11 +169,13 @@ def load_config(config_path: Optional[str] = None) -> Settings:
         if env_config:
             search_paths.append(Path(env_config))
 
-        search_paths.extend([
-            Path("/etc/mk/config.yaml"),
-            Path.home() / ".mk" / "config.yaml",
-            Path("config.yaml"),
-        ])
+        search_paths.extend(
+            [
+                Path("/etc/mk/config.yaml"),
+                Path.home() / ".mk" / "config.yaml",
+                Path("config.yaml"),
+            ]
+        )
 
     config_data: Dict[str, Any] = {}
 

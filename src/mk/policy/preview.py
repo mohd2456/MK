@@ -22,12 +22,12 @@ from typing import Any, Dict, List, Optional
 class ChangeType(str, Enum):
     """Types of changes MK can make."""
 
-    CREATE = "create"       # Creating something new
-    MODIFY = "modify"       # Changing existing state
-    DELETE = "delete"       # Removing something
-    RESTART = "restart"     # Restarting a service/container
-    EXECUTE = "execute"     # Running a command
-    TRANSFER = "transfer"   # Moving/copying files
+    CREATE = "create"  # Creating something new
+    MODIFY = "modify"  # Changing existing state
+    DELETE = "delete"  # Removing something
+    RESTART = "restart"  # Restarting a service/container
+    EXECUTE = "execute"  # Running a command
+    TRANSFER = "transfer"  # Moving/copying files
 
 
 @dataclass
@@ -39,10 +39,10 @@ class Change:
     """
 
     change_type: ChangeType
-    target: str              # What is being changed
-    description: str         # Human-readable description
+    target: str  # What is being changed
+    description: str  # Human-readable description
     before: Optional[str] = None  # Current state (if applicable)
-    after: Optional[str] = None   # New state (if applicable)
+    after: Optional[str] = None  # New state (if applicable)
     reversible: bool = True  # Whether this can be undone
     risk_level: str = "low"  # low, medium, high, critical
 
@@ -93,18 +93,12 @@ class ChangePreview:
     @property
     def has_destructive(self) -> bool:
         """Whether any changes are destructive/irreversible."""
-        return any(
-            not c.reversible or c.change_type == ChangeType.DELETE
-            for c in self.changes
-        )
+        return any(not c.reversible or c.change_type == ChangeType.DELETE for c in self.changes)
 
     @property
     def has_high_risk(self) -> bool:
         """Whether any changes are high risk."""
-        return any(
-            c.risk_level in ("high", "critical")
-            for c in self.changes
-        )
+        return any(c.risk_level in ("high", "critical") for c in self.changes)
 
     @property
     def risk_summary(self) -> str:
@@ -216,11 +210,13 @@ def generate_preview(
         _preview_media(preview, action, args)
     else:
         # Generic
-        preview.add_change(Change(
-            change_type=ChangeType.EXECUTE,
-            target=f"{tool}.{action}",
-            description=f"Execute {tool}.{action}",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.EXECUTE,
+                target=f"{tool}.{action}",
+                description=f"Execute {tool}.{action}",
+            )
+        )
 
     return preview
 
@@ -230,42 +226,50 @@ def _preview_docker(preview: ChangePreview, action: str, args: Dict[str, Any]) -
     container = args.get("container_name", args.get("container", "unknown"))
 
     if action in ("stop_container", "stop"):
-        preview.add_change(Change(
-            change_type=ChangeType.MODIFY,
-            target=f"container:{container}",
-            description=f"Stop container '{container}'",
-            before="running",
-            after="stopped",
-            risk_level="medium",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.MODIFY,
+                target=f"container:{container}",
+                description=f"Stop container '{container}'",
+                before="running",
+                after="stopped",
+                risk_level="medium",
+            )
+        )
 
     elif action in ("restart_container", "restart"):
-        preview.add_change(Change(
-            change_type=ChangeType.RESTART,
-            target=f"container:{container}",
-            description=f"Restart container '{container}' (brief downtime)",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.RESTART,
+                target=f"container:{container}",
+                description=f"Restart container '{container}' (brief downtime)",
+                risk_level="low",
+            )
+        )
 
     elif action in ("start_container", "start"):
-        preview.add_change(Change(
-            change_type=ChangeType.MODIFY,
-            target=f"container:{container}",
-            description=f"Start container '{container}'",
-            before="stopped",
-            after="running",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.MODIFY,
+                target=f"container:{container}",
+                description=f"Start container '{container}'",
+                before="stopped",
+                after="running",
+                risk_level="low",
+            )
+        )
 
     elif action == "deploy_compose":
-        preview.add_change(Change(
-            change_type=ChangeType.CREATE,
-            target=f"container:{container}",
-            description=f"Deploy new container configuration",
-            risk_level="medium",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.CREATE,
+                target=f"container:{container}",
+                description="Deploy new container configuration",
+                risk_level="medium",
+            )
+        )
         preview.snapshot_planned = True
-        preview.snapshot_targets.append(f"docker-compose state")
+        preview.snapshot_targets.append("docker-compose state")
 
 
 def _preview_ssh(preview: ChangePreview, action: str, args: Dict[str, Any]) -> None:
@@ -274,30 +278,36 @@ def _preview_ssh(preview: ChangePreview, action: str, args: Dict[str, Any]) -> N
     machine = args.get("machine", "local")
 
     if "rm " in command:
-        preview.add_change(Change(
-            change_type=ChangeType.DELETE,
-            target=f"{machine}:{command}",
-            description=f"Delete files on {machine}",
-            reversible="rf" not in command,
-            risk_level="high" if "-rf" in command else "medium",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.DELETE,
+                target=f"{machine}:{command}",
+                description=f"Delete files on {machine}",
+                reversible="rf" not in command,
+                risk_level="high" if "-rf" in command else "medium",
+            )
+        )
         preview.snapshot_planned = True
 
     elif any(x in command for x in ("mv ", "cp ", "rsync")):
-        preview.add_change(Change(
-            change_type=ChangeType.TRANSFER,
-            target=f"{machine}:{command}",
-            description=f"Transfer files on {machine}",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.TRANSFER,
+                target=f"{machine}:{command}",
+                description=f"Transfer files on {machine}",
+                risk_level="low",
+            )
+        )
 
     else:
-        preview.add_change(Change(
-            change_type=ChangeType.EXECUTE,
-            target=f"{machine}",
-            description=f"Run command on {machine}: {command[:60]}",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.EXECUTE,
+                target=f"{machine}",
+                description=f"Run command on {machine}: {command[:60]}",
+                risk_level="low",
+            )
+        )
 
 
 def _preview_files(preview: ChangePreview, action: str, args: Dict[str, Any]) -> None:
@@ -305,12 +315,14 @@ def _preview_files(preview: ChangePreview, action: str, args: Dict[str, Any]) ->
     path = args.get("path", "unknown")
 
     if action == "create_file":
-        preview.add_change(Change(
-            change_type=ChangeType.CREATE,
-            target=path,
-            description=f"Create file: {path}",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.CREATE,
+                target=path,
+                description=f"Create file: {path}",
+                risk_level="low",
+            )
+        )
     elif action == "read_file":
         # Read doesn't change state
         pass
@@ -320,9 +332,11 @@ def _preview_media(preview: ChangePreview, action: str, args: Dict[str, Any]) ->
     """Generate preview for media operations."""
     if action in ("request_movie", "request_show"):
         title = args.get("title", args.get("query", "unknown"))
-        preview.add_change(Change(
-            change_type=ChangeType.CREATE,
-            target="download_queue",
-            description=f"Add '{title}' to download queue",
-            risk_level="low",
-        ))
+        preview.add_change(
+            Change(
+                change_type=ChangeType.CREATE,
+                target="download_queue",
+                description=f"Add '{title}' to download queue",
+                risk_level="low",
+            )
+        )

@@ -6,7 +6,7 @@ produced by each manager method are correctly assembled with proper quoting.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -43,9 +43,7 @@ class TestStorageManagerCommands:
             force=True,
         )
 
-        mock_run_ok.assert_called_once_with(
-            "zpool create -f tank mirror /dev/sda /dev/sdb"
-        )
+        mock_run_ok.assert_called_once_with("zpool create -f tank mirror /dev/sda /dev/sdb")
 
     @pytest.mark.asyncio
     async def test_create_pool_stripe_command(self, mock_run_ok):
@@ -61,9 +59,7 @@ class TestStorageManagerCommands:
             force=False,
         )
 
-        mock_run_ok.assert_called_once_with(
-            "zpool create fast /dev/nvme0n1"
-        )
+        mock_run_ok.assert_called_once_with("zpool create fast /dev/nvme0n1")
 
     @pytest.mark.asyncio
     async def test_destroy_pool_command(self, mock_run_ok):
@@ -221,10 +217,7 @@ class TestBackupManagerCommands:
         await mgr.delete_job("daily-backup")
 
         # Collect all rm -f commands
-        rm_calls = [
-            call[0][0] for call in mgr._run.call_args_list
-            if "rm -f" in str(call)
-        ]
+        rm_calls = [call[0][0] for call in mgr._run.call_args_list if "rm -f" in str(call)]
 
         # All rm paths should use safe_quote (no unquoted interpolation)
         for cmd in rm_calls:
@@ -253,9 +246,7 @@ class TestUserManagerCommands:
 
         await mgr.set_password("testuser", "s3cr3t!")
 
-        mgr._run_with_stdin.assert_called_once_with(
-            "chpasswd", "testuser:s3cr3t!"
-        )
+        mgr._run_with_stdin.assert_called_once_with("chpasswd", "testuser:s3cr3t!")
 
     @pytest.mark.asyncio
     async def test_lock_account_command(self, mock_run_ok):

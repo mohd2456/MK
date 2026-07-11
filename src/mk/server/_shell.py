@@ -3,7 +3,7 @@
 import re
 import shlex
 
-_SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9/][a-zA-Z0-9._\-/@]*$')
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9/][a-zA-Z0-9._\-/@]*$")
 
 
 def validate_name(value: str, label: str = "name") -> str:

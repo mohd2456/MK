@@ -15,12 +15,10 @@ Wraps common homelab open-source tools that don't fit in other managers:
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
-from ._shell import safe_quote, validate_name
+from ._shell import safe_quote
 from ._run import run_cmd
 
 logger = logging.getLogger(__name__)
@@ -51,7 +49,9 @@ class HomelabManager:
                 sudo=False,
             )
         if rc != 0:
-            return ToolResult(success=False, error=f"WoL failed (install etherwake or wakeonlan): {err}")
+            return ToolResult(
+                success=False, error=f"WoL failed (install etherwake or wakeonlan): {err}"
+            )
 
         return ToolResult(
             success=True,
@@ -188,7 +188,9 @@ class HomelabManager:
         rc, out, err = await run_cmd("speedtest-cli --simple 2>/dev/null", sudo=False, timeout=60)
         if rc != 0:
             # Try ookla speedtest
-            rc, out, err = await run_cmd("speedtest --format=human-readable 2>/dev/null", sudo=False, timeout=60)
+            rc, out, err = await run_cmd(
+                "speedtest --format=human-readable 2>/dev/null", sudo=False, timeout=60
+            )
         if rc != 0:
             return ToolResult(success=False, error="speedtest-cli not available")
         return ToolResult(success=True, output=out)

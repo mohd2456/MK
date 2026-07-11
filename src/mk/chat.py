@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -340,9 +339,18 @@ class ChatMode:
 
         # Complex indicators → fast
         complex_indicators = [
-            "explain", "analyze", "compare", "plan", "help me think",
-            "what do you think about", "write me", "create a",
-            "how should i", "what's the best way to", "why does", "why do",
+            "explain",
+            "analyze",
+            "compare",
+            "plan",
+            "help me think",
+            "what do you think about",
+            "write me",
+            "create a",
+            "how should i",
+            "what's the best way to",
+            "why does",
+            "why do",
         ]
         for indicator in complex_indicators:
             if indicator in text:

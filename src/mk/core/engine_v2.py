@@ -19,13 +19,15 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from mk.config.settings import Settings
 
 from mk.core.engine import MKEngine
-from mk.core.models import AgentResponse, AgentStep, Role, ToolCall
+from mk.core.models import AgentResponse, AgentStep, Role
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +181,7 @@ class MKEngineV2(MKEngine):
             # Auto-expose Web UI on tailnet via Tailscale Serve
             try:
                 from mk.server.network import NetworkManager
+
                 nm = NetworkManager(sudo=True)
                 await nm.tailscale_serve(port=8080, path="/")
                 logger.info("Web UI exposed on tailnet via Tailscale Serve (port 8080)")
@@ -225,7 +228,9 @@ class MKEngineV2(MKEngine):
         self.conversation.add_message(Role.USER, user_input)
 
         # Handle Tailscale auth key via chat (like /setkey for LLM providers)
-        if user_input.strip().startswith("tskey-") or user_input.strip().lower().startswith("/tailscale "):
+        if user_input.strip().startswith("tskey-") or user_input.strip().lower().startswith(
+            "/tailscale "
+        ):
             response = await self._handle_tailscale_command(user_input.strip())
             self.conversation.add_message(Role.ASSISTANT, response.final_response)
             return response
@@ -249,6 +254,7 @@ class MKEngineV2(MKEngine):
                 # Store in semantic memory
                 if self._semantic_memory:
                     from mk.memory.vector.semantic import MemoryType
+
                     self._semantic_memory.store(
                         content=f"User asked: {user_input[:100]}. Result: {response.final_response[:200]}",
                         memory_type=MemoryType.CONVERSATION,
@@ -278,6 +284,7 @@ class MKEngineV2(MKEngine):
         # Store meaningful interactions in semantic memory
         if self._semantic_memory and len(user_input) > 20:
             from mk.memory.vector.semantic import MemoryType
+
             self._semantic_memory.store(
                 content=f"Q: {user_input[:80]} → A: {response.final_response[:150]}",
                 memory_type=MemoryType.CONVERSATION,
@@ -308,6 +315,7 @@ class MKEngineV2(MKEngine):
             # Store it in secrets
             try:
                 from mk.safety.secrets import SecretsManager
+
                 secrets = SecretsManager()
                 secrets.store_secret("tailscale_auth_key", auth_key)
             except Exception:
@@ -367,34 +375,69 @@ class MKEngineV2(MKEngine):
                 accept_routes=True,
                 ssh=True,
             )
-            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "Done",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "down":
             result = await nm.tailscale_down()
-            return AgentResponse(steps=[], final_response=result.output or result.error or "Disconnected", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "Disconnected",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "status":
             result = await nm.tailscale_status()
-            return AgentResponse(steps=[], final_response=result.output or result.error or "No status", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "No status",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "ip":
             result = await nm.tailscale_ip()
-            return AgentResponse(steps=[], final_response=result.output or result.error or "No IP", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "No IP",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "peers":
             result = await nm.tailscale_peers()
-            return AgentResponse(steps=[], final_response=result.output or result.error or "No peers", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "No peers",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "serve" and len(parts) > 1:
             port = int(parts[1]) if parts[1].isdigit() else 8080
             path = parts[2] if len(parts) > 2 else "/"
             result = await nm.tailscale_serve(port=port, path=path)
-            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "Done",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         elif cmd == "funnel" and len(parts) > 1:
             port = int(parts[1]) if parts[1].isdigit() else 8080
             result = await nm.tailscale_funnel(port=port)
-            return AgentResponse(steps=[], final_response=result.output or result.error or "Done", tokens_used=0, cost=0.0)
+            return AgentResponse(
+                steps=[],
+                final_response=result.output or result.error or "Done",
+                tokens_used=0,
+                cost=0.0,
+            )
 
         else:
             return AgentResponse(
@@ -423,8 +466,6 @@ class MKEngineV2(MKEngine):
         """
         # Policy check
         if self._policy_engine:
-            from mk.policy.engine import EvaluationResult
-
             eval_result = self._policy_engine.evaluate(
                 tool=tool_name,
                 action=tool_args.get("action", ""),
@@ -464,7 +505,6 @@ class MKEngineV2(MKEngine):
         Returns:
             AgentResponse with plan execution results.
         """
-        from mk.planner.executor import ExecutionResult
 
         graph = plan_result.graph
 
@@ -506,6 +546,7 @@ class MKEngineV2(MKEngine):
         # Check if it's a plugin tool (qualified name with '.')
         if "." in name and self._plugin_manager:
             from mk.tools.base import ToolResult
+
             result = await self._plugin_manager.execute_qualified(name, args)
             if isinstance(result, ToolResult):
                 return result.output if result.success else f"Error: {result.error}"
@@ -540,6 +581,7 @@ class MKEngineV2(MKEngine):
             if self._plugin_manager:
                 result = await self._plugin_manager._execute_unqualified(name, args)
                 from mk.tools.base import ToolResult
+
                 if isinstance(result, ToolResult):
                     if result.success:
                         return result.output
@@ -556,10 +598,12 @@ class MKEngineV2(MKEngine):
         # Add plugin tools
         if self._plugin_manager:
             for tool_def in self._plugin_manager.get_tool_definitions():
-                descriptions.append({
-                    "name": tool_def["name"],
-                    "description": tool_def["description"],
-                })
+                descriptions.append(
+                    {
+                        "name": tool_def["name"],
+                        "description": tool_def["description"],
+                    }
+                )
 
         return descriptions
 
@@ -675,7 +719,9 @@ class MKEngineV2(MKEngine):
 
         # Step 1: Install if needed
         install_result = await nm.tailscale_install()
-        results["installed"] = install_result.success or install_result.metadata.get("already_installed", False)
+        results["installed"] = install_result.success or install_result.metadata.get(
+            "already_installed", False
+        )
 
         if not results["installed"]:
             results["error"] = f"Installation failed: {install_result.error}"
@@ -688,6 +734,7 @@ class MKEngineV2(MKEngine):
             # Try to get from secrets store
             try:
                 from mk.safety.secrets import SecretsManager
+
                 secrets = SecretsManager()
                 auth_key = secrets.get_secret(ts_config.auth_key_ref)
             except Exception:
@@ -696,6 +743,7 @@ class MKEngineV2(MKEngine):
             # Try environment variable as fallback
             if not auth_key:
                 import os
+
                 auth_key = os.environ.get("TAILSCALE_AUTH_KEY", "")
                 if not auth_key:
                     auth_key = os.environ.get("TS_AUTH_KEY", "")
