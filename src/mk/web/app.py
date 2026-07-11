@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
+from mk.wrapper import InputValidationError, MKWrapper, PageContext
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +97,34 @@ class LoginResponse(BaseModel):
 class ChatMessage(BaseModel):
     content: str
     context: Dict[str, Any] = Field(default_factory=dict)
+    session_id: Optional[str] = None
+    expect_json: bool = False
+
+
+class SuggestedActionModel(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    command: str
+    category: str = "general"
+    icon: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     content: str
     actions: List[Dict[str, Any]] = Field(default_factory=list)
+    ok: bool = True
+    failure_type: Optional[str] = None
+    retryable: bool = False
+    degraded: bool = False
+    provider: Optional[str] = None
+    suggestions: List[SuggestedActionModel] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+
+
+class SuggestionsResponse(BaseModel):
+    page: str
+    suggestions: List[SuggestedActionModel] = Field(default_factory=list)
 
 
 class DashboardSummary(BaseModel):
@@ -129,6 +153,7 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 _login_attempts: Dict[str, List[float]] = {}
 _pin_hash: Optional[str] = None
 _mk_engine: Optional[Any] = None
+_mk_wrapper: Optional[MKWrapper] = None
 _start_time: float = time.time()
 
 SESSION_DURATION = 7 * 24 * 3600  # 7 days
@@ -310,9 +335,16 @@ def create_app(
     Returns:
         Configured FastAPI app.
     """
-    global _mk_engine, _pin_hash
+    global _mk_engine, _mk_wrapper, _pin_hash
 
     _mk_engine = mk_engine
+    # The wrapper is the single, defensive integration point for all
+    # conversational paths (HTTP + WebSocket). It validates input, enforces a
+    # time budget, isolates engine failures, screens output for AI failures,
+    # and attaches context-aware suggestions. It is always constructed, even
+    # when no engine is wired in, so the API degrades gracefully instead of
+    # returning a raw "not initialized" stub.
+    _mk_wrapper = MKWrapper(engine=mk_engine)
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -648,22 +680,72 @@ def _register_dashboard_routes(app: FastAPI) -> None:
         return {"events": []}
 
 
+def _build_wrapper() -> MKWrapper:
+    """Return the active wrapper, constructing a fallback if needed.
+
+    The wrapper is normally created in ``create_app``; this guards against any
+    import-order edge case so the chat path never dereferences ``None``.
+    """
+    global _mk_wrapper
+    if _mk_wrapper is None:
+        _mk_wrapper = MKWrapper(engine=_mk_engine)
+    return _mk_wrapper
+
+
+def _chat_response_from_result(result: Any) -> ChatResponse:
+    """Convert a wrapper ``ChatResult`` into the API ``ChatResponse`` envelope."""
+    return ChatResponse(
+        content=result.content,
+        actions=result.actions,
+        ok=result.ok,
+        failure_type=result.failure_type,
+        retryable=bool(result.failure.retryable) if result.failure else False,
+        degraded=result.degraded,
+        provider=result.provider,
+        suggestions=[SuggestedActionModel(**s.model_dump()) for s in result.suggestions],
+        elapsed_ms=round(result.elapsed_ms, 1),
+    )
+
+
 def _register_chat_routes(app: FastAPI) -> None:
-    """Chat routes: send message (HTTP fallback)."""
+    """Chat routes: send message (HTTP), context suggestions, history."""
 
     @app.post("/api/v1/chat/message", dependencies=[Depends(require_auth)])
     async def chat_message(msg: ChatMessage):
-        """Send a chat message and get a response."""
-        if _mk_engine:
-            try:
-                response = await _mk_engine.process(msg.content)
-                return ChatResponse(
-                    content=response.final_response,
-                    actions=[],
-                )
-            except Exception as e:
-                return ChatResponse(content=f"Error: {str(e)}")
-        return ChatResponse(content="MK engine not initialized")
+        """Send a chat message and get a context-aware response.
+
+        Routes through the MK wrapper, which guarantees a well-formed response:
+        invalid input yields HTTP 422, and any AI/engine failure comes back as
+        a non-ok envelope with a clear message rather than a 500.
+        """
+        wrapper = _build_wrapper()
+        payload = {
+            "content": msg.content,
+            "session_id": msg.session_id,
+            "context": msg.context or {},
+            "expect_json": msg.expect_json,
+        }
+        try:
+            # Validation is centralized in the wrapper, which raises a concise
+            # InputValidationError for bad caller input (mapped to 422 here).
+            result = await wrapper.chat(payload)
+        except InputValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail)
+        return _chat_response_from_result(result)
+
+    @app.get("/api/v1/chat/suggestions", dependencies=[Depends(require_auth)])
+    async def chat_suggestions(
+        page: str = Query("/", description="Current route/screen"),
+        selection: Optional[str] = Query(None, description="Selected entity, if any"),
+    ):
+        """Return context-aware suggestions for the current page/screen."""
+        wrapper = _build_wrapper()
+        context = PageContext(page=page, selection=selection)
+        suggestions = wrapper.get_suggestions(context)
+        return SuggestionsResponse(
+            page=context.page,
+            suggestions=[SuggestedActionModel(**s.model_dump()) for s in suggestions],
+        )
 
     @app.get("/api/v1/chat/history", dependencies=[Depends(require_auth)])
     async def chat_history():
@@ -1823,23 +1905,43 @@ def _register_websocket(app: FastAPI) -> None:
                     # Send typing indicator
                     await ws.send_json({"type": "typing_indicator", "active": True})
 
-                    # Process through MK engine
-                    response_text = "MK engine not available"
-                    if _mk_engine:
-                        try:
-                            result = await _mk_engine.process(content)
-                            response_text = result.final_response
-                        except Exception as e:
-                            response_text = f"Error: {str(e)}"
+                    # Process through the MK wrapper (same defensive path as HTTP).
+                    wrapper = _build_wrapper()
+                    payload = {
+                        "content": content,
+                        "session_id": msg.get("session_id"),
+                        "context": msg.get("context") or {},
+                    }
+                    try:
+                        result = await wrapper.chat(payload)
+                    except InputValidationError as exc:
+                        await ws.send_json(
+                            {
+                                "type": "chat_response",
+                                "id": secrets.token_hex(8),
+                                "reply_to": msg.get("id", ""),
+                                "content": f"Invalid message: {exc.detail}",
+                                "ok": False,
+                                "failure_type": "invalid_input",
+                                "actions": [],
+                                "suggestions": [],
+                                "done": True,
+                            }
+                        )
+                        continue
 
-                    # Send response
                     await ws.send_json(
                         {
                             "type": "chat_response",
                             "id": secrets.token_hex(8),
                             "reply_to": msg.get("id", ""),
-                            "content": response_text,
-                            "actions": [],
+                            "content": result.content,
+                            "ok": result.ok,
+                            "failure_type": result.failure_type,
+                            "degraded": result.degraded,
+                            "provider": result.provider,
+                            "actions": result.actions,
+                            "suggestions": [s.model_dump() for s in result.suggestions],
                             "done": True,
                         }
                     )
