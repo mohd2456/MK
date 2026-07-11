@@ -119,25 +119,32 @@ the same defensive posture:
   names) are validated against a strict allowlist before use.
 - **Suggestions never fail** — `get_suggestions` coerces bad context to a
   default rather than raising, so the UI's context panel can't break the page.
+- **History is best-effort** — persisting an exchange is wrapped in try/except
+  and logged on failure, so a storage hiccup never affects the chat response.
+- **UI degrades gracefully** — the web client renders `ok=false` replies as an
+  inline alert (with Retry for retryable failures), falls back to static
+  suggestions if `/chat/suggestions` is unreachable, and shows an honest error
+  on transport failure instead of fabricating a response.
 
 ---
 
 ## 6. Phased roadmap
 
-This phase delivered the AI/wrapper core (items ✅ below). The remaining phases
-turn the prototype into the full product. Estimates assume a small team and are
-deliberately realistic rather than optimistic.
+The AI/wrapper core, the context-awareness UI, and persistent chat history are
+now delivered (✅ below). The remaining phases turn the prototype into the full
+product. Estimates assume a small team and are deliberately realistic rather
+than optimistic.
 
-| Phase | Scope | Est. |
-|-------|-------|------|
-| ✅ **0. AI/wrapper core** (this phase) | Typed `MKWrapper`, strict validation, timeout, exception isolation, AI-failure detection, chat wired end-to-end (HTTP + WS), context suggestions endpoint, docs, tests. | Done |
-| **1. Context-awareness UI** | Wire the web UI's context panel + chat to the live endpoints; render AI-failure states inline with retry; page-aware shortcuts across all screens; accessibility pass. | ~2 wk |
-| **2. Reliability hardening** | Retry-with-backoff for `retryable` failures; circuit-breaker per provider; persistent sessions/history via the SQLite store; structured audit trail. | ~1–2 wk |
+| Phase | Scope | Status / Est. |
+|-------|-------|:-------------:|
+| ✅ **0. AI/wrapper core** | Typed `MKWrapper`, strict validation, timeout, exception isolation, AI-failure detection, chat wired end-to-end (HTTP + WS), context suggestions endpoint, docs, tests. | Done |
+| ✅ **1. Context-awareness UI** | Web UI context panel + chat wired to the live endpoints; AI-failure states rendered inline with retry; page-aware shortcuts fetched per route with static fallback; accessibility (ARIA roles, focus rings). | Done |
+| 🟡 **2. Reliability hardening** | **Done:** persistent, session-keyed chat history via `ChatHistoryStore` (SQLite). **Remaining:** retry-with-backoff for `retryable` failures, per-provider circuit-breaker, structured audit trail, persistent auth sessions. | ~1 wk left |
 | **3. OS-integration proof-of-concept** | Terminal/shell surface calling the same `MKWrapper`; systemd service wiring; a minimal on-device console. | ~2–3 wk |
 | **4. Plugin permission & security model** | Capability-scoped plugin permissions, sandbox review, signed plugins, secure defaults for third-party extensions. | ~2–3 wk |
 | **5. Cross-platform & polish** | Consistent APIs across major OSes/browsers, packaging, low-footprint tuning, load/perf testing against defined targets. | ~2–3 wk |
 
-**Full remaining effort: ~9–14 weeks** for a small team, landing incrementally
+**Full remaining effort: ~7–10 weeks** for a small team, landing incrementally
 so each phase is usable on its own.
 
 ---
@@ -149,5 +156,10 @@ so each phase is usable on its own.
 - Integration tests assert the chat endpoint returns **200 with `ok=false`**
   (not 500) for engine errors and no-engine, and **422** for invalid input
   (`tests/web/test_api_chat.py`).
+- History tests (`tests/web/test_chat_history.py`) verify best-effort
+  persistence and per-session isolation, including that failure replies are
+  stored with their `failure_type`.
+- Frontend tests (`webui/src/__tests__/…`) verify AI-failure rendering, retry,
+  and the context-suggestion fetch/fallback behavior.
 - Metrics/logging are emitted on every path so failure rates are observable in
   production, not just in tests.
