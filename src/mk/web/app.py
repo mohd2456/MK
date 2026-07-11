@@ -796,6 +796,7 @@ def _register_network_routes(app: FastAPI) -> None:
 
     @app.put("/api/v1/network/interfaces/{name}", dependencies=[Depends(require_auth)])
     async def update_interface(name: str, request: Request):
+        name = _validate_shell_identifier(name, "interface name")
         body = await request.json()
         return {"status": "updated", "interface": name, "config": body}
 
@@ -939,8 +940,10 @@ def _register_network_routes(app: FastAPI) -> None:
 
     @app.put("/api/v1/network/dns", dependencies=[Depends(require_auth)])
     async def update_dns_config(request: Request):
+        _allowed_dns_keys = {"primary", "secondary", "search_domain", "overrides"}
         body = await request.json()
-        _dns_config.update(body)
+        filtered = {k: v for k, v in body.items() if k in _allowed_dns_keys}
+        _dns_config.update(filtered)
         return {"status": "updated", "config": _dns_config}
 
     # Reverse Proxy
@@ -1220,8 +1223,13 @@ def _register_system_routes(app: FastAPI) -> None:
     @app.put("/api/v1/system/ai/settings", dependencies=[Depends(require_auth)])
     async def update_ai_settings(request: Request):
         """Update AI configuration."""
+        _allowed_ai_keys = {
+            "provider", "model", "temperature", "max_tokens",
+            "system_prompt", "context_options",
+        }
         body = await request.json()
-        _ai_settings.update(body)
+        filtered = {k: v for k, v in body.items() if k in _allowed_ai_keys}
+        _ai_settings.update(filtered)
         return {"status": "updated", "settings": _ai_settings}
 
 
@@ -1386,8 +1394,13 @@ def _register_media_routes(app: FastAPI) -> None:
     @app.put("/api/v1/media/settings", dependencies=[Depends(require_auth)])
     async def update_media_settings(request: Request):
         """Update media settings."""
+        _allowed_media_keys = {
+            "auto_rip", "output_path", "default_format",
+            "min_length_minutes", "notifications",
+        }
         body = await request.json()
-        _media_settings.update(body)
+        filtered = {k: v for k, v in body.items() if k in _allowed_media_keys}
+        _media_settings.update(filtered)
         return {"status": "updated", "settings": _media_settings}
 
 
@@ -1505,9 +1518,11 @@ def _register_protection_routes(app: FastAPI) -> None:
     @app.put("/api/v1/protection/scrubs/{pool}", dependencies=[Depends(require_auth)])
     async def update_scrub_schedule(pool: str, request: Request):
         pool = _validate_shell_identifier(pool, "pool name")
+        _allowed_scrub_keys = {"schedule", "last_run", "duration_seconds", "errors"}
         body = await request.json()
+        filtered = {k: v for k, v in body.items() if k in _allowed_scrub_keys}
         schedule = _scrub_schedules.get(pool, {"pool": pool})
-        schedule.update(body)
+        schedule.update(filtered)
         schedule["pool"] = pool
         _scrub_schedules[pool] = schedule
         return {"status": "updated", "scrub": schedule}
@@ -1732,11 +1747,12 @@ def _register_keys_routes(app: FastAPI) -> None:
 def _register_metrics_routes(app: FastAPI) -> None:
     """Prometheus-compatible metrics endpoint."""
 
-    @app.get("/metrics")
+    @app.get("/metrics", dependencies=[Depends(require_auth)])
     async def get_metrics():
         """Expose metrics in Prometheus text exposition format.
 
-        No authentication required for metrics scraping (standard practice).
+        Requires authentication to prevent leaking API surface and usage
+        patterns to unauthenticated observers.
         """
         content = metrics.render_prometheus()
         return Response(
