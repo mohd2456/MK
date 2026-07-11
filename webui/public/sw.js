@@ -3,10 +3,18 @@
  * =====================
  * Provides offline support with a cache-first strategy for static assets
  * and network-first strategy for API calls.
+ *
+ * API responses are cached with a timestamp header and expire after
+ * API_CACHE_MAX_AGE_MS (5 minutes by default). Stale cache entries
+ * are served only when the network is unavailable, giving the UI a
+ * chance to display a "data may be stale" indicator.
  */
 
-const CACHE_NAME = "mk-os-v1";
+const CACHE_NAME = "mk-os-v2";
 const STATIC_ASSETS = ["/", "/index.html"];
+
+// Maximum age for cached API responses (5 minutes)
+const API_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 // Install: pre-cache the app shell
 self.addEventListener("install", (event) => {
@@ -30,24 +38,69 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+/**
+ * Check if a cached API response is still fresh based on the
+ * x-sw-cached-at header we add when storing it.
+ */
+function isApiCacheFresh(response) {
+  const cachedAt = response.headers.get("x-sw-cached-at");
+  if (!cachedAt) return false;
+  const age = Date.now() - parseInt(cachedAt, 10);
+  return age < API_CACHE_MAX_AGE_MS;
+}
+
+/**
+ * Clone a response and add a cache timestamp header.
+ */
+function addCacheTimestamp(response) {
+  const headers = new Headers(response.headers);
+  headers.set("x-sw-cached-at", String(Date.now()));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headers,
+  });
+}
+
 // Fetch: cache-first for static assets, network-first for API calls
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Network-first for API calls
+  // Network-first for API calls with time-based cache expiry
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache successful GET responses
+          // Cache successful GET responses with a timestamp
           if (request.method === "GET" && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            const stamped = addCacheTimestamp(response.clone());
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, stamped));
           }
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(async () => {
+          // Network failed: serve from cache only if still fresh
+          const cached = await caches.match(request);
+          if (cached && isApiCacheFresh(cached)) {
+            return cached;
+          }
+          // Return stale cache with a warning header so the UI can indicate staleness
+          if (cached) {
+            const headers = new Headers(cached.headers);
+            headers.set("x-sw-stale", "true");
+            return new Response(cached.body, {
+              status: cached.status,
+              statusText: cached.statusText,
+              headers: headers,
+            });
+          }
+          // No cache at all
+          return new Response(JSON.stringify({ error: "Network unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        })
     );
     return;
   }

@@ -15,11 +15,17 @@ services:
     networks:
       - mk-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/auth/status')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   mk-webui:
     build:
       context: ./webui
-      dockerfile: Dockerfile.webui
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     volumes:
@@ -28,25 +34,39 @@ services:
     environment:
       - VITE_API_URL=http://mk-api:8000
     depends_on:
-      - mk-api
+      mk-api:
+        condition: service_healthy
     networks:
       - mk-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   mk-gateway:
     build:
       context: ./gateway
-      dockerfile: Dockerfile.gateway
+      dockerfile: Dockerfile
     volumes:
       - ./gateway/src:/app/src
     environment:
       - MK_API_URL=http://mk-api:8000
       - NODE_ENV=development
     depends_on:
-      - mk-api
+      mk-api:
+        condition: service_healthy
     networks:
       - mk-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
   mk-network:

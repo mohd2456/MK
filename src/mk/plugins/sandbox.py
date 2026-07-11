@@ -145,6 +145,11 @@ class RestrictedImporter:
     that blocks imports of restricted modules. Used during sandboxed
     plugin execution to prevent plugins from importing dangerous modules.
 
+    NOTE: This replaces a process-global hook and is not safe for
+    concurrent use. The PluginSandbox serializes access via an
+    asyncio.Lock to ensure only one RestrictedImporter is active
+    at a time.
+
     Usage:
         with RestrictedImporter(blocked={"os", "subprocess"}):
             exec(plugin_code)  # os and subprocess imports will raise
@@ -209,7 +214,11 @@ class PluginSandbox:
     4. Import restriction (during execution)
     5. Result validation (after execution)
 
-    Does NOT use containers or VMs — this is Python-level isolation
+    Uses an asyncio.Lock to serialize the RestrictedImporter usage,
+    which is process-global. This prevents concurrent sandbox executions
+    from interfering with each other's import hooks.
+
+    Does NOT use containers or VMs -- this is Python-level isolation
     suitable for a trusted homelab environment where the goal is
     catching bugs and misconfigurations, not adversarial attacks.
     """
@@ -223,6 +232,8 @@ class PluginSandbox:
         self.config = config or SandboxConfig()
         self._active_executions: int = 0
         self._execution_history: List[Dict[str, Any]] = []
+        # Lock to serialize import hook manipulation (process-global resource)
+        self._import_lock = asyncio.Lock()
 
     @property
     def active_executions(self) -> int:
@@ -333,6 +344,10 @@ class PluginSandbox:
     ) -> ToolResult:
         """Run the handler with async timeout enforcement and import restrictions.
 
+        Acquires the import lock to ensure only one sandboxed execution
+        manipulates builtins.__import__ at a time, preventing race conditions
+        between concurrent async tasks.
+
         Args:
             handler: The plugin tool function.
             args: Tool arguments.
@@ -361,11 +376,13 @@ class PluginSandbox:
         ):
             blocked.discard("socket")
 
-        with RestrictedImporter(blocked=blocked, whitelist=whitelist):
-            result = await asyncio.wait_for(
-                handler(**args),
-                timeout=ctx.timeout_seconds,
-            )
+        # Acquire lock to serialize access to builtins.__import__
+        async with self._import_lock:
+            with RestrictedImporter(blocked=blocked, whitelist=whitelist):
+                result = await asyncio.wait_for(
+                    handler(**args),
+                    timeout=ctx.timeout_seconds,
+                )
 
         # Ensure result is a ToolResult
         if isinstance(result, ToolResult):

@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from pathlib import Path
@@ -36,6 +37,46 @@ from pydantic import BaseModel, Field
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
 
 logger = logging.getLogger(__name__)
+
+# ═══════════════════════════════════════════════════════════════
+# Input Validation
+# ═══════════════════════════════════════════════════════════════
+
+# Strict pattern for identifiers used in shell commands (service names,
+# device names, pool names, container names, package names).
+# Only allows alphanumeric characters, dots, hyphens, underscores, and
+# the at-sign (for package version specifiers like package@version).
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9._@:+\-]+$")
+
+# Maximum length for shell-interpolated values
+_MAX_NAME_LENGTH = 128
+
+
+def _validate_shell_identifier(value: str, label: str = "name") -> str:
+    """Validate that a value is safe for use in shell commands.
+
+    Args:
+        value: The user-supplied value to validate.
+        label: Human-readable label for error messages.
+
+    Returns:
+        The validated value (stripped of whitespace).
+
+    Raises:
+        HTTPException: If the value contains unsafe characters.
+    """
+    value = value.strip()
+    if not value:
+        raise HTTPException(400, f"Invalid {label}: must not be empty")
+    if len(value) > _MAX_NAME_LENGTH:
+        raise HTTPException(400, f"Invalid {label}: exceeds maximum length ({_MAX_NAME_LENGTH})")
+    if not _SAFE_NAME_RE.match(value):
+        raise HTTPException(
+            400,
+            f"Invalid {label}: contains disallowed characters. "
+            f"Only alphanumeric, dots, hyphens, underscores, @, :, and + are permitted.",
+        )
+    return value
 
 # ═══════════════════════════════════════════════════════════════
 # Pydantic Models for API
@@ -156,18 +197,59 @@ class RateLimiter:
     """Simple in-memory rate limiter per IP address.
 
     Allows a configurable number of requests per window (default 100/min).
+    Includes periodic cleanup to prevent unbounded memory growth from
+    inactive IPs, and caps the total number of tracked IPs.
     """
+
+    # Maximum number of IPs to track before forced eviction
+    MAX_TRACKED_IPS = 10_000
+    # How often to run the full cleanup pass (seconds)
+    CLEANUP_INTERVAL = 300  # 5 minutes
 
     def __init__(self, max_requests: int = 100, window_seconds: int = 60) -> None:
         self._max_requests = max_requests
         self._window = window_seconds
         self._requests: Dict[str, List[float]] = {}
+        self._last_cleanup: float = time.time()
+
+    def _cleanup(self) -> None:
+        """Remove IPs with no recent requests to prevent memory leaks."""
+        now = time.time()
+        stale_ips = []
+        for ip, timestamps in self._requests.items():
+            # Keep only timestamps within the window
+            active = [t for t in timestamps if now - t < self._window]
+            if not active:
+                stale_ips.append(ip)
+            else:
+                self._requests[ip] = active
+        for ip in stale_ips:
+            del self._requests[ip]
+        self._last_cleanup = now
 
     def is_allowed(self, ip: str) -> bool:
         """Check if the IP is within rate limits."""
         now = time.time()
+
+        # Periodic cleanup of stale entries
+        if now - self._last_cleanup > self.CLEANUP_INTERVAL:
+            self._cleanup()
+
+        # If we have too many tracked IPs, force a cleanup
+        if len(self._requests) >= self.MAX_TRACKED_IPS:
+            self._cleanup()
+            # If still over limit after cleanup, evict oldest entries
+            if len(self._requests) >= self.MAX_TRACKED_IPS:
+                # Remove the half with oldest last-activity
+                sorted_ips = sorted(
+                    self._requests.keys(),
+                    key=lambda k: self._requests[k][-1] if self._requests[k] else 0,
+                )
+                for old_ip in sorted_ips[: len(sorted_ips) // 2]:
+                    del self._requests[old_ip]
+
         requests = self._requests.get(ip, [])
-        # Prune old entries
+        # Prune old entries for this IP
         requests = [t for t in requests if now - t < self._window]
         self._requests[ip] = requests
         if len(requests) >= self._max_requests:
@@ -645,8 +727,9 @@ def _register_apps_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/apps/containers/{name}/restart", dependencies=[Depends(require_auth)])
     async def restart_container(name: str):
-        proc = await asyncio.create_subprocess_shell(
-            f"docker restart {name}",
+        name = _validate_shell_identifier(name, "container name")
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "restart", name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -657,8 +740,9 @@ def _register_apps_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/apps/containers/{name}/stop", dependencies=[Depends(require_auth)])
     async def stop_container(name: str):
-        proc = await asyncio.create_subprocess_shell(
-            f"docker stop {name}",
+        name = _validate_shell_identifier(name, "container name")
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "stop", name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -667,8 +751,9 @@ def _register_apps_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/apps/containers/{name}/start", dependencies=[Depends(require_auth)])
     async def start_container(name: str):
-        proc = await asyncio.create_subprocess_shell(
-            f"docker start {name}",
+        name = _validate_shell_identifier(name, "container name")
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "start", name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -691,6 +776,8 @@ def _register_network_routes(app: FastAPI) -> None:
     _proxy_sites: List[Dict[str, Any]] = []
     _fw_counter = {"id": 0}
     _proxy_counter = {"id": 0}
+    # Lock to protect concurrent mutations of in-memory stores
+    _network_lock = asyncio.Lock()
 
     @app.get("/api/v1/network/interfaces", dependencies=[Depends(require_auth)])
     async def list_interfaces():
@@ -735,36 +822,39 @@ def _register_network_routes(app: FastAPI) -> None:
     @app.post("/api/v1/network/firewall", dependencies=[Depends(require_auth)])
     async def add_firewall_rule(request: Request):
         body = await request.json()
-        _fw_counter["id"] += 1
-        rule = {
-            "id": _fw_counter["id"],
-            "chain": body.get("chain", "input"),
-            "action": body.get("action", "accept"),
-            "protocol": body.get("protocol"),
-            "source": body.get("source"),
-            "destination": body.get("destination"),
-            "port": body.get("port"),
-            "comment": body.get("comment", ""),
-            "enabled": body.get("enabled", True),
-        }
-        _firewall_rules.append(rule)
+        async with _network_lock:
+            _fw_counter["id"] += 1
+            rule = {
+                "id": _fw_counter["id"],
+                "chain": body.get("chain", "input"),
+                "action": body.get("action", "accept"),
+                "protocol": body.get("protocol"),
+                "source": body.get("source"),
+                "destination": body.get("destination"),
+                "port": body.get("port"),
+                "comment": body.get("comment", ""),
+                "enabled": body.get("enabled", True),
+            }
+            _firewall_rules.append(rule)
         return {"status": "created", "rule": rule}
 
     @app.put("/api/v1/network/firewall/{rule_id}", dependencies=[Depends(require_auth)])
     async def update_firewall_rule(rule_id: int, request: Request):
         body = await request.json()
-        for rule in _firewall_rules:
-            if rule["id"] == rule_id:
-                rule.update({k: v for k, v in body.items() if k != "id"})
-                return {"status": "updated", "rule": rule}
+        async with _network_lock:
+            for rule in _firewall_rules:
+                if rule["id"] == rule_id:
+                    rule.update({k: v for k, v in body.items() if k != "id"})
+                    return {"status": "updated", "rule": rule}
         raise HTTPException(404, f"Rule {rule_id} not found")
 
     @app.delete("/api/v1/network/firewall/{rule_id}", dependencies=[Depends(require_auth)])
     async def delete_firewall_rule(rule_id: int):
-        for i, rule in enumerate(_firewall_rules):
-            if rule["id"] == rule_id:
-                _firewall_rules.pop(i)
-                return {"status": "deleted", "id": rule_id}
+        async with _network_lock:
+            for i, rule in enumerate(_firewall_rules):
+                if rule["id"] == rule_id:
+                    _firewall_rules.pop(i)
+                    return {"status": "deleted", "id": rule_id}
         raise HTTPException(404, f"Rule {rule_id} not found")
 
     @app.post("/api/v1/network/firewall/reorder", dependencies=[Depends(require_auth)])
@@ -773,14 +863,15 @@ def _register_network_routes(app: FastAPI) -> None:
         order = body.get("order", [])
         if not order:
             raise HTTPException(400, "order list required")
-        reordered = []
-        for rid in order:
-            for rule in _firewall_rules:
-                if rule["id"] == rid:
-                    reordered.append(rule)
-                    break
-        _firewall_rules.clear()
-        _firewall_rules.extend(reordered)
+        async with _network_lock:
+            reordered = []
+            for rid in order:
+                for rule in _firewall_rules:
+                    if rule["id"] == rid:
+                        reordered.append(rule)
+                        break
+            _firewall_rules.clear()
+            _firewall_rules.extend(reordered)
         return {"status": "reordered", "rules": _firewall_rules}
 
     # WireGuard
@@ -791,14 +882,15 @@ def _register_network_routes(app: FastAPI) -> None:
     @app.post("/api/v1/network/wireguard", dependencies=[Depends(require_auth)])
     async def create_wireguard_interface(request: Request):
         body = await request.json()
-        wg_iface = {
-            "name": body.get("name", "wg0"),
-            "private_key_set": True,
-            "listen_port": body.get("listen_port", 51820),
-            "address": body.get("address", "10.8.0.1/24"),
-            "peers": [],
-        }
-        _wireguard_interfaces.append(wg_iface)
+        async with _network_lock:
+            wg_iface = {
+                "name": body.get("name", "wg0"),
+                "private_key_set": True,
+                "listen_port": body.get("listen_port", 51820),
+                "address": body.get("address", "10.8.0.1/24"),
+                "peers": [],
+            }
+            _wireguard_interfaces.append(wg_iface)
         return {"status": "created", "interface": wg_iface}
 
     @app.get("/api/v1/network/wireguard/{name}/peers", dependencies=[Depends(require_auth)])
@@ -811,17 +903,18 @@ def _register_network_routes(app: FastAPI) -> None:
     @app.post("/api/v1/network/wireguard/{name}/peers", dependencies=[Depends(require_auth)])
     async def add_wireguard_peer(name: str, request: Request):
         body = await request.json()
-        for iface in _wireguard_interfaces:
-            if iface["name"] == name:
-                peer = {
-                    "id": len(iface["peers"]) + 1,
-                    "name": body.get("name", "peer"),
-                    "public_key": body.get("public_key", ""),
-                    "allowed_ips": body.get("allowed_ips", []),
-                    "endpoint": body.get("endpoint"),
-                }
-                iface["peers"].append(peer)
-                return {"status": "created", "peer": peer}
+        async with _network_lock:
+            for iface in _wireguard_interfaces:
+                if iface["name"] == name:
+                    peer = {
+                        "id": len(iface["peers"]) + 1,
+                        "name": body.get("name", "peer"),
+                        "public_key": body.get("public_key", ""),
+                        "allowed_ips": body.get("allowed_ips", []),
+                        "endpoint": body.get("endpoint"),
+                    }
+                    iface["peers"].append(peer)
+                    return {"status": "created", "peer": peer}
         raise HTTPException(404, f"WireGuard interface '{name}' not found")
 
     @app.delete(
@@ -829,13 +922,14 @@ def _register_network_routes(app: FastAPI) -> None:
         dependencies=[Depends(require_auth)],
     )
     async def delete_wireguard_peer(name: str, peer_id: int):
-        for iface in _wireguard_interfaces:
-            if iface["name"] == name:
-                for i, peer in enumerate(iface["peers"]):
-                    if peer["id"] == peer_id:
-                        iface["peers"].pop(i)
-                        return {"status": "deleted", "peer_id": peer_id}
-                raise HTTPException(404, f"Peer {peer_id} not found")
+        async with _network_lock:
+            for iface in _wireguard_interfaces:
+                if iface["name"] == name:
+                    for i, peer in enumerate(iface["peers"]):
+                        if peer["id"] == peer_id:
+                            iface["peers"].pop(i)
+                            return {"status": "deleted", "peer_id": peer_id}
+                    raise HTTPException(404, f"Peer {peer_id} not found")
         raise HTTPException(404, f"WireGuard interface '{name}' not found")
 
     # DNS
@@ -857,32 +951,35 @@ def _register_network_routes(app: FastAPI) -> None:
     @app.post("/api/v1/network/proxy", dependencies=[Depends(require_auth)])
     async def add_proxy_site(request: Request):
         body = await request.json()
-        _proxy_counter["id"] += 1
-        site = {
-            "id": _proxy_counter["id"],
-            "domain": body.get("domain", ""),
-            "backend": body.get("backend", ""),
-            "ssl": body.get("ssl", "auto"),
-            "enabled": body.get("enabled", True),
-        }
-        _proxy_sites.append(site)
+        async with _network_lock:
+            _proxy_counter["id"] += 1
+            site = {
+                "id": _proxy_counter["id"],
+                "domain": body.get("domain", ""),
+                "backend": body.get("backend", ""),
+                "ssl": body.get("ssl", "auto"),
+                "enabled": body.get("enabled", True),
+            }
+            _proxy_sites.append(site)
         return {"status": "created", "site": site}
 
     @app.put("/api/v1/network/proxy/{site_id}", dependencies=[Depends(require_auth)])
     async def update_proxy_site(site_id: int, request: Request):
         body = await request.json()
-        for site in _proxy_sites:
-            if site["id"] == site_id:
-                site.update({k: v for k, v in body.items() if k != "id"})
-                return {"status": "updated", "site": site}
+        async with _network_lock:
+            for site in _proxy_sites:
+                if site["id"] == site_id:
+                    site.update({k: v for k, v in body.items() if k != "id"})
+                    return {"status": "updated", "site": site}
         raise HTTPException(404, f"Proxy site {site_id} not found")
 
     @app.delete("/api/v1/network/proxy/{site_id}", dependencies=[Depends(require_auth)])
     async def delete_proxy_site(site_id: int):
-        for i, site in enumerate(_proxy_sites):
-            if site["id"] == site_id:
-                _proxy_sites.pop(i)
-                return {"status": "deleted", "id": site_id}
+        async with _network_lock:
+            for i, site in enumerate(_proxy_sites):
+                if site["id"] == site_id:
+                    _proxy_sites.pop(i)
+                    return {"status": "deleted", "id": site_id}
         raise HTTPException(404, f"Proxy site {site_id} not found")
 
 
@@ -989,9 +1086,10 @@ def _register_system_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/system/services/{name}/start", dependencies=[Depends(require_auth)])
     async def start_service(name: str):
+        name = _validate_shell_identifier(name, "service name")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"systemctl start {name}",
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "start", name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1006,9 +1104,10 @@ def _register_system_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/system/services/{name}/stop", dependencies=[Depends(require_auth)])
     async def stop_service(name: str):
+        name = _validate_shell_identifier(name, "service name")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"systemctl stop {name}",
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "stop", name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1023,9 +1122,10 @@ def _register_system_routes(app: FastAPI) -> None:
 
     @app.post("/api/v1/system/services/{name}/restart", dependencies=[Depends(require_auth)])
     async def restart_service(name: str):
+        name = _validate_shell_identifier(name, "service name")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"systemctl restart {name}",
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "restart", name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1064,12 +1164,16 @@ def _register_system_routes(app: FastAPI) -> None:
         body = await request.json() if request.headers.get("content-type") else {}
         packages = body.get("packages", [])
         if packages:
-            cmd = f"apt-get install -y {' '.join(packages)}"
+            # Validate each package name to prevent shell injection
+            validated_packages = []
+            for pkg in packages:
+                validated_packages.append(_validate_shell_identifier(pkg, "package name"))
+            cmd_args = ["apt-get", "install", "-y", *validated_packages]
         else:
-            cmd = "apt-get upgrade -y"
+            cmd_args = ["apt-get", "upgrade", "-y"]
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1185,6 +1289,7 @@ def _register_media_routes(app: FastAPI) -> None:
     @app.get("/api/v1/media/drives/{dev}/disc", dependencies=[Depends(require_auth)])
     async def get_disc_info(dev: str):
         """Get disc info for a specific drive."""
+        dev = _validate_shell_identifier(dev, "device name")
         try:
             from mk.server.ripper import DiscRipper
             ripper = DiscRipper(drive_device=f"/dev/{dev}")
@@ -1239,9 +1344,10 @@ def _register_media_routes(app: FastAPI) -> None:
     @app.post("/api/v1/media/eject/{dev}", dependencies=[Depends(require_auth)])
     async def eject_disc(dev: str):
         """Eject a disc from the specified drive."""
+        dev = _validate_shell_identifier(dev, "device name")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"eject /dev/{dev}",
+            proc = await asyncio.create_subprocess_exec(
+                "eject", f"/dev/{dev}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1297,6 +1403,8 @@ def _register_protection_routes(app: FastAPI) -> None:
     _job_counter = {"id": 0}
     _replication_counter = {"id": 0}
     _retention_counter = {"id": 0}
+    # Lock to protect concurrent mutations of in-memory stores
+    _protection_lock = asyncio.Lock()
 
     # Backup Jobs CRUD
     @app.get("/api/v1/protection/jobs", dependencies=[Depends(require_auth)])
@@ -1306,61 +1414,65 @@ def _register_protection_routes(app: FastAPI) -> None:
     @app.post("/api/v1/protection/jobs", dependencies=[Depends(require_auth)])
     async def create_backup_job(request: Request):
         body = await request.json()
-        _job_counter["id"] += 1
-        job = {
-            "id": _job_counter["id"],
-            "name": body.get("name", ""),
-            "backup_type": body.get("backup_type", "zfs_snapshot"),
-            "source": body.get("source", ""),
-            "destination": body.get("destination", ""),
-            "schedule": body.get("schedule", "daily"),
-            "cron_expression": body.get("cron_expression"),
-            "retention_count": body.get("retention_count", 7),
-            "enabled": body.get("enabled", True),
-            "last_run": None,
-            "last_status": None,
-            "last_duration_seconds": None,
-        }
-        _backup_jobs.append(job)
-        _job_history[str(job["id"])] = []
+        async with _protection_lock:
+            _job_counter["id"] += 1
+            job = {
+                "id": _job_counter["id"],
+                "name": body.get("name", ""),
+                "backup_type": body.get("backup_type", "zfs_snapshot"),
+                "source": body.get("source", ""),
+                "destination": body.get("destination", ""),
+                "schedule": body.get("schedule", "daily"),
+                "cron_expression": body.get("cron_expression"),
+                "retention_count": body.get("retention_count", 7),
+                "enabled": body.get("enabled", True),
+                "last_run": None,
+                "last_status": None,
+                "last_duration_seconds": None,
+            }
+            _backup_jobs.append(job)
+            _job_history[str(job["id"])] = []
         return {"status": "created", "job": job}
 
     @app.put("/api/v1/protection/jobs/{job_id}", dependencies=[Depends(require_auth)])
     async def update_backup_job(job_id: int, request: Request):
         body = await request.json()
-        for job in _backup_jobs:
-            if job["id"] == job_id:
-                job.update({k: v for k, v in body.items() if k != "id"})
-                return {"status": "updated", "job": job}
+        async with _protection_lock:
+            for job in _backup_jobs:
+                if job["id"] == job_id:
+                    job.update({k: v for k, v in body.items() if k != "id"})
+                    return {"status": "updated", "job": job}
         raise HTTPException(404, f"Job {job_id} not found")
 
     @app.delete("/api/v1/protection/jobs/{job_id}", dependencies=[Depends(require_auth)])
     async def delete_backup_job(job_id: int):
-        for i, job in enumerate(_backup_jobs):
-            if job["id"] == job_id:
-                _backup_jobs.pop(i)
-                _job_history.pop(str(job_id), None)
-                return {"status": "deleted", "id": job_id}
+        async with _protection_lock:
+            for i, job in enumerate(_backup_jobs):
+                if job["id"] == job_id:
+                    _backup_jobs.pop(i)
+                    _job_history.pop(str(job_id), None)
+                    return {"status": "deleted", "id": job_id}
         raise HTTPException(404, f"Job {job_id} not found")
 
     @app.post("/api/v1/protection/jobs/{job_id}/run", dependencies=[Depends(require_auth)])
     async def run_backup_job(job_id: int):
-        for job in _backup_jobs:
-            if job["id"] == job_id:
-                # Record run in history
-                run_record = {
-                    "started_at": time.time(),
-                    "status": "running",
-                    "duration_seconds": None,
-                }
-                history = _job_history.setdefault(str(job_id), [])
-                history.append(run_record)
-                # Simulate immediate completion for stub
-                run_record["status"] = "success"
-                run_record["duration_seconds"] = 0.1
-                job["last_run"] = time.time()
-                job["last_status"] = "success"
-                return {"status": "triggered", "job_id": job_id}
+        async with _protection_lock:
+            for job in _backup_jobs:
+                if job["id"] == job_id:
+                    # Record run in history
+                    run_record = {
+                        "started_at": time.time(),
+                        "status": "running",
+                        "duration_seconds": None,
+                    }
+                    history = _job_history.setdefault(str(job_id), [])
+                    history.append(run_record)
+                    # Simulate immediate completion for stub
+                    run_record["status"] = "success"
+                    run_record["duration_seconds"] = 0.1
+                    job["last_run"] = time.time()
+                    job["last_status"] = "success"
+                    return {"status": "triggered", "job_id": job_id}
         raise HTTPException(404, f"Job {job_id} not found")
 
     @app.get("/api/v1/protection/jobs/{job_id}/history", dependencies=[Depends(require_auth)])
@@ -1379,6 +1491,7 @@ def _register_protection_routes(app: FastAPI) -> None:
 
     @app.get("/api/v1/protection/scrubs/{pool}", dependencies=[Depends(require_auth)])
     async def get_scrub_schedule(pool: str):
+        pool = _validate_shell_identifier(pool, "pool name")
         if pool in _scrub_schedules:
             return _scrub_schedules[pool]
         return {
@@ -1391,6 +1504,7 @@ def _register_protection_routes(app: FastAPI) -> None:
 
     @app.put("/api/v1/protection/scrubs/{pool}", dependencies=[Depends(require_auth)])
     async def update_scrub_schedule(pool: str, request: Request):
+        pool = _validate_shell_identifier(pool, "pool name")
         body = await request.json()
         schedule = _scrub_schedules.get(pool, {"pool": pool})
         schedule.update(body)
@@ -1401,9 +1515,10 @@ def _register_protection_routes(app: FastAPI) -> None:
     @app.post("/api/v1/protection/scrubs/{pool}/run", dependencies=[Depends(require_auth)])
     async def run_scrub(pool: str):
         """Trigger a scrub on the specified pool."""
+        pool = _validate_shell_identifier(pool, "pool name")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                f"zpool scrub {pool}",
+            proc = await asyncio.create_subprocess_exec(
+                "zpool", "scrub", pool,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1422,18 +1537,19 @@ def _register_protection_routes(app: FastAPI) -> None:
     @app.post("/api/v1/protection/replication", dependencies=[Depends(require_auth)])
     async def create_replication_task(request: Request):
         body = await request.json()
-        _replication_counter["id"] += 1
-        task = {
-            "id": _replication_counter["id"],
-            "name": body.get("name", ""),
-            "source": body.get("source", ""),
-            "target": body.get("target", ""),
-            "schedule": body.get("schedule", "hourly"),
-            "enabled": body.get("enabled", True),
-            "last_sync": None,
-            "lag_seconds": None,
-        }
-        _replication_tasks.append(task)
+        async with _protection_lock:
+            _replication_counter["id"] += 1
+            task = {
+                "id": _replication_counter["id"],
+                "name": body.get("name", ""),
+                "source": body.get("source", ""),
+                "target": body.get("target", ""),
+                "schedule": body.get("schedule", "hourly"),
+                "enabled": body.get("enabled", True),
+                "last_sync": None,
+                "lag_seconds": None,
+            }
+            _replication_tasks.append(task)
         return {"status": "created", "task": task}
 
     @app.delete(
@@ -1441,10 +1557,11 @@ def _register_protection_routes(app: FastAPI) -> None:
         dependencies=[Depends(require_auth)],
     )
     async def delete_replication_task(task_id: int):
-        for i, task in enumerate(_replication_tasks):
-            if task["id"] == task_id:
-                _replication_tasks.pop(i)
-                return {"status": "deleted", "id": task_id}
+        async with _protection_lock:
+            for i, task in enumerate(_replication_tasks):
+                if task["id"] == task_id:
+                    _replication_tasks.pop(i)
+                    return {"status": "deleted", "id": task_id}
         raise HTTPException(404, f"Replication task {task_id} not found")
 
     # Retention
@@ -1455,24 +1572,26 @@ def _register_protection_routes(app: FastAPI) -> None:
     @app.post("/api/v1/protection/retention", dependencies=[Depends(require_auth)])
     async def create_retention_policy(request: Request):
         body = await request.json()
-        _retention_counter["id"] += 1
-        policy = {
-            "id": _retention_counter["id"],
-            "name": body.get("name", ""),
-            "keep_daily": body.get("keep_daily", 7),
-            "keep_weekly": body.get("keep_weekly", 4),
-            "keep_monthly": body.get("keep_monthly", 12),
-        }
-        _retention_policies.append(policy)
+        async with _protection_lock:
+            _retention_counter["id"] += 1
+            policy = {
+                "id": _retention_counter["id"],
+                "name": body.get("name", ""),
+                "keep_daily": body.get("keep_daily", 7),
+                "keep_weekly": body.get("keep_weekly", 4),
+                "keep_monthly": body.get("keep_monthly", 12),
+            }
+            _retention_policies.append(policy)
         return {"status": "created", "policy": policy}
 
     @app.put("/api/v1/protection/retention/{policy_id}", dependencies=[Depends(require_auth)])
     async def update_retention_policy(policy_id: int, request: Request):
         body = await request.json()
-        for policy in _retention_policies:
-            if policy["id"] == policy_id:
-                policy.update({k: v for k, v in body.items() if k != "id"})
-                return {"status": "updated", "policy": policy}
+        async with _protection_lock:
+            for policy in _retention_policies:
+                if policy["id"] == policy_id:
+                    policy.update({k: v for k, v in body.items() if k != "id"})
+                    return {"status": "updated", "policy": policy}
         raise HTTPException(404, f"Retention policy {policy_id} not found")
 
 

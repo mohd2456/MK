@@ -63,23 +63,23 @@ export function useMetrics(): UseMetricsReturn {
     const unsub = onMessage((msg: WSMessage) => {
       if (msg.type === "metric_update") {
         const data = msg as WSMessage & Partial<DashboardSummaryResponse>;
-        setRealtimeMetrics({
-          cpuPercent: data.cpu_percent ?? realtimeMetrics?.cpuPercent ?? 0,
-          ramPercent: data.ram_percent ?? realtimeMetrics?.ramPercent ?? 0,
-          ramUsedGb: data.ram_used_gb ?? realtimeMetrics?.ramUsedGb ?? 0,
-          ramTotalGb: data.ram_total_gb ?? realtimeMetrics?.ramTotalGb ?? 0,
-          networkInMbps: data.network_in_mbps ?? realtimeMetrics?.networkInMbps ?? 0,
-          networkOutMbps: data.network_out_mbps ?? realtimeMetrics?.networkOutMbps ?? 0,
-          diskPercent: data.disk_percent ?? realtimeMetrics?.diskPercent ?? 0,
-          diskUsedTb: data.disk_used_tb ?? realtimeMetrics?.diskUsedTb ?? 0,
-          diskTotalTb: data.disk_total_tb ?? realtimeMetrics?.diskTotalTb ?? 0,
-          uptimeSeconds: data.uptime_seconds ?? realtimeMetrics?.uptimeSeconds ?? 0,
-        });
+        // Use functional updater to avoid stale closure over realtimeMetrics
+        setRealtimeMetrics((prev) => ({
+          cpuPercent: data.cpu_percent ?? prev?.cpuPercent ?? 0,
+          ramPercent: data.ram_percent ?? prev?.ramPercent ?? 0,
+          ramUsedGb: data.ram_used_gb ?? prev?.ramUsedGb ?? 0,
+          ramTotalGb: data.ram_total_gb ?? prev?.ramTotalGb ?? 0,
+          networkInMbps: data.network_in_mbps ?? prev?.networkInMbps ?? 0,
+          networkOutMbps: data.network_out_mbps ?? prev?.networkOutMbps ?? 0,
+          diskPercent: data.disk_percent ?? prev?.diskPercent ?? 0,
+          diskUsedTb: data.disk_used_tb ?? prev?.diskUsedTb ?? 0,
+          diskTotalTb: data.disk_total_tb ?? prev?.diskTotalTb ?? 0,
+          uptimeSeconds: data.uptime_seconds ?? prev?.uptimeSeconds ?? 0,
+        }));
       }
     });
 
     return unsub;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, onMessage]);
 
   // Determine which metrics source to use
