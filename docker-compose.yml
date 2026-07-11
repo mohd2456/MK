@@ -1,0 +1,53 @@
+services:
+  mk-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    environment:
+      - MK_ENV=development
+      - MK_HOST=0.0.0.0
+      - MK_PORT=8000
+    networks:
+      - mk-network
+    restart: unless-stopped
+
+  mk-webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile.webui
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./webui/src:/app/src
+      - ./webui/public:/app/public
+    environment:
+      - VITE_API_URL=http://mk-api:8000
+    depends_on:
+      - mk-api
+    networks:
+      - mk-network
+    restart: unless-stopped
+
+  mk-gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.gateway
+    volumes:
+      - ./gateway/src:/app/src
+    environment:
+      - MK_API_URL=http://mk-api:8000
+      - NODE_ENV=development
+    depends_on:
+      - mk-api
+    networks:
+      - mk-network
+    restart: unless-stopped
+
+networks:
+  mk-network:
+    driver: bridge
