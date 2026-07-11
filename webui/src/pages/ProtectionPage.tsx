@@ -2,6 +2,7 @@
  * ProtectionPage
  * ===============
  * Backup jobs, scrub schedules, replication, and retention policies.
+ * Fetches real data from API hooks with fallback to mock data.
  */
 
 import { Plus } from "lucide-react";
@@ -16,33 +17,53 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import {
+  useProtectionJobs,
+  useProtectionScrubs,
+  useProtectionReplication,
+  useProtectionRetention,
+} from "@/hooks/useApi";
+import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
 
-// Mock data
-const backupJobs = [
+// ─── Fallback Mock Data ───
+
+const mockBackupJobs = [
   { name: "daily-media", source: "tank/media", dest: "backup/media", schedule: "Daily 2AM", status: "OK", lastRun: "2024-01-15 02:00", nextRun: "2024-01-16 02:00" },
   { name: "weekly-full", source: "tank", dest: "offsite-s3", schedule: "Sun 3AM", status: "OK", lastRun: "2024-01-14 03:00", nextRun: "2024-01-21 03:00" },
   { name: "apps-config", source: "tank/apps", dest: "backup/apps", schedule: "Every 6h", status: "OK", lastRun: "2024-01-15 12:00", nextRun: "2024-01-15 18:00" },
   { name: "db-dump", source: "postgres", dest: "tank/backups", schedule: "Every 1h", status: "FAILED", lastRun: "2024-01-15 14:00", nextRun: "2024-01-15 15:00" },
 ];
 
-const scrubSchedules = [
+const mockScrubSchedules = [
   { pool: "tank", schedule: "Sun 1AM", lastRun: "2024-01-14", duration: "4h 12m", errors: 0 },
   { pool: "fast", schedule: "Wed/Sun 3AM", lastRun: "2024-01-15", duration: "12m", errors: 0 },
   { pool: "backup", schedule: "1st Sun 2AM", lastRun: "2024-01-07", duration: "6h 30m", errors: 0 },
 ];
 
-const replicationTasks = [
+const mockReplicationTasks = [
   { task: "offsite-sync", source: "tank", target: "remote:backup", status: "Active", lag: "2h" },
   { task: "local-mirror", source: "fast", target: "tank/mirror", status: "Active", lag: "10m" },
 ];
 
-const retentionPolicies = [
+const mockRetentionPolicies = [
   { name: "standard", keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
   { name: "critical", keepDaily: 30, keepWeekly: 12, keepMonthly: 24 },
   { name: "minimal", keepDaily: 3, keepWeekly: 2, keepMonthly: 3 },
 ];
 
 export function ProtectionPage() {
+  const { data: jobsData, isLoading: jobsLoading } = useProtectionJobs();
+  const { data: scrubsData, isLoading: scrubsLoading } = useProtectionScrubs();
+  const { data: replicationData, isLoading: replicationLoading } = useProtectionReplication();
+  const { data: retentionData, isLoading: retentionLoading } = useProtectionRetention();
+
+  // Use API data or fall back to mocks
+  const backupJobs = jobsData ?? mockBackupJobs;
+  const scrubSchedules = scrubsData ?? mockScrubSchedules;
+  const replicationTasks = replicationData ?? mockReplicationTasks;
+  const retentionPolicies = retentionData ?? mockRetentionPolicies;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -63,126 +84,150 @@ export function ProtectionPage() {
 
         {/* Backup Jobs */}
         <TabsContent value="backups">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Job Name</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Destination</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Run</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {backupJobs.map((job) => (
-                <TableRow key={job.name}>
-                  <TableCell className="font-medium text-mk-text-primary">
-                    {job.name}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{job.source}</TableCell>
-                  <TableCell className="font-mono text-xs">{job.dest}</TableCell>
-                  <TableCell>{job.schedule}</TableCell>
-                  <TableCell>
-                    <Badge variant={job.status === "OK" ? "success" : "error"}>
-                      {job.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-mk-text-muted text-xs">
-                    {job.lastRun}
-                  </TableCell>
+          {jobsLoading ? (
+            <LoadingState variant="table" rows={4} />
+          ) : backupJobs.length === 0 ? (
+            <EmptyState title="No backup jobs" description="Create your first backup job to protect your data." actionLabel="Create Job" onAction={() => {}} />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Job Name</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Destination</TableHead>
+                  <TableHead>Schedule</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last Run</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {backupJobs.map((job) => (
+                  <TableRow key={job.name}>
+                    <TableCell className="font-medium text-mk-text-primary">
+                      {job.name}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{job.source}</TableCell>
+                    <TableCell className="font-mono text-xs">{job.dest}</TableCell>
+                    <TableCell>{job.schedule}</TableCell>
+                    <TableCell>
+                      <Badge variant={job.status === "OK" ? "success" : "error"}>
+                        {job.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-mk-text-muted text-xs">
+                      {job.lastRun}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         {/* Scrub Schedule */}
         <TabsContent value="scrubs">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Pool</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Last Run</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Errors</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scrubSchedules.map((scrub) => (
-                <TableRow key={scrub.pool}>
-                  <TableCell className="font-medium text-mk-text-primary font-mono">
-                    {scrub.pool}
-                  </TableCell>
-                  <TableCell>{scrub.schedule}</TableCell>
-                  <TableCell>{scrub.lastRun}</TableCell>
-                  <TableCell>{scrub.duration}</TableCell>
-                  <TableCell>
-                    <Badge variant={scrub.errors === 0 ? "success" : "error"}>
-                      {scrub.errors}
-                    </Badge>
-                  </TableCell>
+          {scrubsLoading ? (
+            <LoadingState variant="table" rows={3} />
+          ) : scrubSchedules.length === 0 ? (
+            <EmptyState title="No scrub schedules" description="Configure scrub schedules to verify data integrity." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pool</TableHead>
+                  <TableHead>Schedule</TableHead>
+                  <TableHead>Last Run</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Errors</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {scrubSchedules.map((scrub) => (
+                  <TableRow key={scrub.pool}>
+                    <TableCell className="font-medium text-mk-text-primary font-mono">
+                      {scrub.pool}
+                    </TableCell>
+                    <TableCell>{scrub.schedule}</TableCell>
+                    <TableCell>{scrub.lastRun}</TableCell>
+                    <TableCell>{scrub.duration}</TableCell>
+                    <TableCell>
+                      <Badge variant={scrub.errors === 0 ? "success" : "error"}>
+                        {scrub.errors}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         {/* Replication */}
         <TabsContent value="replication">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Task</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Target</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Lag</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {replicationTasks.map((task) => (
-                <TableRow key={task.task}>
-                  <TableCell className="font-medium text-mk-text-primary">
-                    {task.task}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{task.source}</TableCell>
-                  <TableCell className="font-mono text-xs">{task.target}</TableCell>
-                  <TableCell>
-                    <Badge variant="success">{task.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-mk-text-muted">{task.lag}</TableCell>
+          {replicationLoading ? (
+            <LoadingState variant="table" rows={2} />
+          ) : replicationTasks.length === 0 ? (
+            <EmptyState title="No replication tasks" description="Set up replication to keep your data synchronized across locations." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Task</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Target</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Lag</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {replicationTasks.map((task) => (
+                  <TableRow key={task.task}>
+                    <TableCell className="font-medium text-mk-text-primary">
+                      {task.task}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{task.source}</TableCell>
+                    <TableCell className="font-mono text-xs">{task.target}</TableCell>
+                    <TableCell>
+                      <Badge variant="success">{task.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-mk-text-muted">{task.lag}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         {/* Retention */}
         <TabsContent value="retention">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Policy Name</TableHead>
-                <TableHead>Keep Daily</TableHead>
-                <TableHead>Keep Weekly</TableHead>
-                <TableHead>Keep Monthly</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {retentionPolicies.map((policy) => (
-                <TableRow key={policy.name}>
-                  <TableCell className="font-medium text-mk-text-primary">
-                    {policy.name}
-                  </TableCell>
-                  <TableCell>{policy.keepDaily}</TableCell>
-                  <TableCell>{policy.keepWeekly}</TableCell>
-                  <TableCell>{policy.keepMonthly}</TableCell>
+          {retentionLoading ? (
+            <LoadingState variant="table" rows={3} />
+          ) : retentionPolicies.length === 0 ? (
+            <EmptyState title="No retention policies" description="Define retention policies to manage snapshot lifecycle." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Policy Name</TableHead>
+                  <TableHead>Keep Daily</TableHead>
+                  <TableHead>Keep Weekly</TableHead>
+                  <TableHead>Keep Monthly</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {retentionPolicies.map((policy) => (
+                  <TableRow key={policy.name}>
+                    <TableCell className="font-medium text-mk-text-primary">
+                      {policy.name}
+                    </TableCell>
+                    <TableCell>{policy.keepDaily}</TableCell>
+                    <TableCell>{policy.keepWeekly}</TableCell>
+                    <TableCell>{policy.keepMonthly}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
       </Tabs>
     </div>
