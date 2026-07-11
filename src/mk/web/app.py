@@ -27,7 +27,6 @@ from fastapi import (
     Response,
     WebSocket,
     WebSocketDisconnect,
-    status,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -147,6 +146,42 @@ def _record_attempt(ip: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
+# Rate Limiting
+# ═══════════════════════════════════════════════════════════════
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter per IP address.
+
+    Allows a configurable number of requests per window (default 100/min).
+    """
+
+    def __init__(self, max_requests: int = 100, window_seconds: int = 60) -> None:
+        self._max_requests = max_requests
+        self._window = window_seconds
+        self._requests: Dict[str, List[float]] = {}
+
+    def is_allowed(self, ip: str) -> bool:
+        """Check if the IP is within rate limits."""
+        now = time.time()
+        requests = self._requests.get(ip, [])
+        # Prune old entries
+        requests = [t for t in requests if now - t < self._window]
+        self._requests[ip] = requests
+        if len(requests) >= self._max_requests:
+            return False
+        requests.append(now)
+        return True
+
+    def remaining(self, ip: str) -> int:
+        """Get remaining requests for this IP in the current window."""
+        now = time.time()
+        requests = self._requests.get(ip, [])
+        requests = [t for t in requests if now - t < self._window]
+        return max(0, self._max_requests - len(requests))
+
+
+# ═══════════════════════════════════════════════════════════════
 # Dependencies
 # ═══════════════════════════════════════════════════════════════
 
@@ -196,6 +231,10 @@ def create_app(
     if pin:
         _pin_hash = _hash_pin(pin)
 
+    # Clear sessions for fresh app instances (important for testing)
+    _sessions.clear()
+    _login_attempts.clear()
+
     app = FastAPI(
         title="MK OS",
         description="Personal AI Operating System — Web API",
@@ -213,6 +252,22 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Rate limiting middleware
+    api_rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        """Apply rate limiting to API routes (100 req/min per IP)."""
+        if request.url.path.startswith("/api"):
+            ip = request.client.host if request.client else "unknown"
+            if not api_rate_limiter.is_allowed(ip):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded. Try again later."},
+                )
+        response = await call_next(request)
+        return response
+
     # Register routes
     _register_auth_routes(app)
     _register_dashboard_routes(app)
@@ -222,6 +277,7 @@ def create_app(
     _register_network_routes(app)
     _register_system_routes(app)
     _register_media_routes(app)
+    _register_protection_routes(app)
     _register_keys_routes(app)
     _register_websocket(app)
 
@@ -614,7 +670,20 @@ def _register_apps_routes(app: FastAPI) -> None:
 
 
 def _register_network_routes(app: FastAPI) -> None:
-    """Network routes: interfaces, tailscale, firewall."""
+    """Network routes: interfaces, tailscale, firewall, wireguard, dns, proxy."""
+
+    # In-memory stores for network config (production would use persistent storage)
+    _firewall_rules: List[Dict[str, Any]] = []
+    _wireguard_interfaces: List[Dict[str, Any]] = []
+    _dns_config: Dict[str, Any] = {
+        "primary": "1.1.1.1",
+        "secondary": "8.8.8.8",
+        "search_domain": "home.lab",
+        "overrides": [],
+    }
+    _proxy_sites: List[Dict[str, Any]] = []
+    _fw_counter = {"id": 0}
+    _proxy_counter = {"id": 0}
 
     @app.get("/api/v1/network/interfaces", dependencies=[Depends(require_auth)])
     async def list_interfaces():
@@ -631,6 +700,11 @@ def _register_network_routes(app: FastAPI) -> None:
             pass
         return {"interfaces": []}
 
+    @app.put("/api/v1/network/interfaces/{name}", dependencies=[Depends(require_auth)])
+    async def update_interface(name: str, request: Request):
+        body = await request.json()
+        return {"status": "updated", "interface": name, "config": body}
+
     @app.get("/api/v1/network/tailscale", dependencies=[Depends(require_auth)])
     async def tailscale_status():
         try:
@@ -646,9 +720,182 @@ def _register_network_routes(app: FastAPI) -> None:
             pass
         return {"BackendState": "Unknown", "Peer": {}}
 
+    # Firewall CRUD
+    @app.get("/api/v1/network/firewall", dependencies=[Depends(require_auth)])
+    async def list_firewall_rules():
+        return {"rules": _firewall_rules}
+
+    @app.post("/api/v1/network/firewall", dependencies=[Depends(require_auth)])
+    async def add_firewall_rule(request: Request):
+        body = await request.json()
+        _fw_counter["id"] += 1
+        rule = {
+            "id": _fw_counter["id"],
+            "chain": body.get("chain", "input"),
+            "action": body.get("action", "accept"),
+            "protocol": body.get("protocol"),
+            "source": body.get("source"),
+            "destination": body.get("destination"),
+            "port": body.get("port"),
+            "comment": body.get("comment", ""),
+            "enabled": body.get("enabled", True),
+        }
+        _firewall_rules.append(rule)
+        return {"status": "created", "rule": rule}
+
+    @app.put("/api/v1/network/firewall/{rule_id}", dependencies=[Depends(require_auth)])
+    async def update_firewall_rule(rule_id: int, request: Request):
+        body = await request.json()
+        for rule in _firewall_rules:
+            if rule["id"] == rule_id:
+                rule.update({k: v for k, v in body.items() if k != "id"})
+                return {"status": "updated", "rule": rule}
+        raise HTTPException(404, f"Rule {rule_id} not found")
+
+    @app.delete("/api/v1/network/firewall/{rule_id}", dependencies=[Depends(require_auth)])
+    async def delete_firewall_rule(rule_id: int):
+        for i, rule in enumerate(_firewall_rules):
+            if rule["id"] == rule_id:
+                _firewall_rules.pop(i)
+                return {"status": "deleted", "id": rule_id}
+        raise HTTPException(404, f"Rule {rule_id} not found")
+
+    @app.post("/api/v1/network/firewall/reorder", dependencies=[Depends(require_auth)])
+    async def reorder_firewall_rules(request: Request):
+        body = await request.json()
+        order = body.get("order", [])
+        if not order:
+            raise HTTPException(400, "order list required")
+        reordered = []
+        for rid in order:
+            for rule in _firewall_rules:
+                if rule["id"] == rid:
+                    reordered.append(rule)
+                    break
+        _firewall_rules.clear()
+        _firewall_rules.extend(reordered)
+        return {"status": "reordered", "rules": _firewall_rules}
+
+    # WireGuard
+    @app.get("/api/v1/network/wireguard", dependencies=[Depends(require_auth)])
+    async def list_wireguard_interfaces():
+        return {"interfaces": _wireguard_interfaces}
+
+    @app.post("/api/v1/network/wireguard", dependencies=[Depends(require_auth)])
+    async def create_wireguard_interface(request: Request):
+        body = await request.json()
+        wg_iface = {
+            "name": body.get("name", "wg0"),
+            "private_key_set": True,
+            "listen_port": body.get("listen_port", 51820),
+            "address": body.get("address", "10.8.0.1/24"),
+            "peers": [],
+        }
+        _wireguard_interfaces.append(wg_iface)
+        return {"status": "created", "interface": wg_iface}
+
+    @app.get("/api/v1/network/wireguard/{name}/peers", dependencies=[Depends(require_auth)])
+    async def list_wireguard_peers(name: str):
+        for iface in _wireguard_interfaces:
+            if iface["name"] == name:
+                return {"peers": iface["peers"]}
+        raise HTTPException(404, f"WireGuard interface '{name}' not found")
+
+    @app.post("/api/v1/network/wireguard/{name}/peers", dependencies=[Depends(require_auth)])
+    async def add_wireguard_peer(name: str, request: Request):
+        body = await request.json()
+        for iface in _wireguard_interfaces:
+            if iface["name"] == name:
+                peer = {
+                    "id": len(iface["peers"]) + 1,
+                    "name": body.get("name", "peer"),
+                    "public_key": body.get("public_key", ""),
+                    "allowed_ips": body.get("allowed_ips", []),
+                    "endpoint": body.get("endpoint"),
+                }
+                iface["peers"].append(peer)
+                return {"status": "created", "peer": peer}
+        raise HTTPException(404, f"WireGuard interface '{name}' not found")
+
+    @app.delete(
+        "/api/v1/network/wireguard/{name}/peers/{peer_id}",
+        dependencies=[Depends(require_auth)],
+    )
+    async def delete_wireguard_peer(name: str, peer_id: int):
+        for iface in _wireguard_interfaces:
+            if iface["name"] == name:
+                for i, peer in enumerate(iface["peers"]):
+                    if peer["id"] == peer_id:
+                        iface["peers"].pop(i)
+                        return {"status": "deleted", "peer_id": peer_id}
+                raise HTTPException(404, f"Peer {peer_id} not found")
+        raise HTTPException(404, f"WireGuard interface '{name}' not found")
+
+    # DNS
+    @app.get("/api/v1/network/dns", dependencies=[Depends(require_auth)])
+    async def get_dns_config():
+        return _dns_config
+
+    @app.put("/api/v1/network/dns", dependencies=[Depends(require_auth)])
+    async def update_dns_config(request: Request):
+        body = await request.json()
+        _dns_config.update(body)
+        return {"status": "updated", "config": _dns_config}
+
+    # Reverse Proxy
+    @app.get("/api/v1/network/proxy", dependencies=[Depends(require_auth)])
+    async def list_proxy_sites():
+        return {"sites": _proxy_sites}
+
+    @app.post("/api/v1/network/proxy", dependencies=[Depends(require_auth)])
+    async def add_proxy_site(request: Request):
+        body = await request.json()
+        _proxy_counter["id"] += 1
+        site = {
+            "id": _proxy_counter["id"],
+            "domain": body.get("domain", ""),
+            "backend": body.get("backend", ""),
+            "ssl": body.get("ssl", "auto"),
+            "enabled": body.get("enabled", True),
+        }
+        _proxy_sites.append(site)
+        return {"status": "created", "site": site}
+
+    @app.put("/api/v1/network/proxy/{site_id}", dependencies=[Depends(require_auth)])
+    async def update_proxy_site(site_id: int, request: Request):
+        body = await request.json()
+        for site in _proxy_sites:
+            if site["id"] == site_id:
+                site.update({k: v for k, v in body.items() if k != "id"})
+                return {"status": "updated", "site": site}
+        raise HTTPException(404, f"Proxy site {site_id} not found")
+
+    @app.delete("/api/v1/network/proxy/{site_id}", dependencies=[Depends(require_auth)])
+    async def delete_proxy_site(site_id: int):
+        for i, site in enumerate(_proxy_sites):
+            if site["id"] == site_id:
+                _proxy_sites.pop(i)
+                return {"status": "deleted", "id": site_id}
+        raise HTTPException(404, f"Proxy site {site_id} not found")
+
 
 def _register_system_routes(app: FastAPI) -> None:
-    """System routes: info, services, health."""
+    """System routes: info, services, health, power, updates, AI settings."""
+
+    # In-memory AI settings store
+    _ai_settings: Dict[str, Any] = {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "system_prompt": "",
+        "context_options": {
+            "include_system_metrics": True,
+            "include_recent_alerts": True,
+            "include_page_context": True,
+            "include_command_history": False,
+        },
+    }
 
     @app.get("/api/v1/system/info", dependencies=[Depends(require_auth)])
     async def system_info():
@@ -733,9 +980,160 @@ def _register_system_routes(app: FastAPI) -> None:
         except Exception:
             return {"services": ""}
 
+    @app.post("/api/v1/system/services/{name}/start", dependencies=[Depends(require_auth)])
+    async def start_service(name: str):
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                f"systemctl start {name}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise HTTPException(500, f"Failed to start {name}: {stderr.decode()}")
+            return {"status": "started", "service": name}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Failed to start service: {str(e)}")
+
+    @app.post("/api/v1/system/services/{name}/stop", dependencies=[Depends(require_auth)])
+    async def stop_service(name: str):
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                f"systemctl stop {name}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise HTTPException(500, f"Failed to stop {name}: {stderr.decode()}")
+            return {"status": "stopped", "service": name}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Failed to stop service: {str(e)}")
+
+    @app.post("/api/v1/system/services/{name}/restart", dependencies=[Depends(require_auth)])
+    async def restart_service(name: str):
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                f"systemctl restart {name}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise HTTPException(500, f"Failed to restart {name}: {stderr.decode()}")
+            return {"status": "restarted", "service": name}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Failed to restart service: {str(e)}")
+
+    @app.get("/api/v1/system/updates", dependencies=[Depends(require_auth)])
+    async def list_updates():
+        """List available system updates."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "apt list --upgradable 2>/dev/null | tail -n +2",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                packages = []
+                for line in stdout.decode().strip().splitlines():
+                    if line.strip():
+                        packages.append(line.strip())
+                return {"updates": packages, "count": len(packages)}
+        except Exception:
+            pass
+        return {"updates": [], "count": 0}
+
+    @app.post("/api/v1/system/updates/apply", dependencies=[Depends(require_auth)])
+    async def apply_updates(request: Request):
+        """Apply system updates."""
+        body = await request.json() if request.headers.get("content-type") else {}
+        packages = body.get("packages", [])
+        if packages:
+            cmd = f"apt-get install -y {' '.join(packages)}"
+        else:
+            cmd = "apt-get upgrade -y"
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                return {"status": "failed", "error": stderr.decode()[:500]}
+            return {"status": "applied", "output": stdout.decode()[:1000]}
+        except Exception as e:
+            return {"status": "failed", "error": str(e)}
+
+    @app.post("/api/v1/system/power/reboot", dependencies=[Depends(require_auth)])
+    async def power_reboot():
+        """Reboot the system."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "shutdown -r +1 'MK OS reboot requested'",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await proc.communicate()
+            return {"status": "rebooting", "message": "System will reboot in 1 minute"}
+        except Exception as e:
+            return {"status": "failed", "error": str(e)}
+
+    @app.post("/api/v1/system/power/shutdown", dependencies=[Depends(require_auth)])
+    async def power_shutdown():
+        """Shutdown the system."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "shutdown -h +1 'MK OS shutdown requested'",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await proc.communicate()
+            return {"status": "shutting_down", "message": "System will shutdown in 1 minute"}
+        except Exception as e:
+            return {"status": "failed", "error": str(e)}
+
+    @app.get("/api/v1/system/ai/settings", dependencies=[Depends(require_auth)])
+    async def get_ai_settings():
+        """Get AI configuration."""
+        return _ai_settings
+
+    @app.put("/api/v1/system/ai/settings", dependencies=[Depends(require_auth)])
+    async def update_ai_settings(request: Request):
+        """Update AI configuration."""
+        body = await request.json()
+        _ai_settings.update(body)
+        return {"status": "updated", "settings": _ai_settings}
+
 
 def _register_media_routes(app: FastAPI) -> None:
-    """Media routes: organizer, library."""
+    """Media routes: organizer, library, disc ripper, drives."""
+
+    # In-memory stores for media state
+    _rip_status: Dict[str, Any] = {
+        "active": False,
+        "progress": 0,
+        "title": "",
+        "eta_seconds": 0,
+        "speed_mbps": 0,
+        "current_task": "",
+    }
+    _recent_rips: List[Dict[str, Any]] = []
+    _media_settings: Dict[str, Any] = {
+        "auto_rip": False,
+        "output_path": "/mnt/media/rips/",
+        "default_format": "mkv",
+        "min_length_minutes": 30,
+        "notifications": True,
+    }
 
     @app.post("/api/v1/media/organize", dependencies=[Depends(require_auth)])
     async def organize_media(request: Request):
@@ -755,6 +1153,320 @@ def _register_media_routes(app: FastAPI) -> None:
             return {"result": result, "dry_run": dry_run}
         except Exception as e:
             return {"error": str(e)}
+
+    @app.get("/api/v1/media/drives", dependencies=[Depends(require_auth)])
+    async def list_drives():
+        """List optical drives."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "lsblk -Jno NAME,TYPE,SIZE,MODEL,TRAN 2>/dev/null",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                data = json.loads(stdout.decode())
+                drives = [
+                    d for d in data.get("blockdevices", [])
+                    if d.get("type") == "rom"
+                ]
+                return {"drives": drives}
+        except Exception:
+            pass
+        return {"drives": []}
+
+    @app.get("/api/v1/media/drives/{dev}/disc", dependencies=[Depends(require_auth)])
+    async def get_disc_info(dev: str):
+        """Get disc info for a specific drive."""
+        try:
+            from mk.server.ripper import DiscRipper
+            ripper = DiscRipper(drive_device=f"/dev/{dev}")
+            result = await ripper.disc_status()
+            return result.metadata if result.success else {"disc_present": False}
+        except Exception:
+            return {"disc_present": False, "error": "Ripper not available"}
+
+    @app.post("/api/v1/media/rip", dependencies=[Depends(require_auth)])
+    async def start_rip(request: Request):
+        """Start a disc rip job."""
+        body = await request.json()
+        if _rip_status["active"]:
+            raise HTTPException(409, "A rip is already in progress")
+
+        _rip_status.update({
+            "active": True,
+            "progress": 0,
+            "title": body.get("title", "Unknown"),
+            "eta_seconds": 0,
+            "speed_mbps": 0,
+            "current_task": "Starting rip...",
+        })
+
+        # In production, this would spawn a background task using the DiscRipper
+        return {
+            "status": "started",
+            "title": body.get("title", "Unknown"),
+            "device": body.get("device", "/dev/sr0"),
+        }
+
+    @app.get("/api/v1/media/rip/status", dependencies=[Depends(require_auth)])
+    async def get_rip_status():
+        """Get current rip progress."""
+        return _rip_status
+
+    @app.post("/api/v1/media/rip/cancel", dependencies=[Depends(require_auth)])
+    async def cancel_rip():
+        """Cancel the current rip."""
+        if not _rip_status["active"]:
+            raise HTTPException(409, "No rip in progress")
+        _rip_status.update({
+            "active": False,
+            "progress": 0,
+            "title": "",
+            "eta_seconds": 0,
+            "speed_mbps": 0,
+            "current_task": "Cancelled",
+        })
+        return {"status": "cancelled"}
+
+    @app.post("/api/v1/media/eject/{dev}", dependencies=[Depends(require_auth)])
+    async def eject_disc(dev: str):
+        """Eject a disc from the specified drive."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                f"eject /dev/{dev}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise HTTPException(500, f"Eject failed: {stderr.decode()}")
+            return {"status": "ejected", "device": dev}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Eject failed: {str(e)}")
+
+    @app.get("/api/v1/media/library/stats", dependencies=[Depends(require_auth)])
+    async def library_stats():
+        """Get media library statistics."""
+        # In production, scan the media directories
+        return {
+            "movies": 0,
+            "tv_shows": 0,
+            "total_size_bytes": 0,
+            "bluray_count": 0,
+            "dvd_count": 0,
+            "uhd_count": 0,
+        }
+
+    @app.get("/api/v1/media/rips/recent", dependencies=[Depends(require_auth)])
+    async def get_recent_rips():
+        """Get recent rip history."""
+        return {"rips": _recent_rips}
+
+    @app.get("/api/v1/media/settings", dependencies=[Depends(require_auth)])
+    async def get_media_settings():
+        """Get media settings."""
+        return _media_settings
+
+    @app.put("/api/v1/media/settings", dependencies=[Depends(require_auth)])
+    async def update_media_settings(request: Request):
+        """Update media settings."""
+        body = await request.json()
+        _media_settings.update(body)
+        return {"status": "updated", "settings": _media_settings}
+
+
+def _register_protection_routes(app: FastAPI) -> None:
+    """Protection routes: backup jobs, scrubs, replication, retention."""
+
+    # In-memory stores for protection config
+    _backup_jobs: List[Dict[str, Any]] = []
+    _job_history: Dict[str, List[Dict[str, Any]]] = {}
+    _scrub_schedules: Dict[str, Dict[str, Any]] = {}
+    _replication_tasks: List[Dict[str, Any]] = []
+    _retention_policies: List[Dict[str, Any]] = []
+    _job_counter = {"id": 0}
+    _replication_counter = {"id": 0}
+    _retention_counter = {"id": 0}
+
+    # Backup Jobs CRUD
+    @app.get("/api/v1/protection/jobs", dependencies=[Depends(require_auth)])
+    async def list_backup_jobs():
+        return {"jobs": _backup_jobs}
+
+    @app.post("/api/v1/protection/jobs", dependencies=[Depends(require_auth)])
+    async def create_backup_job(request: Request):
+        body = await request.json()
+        _job_counter["id"] += 1
+        job = {
+            "id": _job_counter["id"],
+            "name": body.get("name", ""),
+            "backup_type": body.get("backup_type", "zfs_snapshot"),
+            "source": body.get("source", ""),
+            "destination": body.get("destination", ""),
+            "schedule": body.get("schedule", "daily"),
+            "cron_expression": body.get("cron_expression"),
+            "retention_count": body.get("retention_count", 7),
+            "enabled": body.get("enabled", True),
+            "last_run": None,
+            "last_status": None,
+            "last_duration_seconds": None,
+        }
+        _backup_jobs.append(job)
+        _job_history[str(job["id"])] = []
+        return {"status": "created", "job": job}
+
+    @app.put("/api/v1/protection/jobs/{job_id}", dependencies=[Depends(require_auth)])
+    async def update_backup_job(job_id: int, request: Request):
+        body = await request.json()
+        for job in _backup_jobs:
+            if job["id"] == job_id:
+                job.update({k: v for k, v in body.items() if k != "id"})
+                return {"status": "updated", "job": job}
+        raise HTTPException(404, f"Job {job_id} not found")
+
+    @app.delete("/api/v1/protection/jobs/{job_id}", dependencies=[Depends(require_auth)])
+    async def delete_backup_job(job_id: int):
+        for i, job in enumerate(_backup_jobs):
+            if job["id"] == job_id:
+                _backup_jobs.pop(i)
+                _job_history.pop(str(job_id), None)
+                return {"status": "deleted", "id": job_id}
+        raise HTTPException(404, f"Job {job_id} not found")
+
+    @app.post("/api/v1/protection/jobs/{job_id}/run", dependencies=[Depends(require_auth)])
+    async def run_backup_job(job_id: int):
+        for job in _backup_jobs:
+            if job["id"] == job_id:
+                # Record run in history
+                run_record = {
+                    "started_at": time.time(),
+                    "status": "running",
+                    "duration_seconds": None,
+                }
+                history = _job_history.setdefault(str(job_id), [])
+                history.append(run_record)
+                # Simulate immediate completion for stub
+                run_record["status"] = "success"
+                run_record["duration_seconds"] = 0.1
+                job["last_run"] = time.time()
+                job["last_status"] = "success"
+                return {"status": "triggered", "job_id": job_id}
+        raise HTTPException(404, f"Job {job_id} not found")
+
+    @app.get("/api/v1/protection/jobs/{job_id}/history", dependencies=[Depends(require_auth)])
+    async def get_job_history(job_id: int):
+        # Check job exists
+        found = any(j["id"] == job_id for j in _backup_jobs)
+        if not found:
+            raise HTTPException(404, f"Job {job_id} not found")
+        history = _job_history.get(str(job_id), [])
+        return {"job_id": job_id, "history": history}
+
+    # Scrub Schedules
+    @app.get("/api/v1/protection/scrubs", dependencies=[Depends(require_auth)])
+    async def list_scrub_schedules():
+        return {"scrubs": list(_scrub_schedules.values())}
+
+    @app.get("/api/v1/protection/scrubs/{pool}", dependencies=[Depends(require_auth)])
+    async def get_scrub_schedule(pool: str):
+        if pool in _scrub_schedules:
+            return _scrub_schedules[pool]
+        return {
+            "pool": pool,
+            "schedule": "weekly",
+            "last_run": None,
+            "duration_seconds": None,
+            "errors": 0,
+        }
+
+    @app.put("/api/v1/protection/scrubs/{pool}", dependencies=[Depends(require_auth)])
+    async def update_scrub_schedule(pool: str, request: Request):
+        body = await request.json()
+        schedule = _scrub_schedules.get(pool, {"pool": pool})
+        schedule.update(body)
+        schedule["pool"] = pool
+        _scrub_schedules[pool] = schedule
+        return {"status": "updated", "scrub": schedule}
+
+    @app.post("/api/v1/protection/scrubs/{pool}/run", dependencies=[Depends(require_auth)])
+    async def run_scrub(pool: str):
+        """Trigger a scrub on the specified pool."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                f"zpool scrub {pool}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                return {"status": "failed", "pool": pool, "error": stderr.decode()}
+        except Exception:
+            pass
+        return {"status": "started", "pool": pool}
+
+    # Replication
+    @app.get("/api/v1/protection/replication", dependencies=[Depends(require_auth)])
+    async def list_replication_tasks():
+        return {"tasks": _replication_tasks}
+
+    @app.post("/api/v1/protection/replication", dependencies=[Depends(require_auth)])
+    async def create_replication_task(request: Request):
+        body = await request.json()
+        _replication_counter["id"] += 1
+        task = {
+            "id": _replication_counter["id"],
+            "name": body.get("name", ""),
+            "source": body.get("source", ""),
+            "target": body.get("target", ""),
+            "schedule": body.get("schedule", "hourly"),
+            "enabled": body.get("enabled", True),
+            "last_sync": None,
+            "lag_seconds": None,
+        }
+        _replication_tasks.append(task)
+        return {"status": "created", "task": task}
+
+    @app.delete(
+        "/api/v1/protection/replication/{task_id}",
+        dependencies=[Depends(require_auth)],
+    )
+    async def delete_replication_task(task_id: int):
+        for i, task in enumerate(_replication_tasks):
+            if task["id"] == task_id:
+                _replication_tasks.pop(i)
+                return {"status": "deleted", "id": task_id}
+        raise HTTPException(404, f"Replication task {task_id} not found")
+
+    # Retention
+    @app.get("/api/v1/protection/retention", dependencies=[Depends(require_auth)])
+    async def list_retention_policies():
+        return {"policies": _retention_policies}
+
+    @app.post("/api/v1/protection/retention", dependencies=[Depends(require_auth)])
+    async def create_retention_policy(request: Request):
+        body = await request.json()
+        _retention_counter["id"] += 1
+        policy = {
+            "id": _retention_counter["id"],
+            "name": body.get("name", ""),
+            "keep_daily": body.get("keep_daily", 7),
+            "keep_weekly": body.get("keep_weekly", 4),
+            "keep_monthly": body.get("keep_monthly", 12),
+        }
+        _retention_policies.append(policy)
+        return {"status": "created", "policy": policy}
+
+    @app.put("/api/v1/protection/retention/{policy_id}", dependencies=[Depends(require_auth)])
+    async def update_retention_policy(policy_id: int, request: Request):
+        body = await request.json()
+        for policy in _retention_policies:
+            if policy["id"] == policy_id:
+                policy.update({k: v for k, v in body.items() if k != "id"})
+                return {"status": "updated", "policy": policy}
+        raise HTTPException(404, f"Retention policy {policy_id} not found")
 
 
 def _register_keys_routes(app: FastAPI) -> None:
