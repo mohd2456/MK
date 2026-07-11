@@ -5,6 +5,7 @@ Isolates plugin tool execution to prevent misbehaving plugins from:
 - Accessing files outside allowed paths
 - Making unauthorized network calls
 - Consuming excessive memory
+- Importing restricted modules
 - Crashing the main MK process
 
 The sandbox wraps each tool call with permission checks and
@@ -16,10 +17,8 @@ clear error reporting when a plugin violates its contract.
 from __future__ import annotations
 
 import asyncio
-import functools
+import builtins
 import logging
-import os
-import resource
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +28,24 @@ from mk.plugins.manifest import PluginManifest, PluginPermission
 from mk.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
+
+# Default modules that plugins are not allowed to import
+# unless explicitly whitelisted in the sandbox config
+DEFAULT_BLOCKED_IMPORTS: Set[str] = {
+    "os",
+    "subprocess",
+    "sys",
+    "shutil",
+    "ctypes",
+    "importlib",
+    "code",
+    "codeop",
+    "compile",
+    "compileall",
+    "multiprocessing",
+    "signal",
+    "socket",
+}
 
 
 class SandboxViolation(Exception):
@@ -86,6 +103,10 @@ class SandboxConfig:
     # Execution tracking
     max_concurrent_executions: int = 5
 
+    # Import restrictions
+    blocked_imports: Set[str] = field(default_factory=lambda: DEFAULT_BLOCKED_IMPORTS.copy())
+    import_whitelist: Set[str] = field(default_factory=set)
+
 
 @dataclass
 class ExecutionContext:
@@ -117,6 +138,67 @@ class ExecutionContext:
         return self.elapsed_seconds > self.timeout_seconds
 
 
+class RestrictedImporter:
+    """Context manager that restricts which modules can be imported.
+
+    Temporarily replaces builtins.__import__ with a gated version
+    that blocks imports of restricted modules. Used during sandboxed
+    plugin execution to prevent plugins from importing dangerous modules.
+
+    Usage:
+        with RestrictedImporter(blocked={"os", "subprocess"}):
+            exec(plugin_code)  # os and subprocess imports will raise
+    """
+
+    def __init__(
+        self,
+        blocked: Optional[Set[str]] = None,
+        whitelist: Optional[Set[str]] = None,
+    ) -> None:
+        """Initialize the restricted importer.
+
+        Args:
+            blocked: Set of module names to block.
+            whitelist: Set of module names to always allow (overrides blocked).
+        """
+        self._blocked = blocked or DEFAULT_BLOCKED_IMPORTS.copy()
+        self._whitelist = whitelist or set()
+        self._original_import: Optional[Callable] = None
+
+    def __enter__(self) -> "RestrictedImporter":
+        """Install the restricted import hook."""
+        self._original_import = builtins.__import__
+
+        blocked = self._blocked
+        whitelist = self._whitelist
+        original = self._original_import
+
+        def restricted_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            # Get the top-level module name
+            top_level = name.split(".")[0]
+
+            # Check whitelist first (always allowed)
+            if top_level in whitelist:
+                return original(name, *args, **kwargs)
+
+            # Check blocked list
+            if top_level in blocked:
+                raise ImportError(
+                    f"Import of '{name}' is blocked by the plugin sandbox. "
+                    f"Module '{top_level}' is restricted."
+                )
+
+            return original(name, *args, **kwargs)
+
+        builtins.__import__ = restricted_import
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        """Restore the original import function."""
+        if self._original_import is not None:
+            builtins.__import__ = self._original_import
+
+
 class PluginSandbox:
     """Execution sandbox for plugin tool calls.
 
@@ -124,7 +206,8 @@ class PluginSandbox:
     1. Permission validation (before execution)
     2. Timeout enforcement (during execution)
     3. Resource tracking (during execution)
-    4. Result validation (after execution)
+    4. Import restriction (during execution)
+    5. Result validation (after execution)
 
     Does NOT use containers or VMs — this is Python-level isolation
     suitable for a trusted homelab environment where the goal is
@@ -248,7 +331,7 @@ class PluginSandbox:
         args: Dict[str, Any],
         ctx: ExecutionContext,
     ) -> ToolResult:
-        """Run the handler with async timeout enforcement.
+        """Run the handler with async timeout enforcement and import restrictions.
 
         Args:
             handler: The plugin tool function.
@@ -260,11 +343,29 @@ class PluginSandbox:
 
         Raises:
             asyncio.TimeoutError: If execution exceeds timeout.
+            SandboxViolation: If restricted imports are attempted.
         """
-        result = await asyncio.wait_for(
-            handler(**args),
-            timeout=ctx.timeout_seconds,
-        )
+        # Determine which imports to block (unless plugin has shell permission)
+        blocked = self.config.blocked_imports.copy()
+        whitelist = self.config.import_whitelist.copy()
+
+        # If plugin has shell exec permission, allow os and subprocess
+        if PluginPermission.SHELL_EXEC in ctx.permissions:
+            blocked.discard("os")
+            blocked.discard("subprocess")
+
+        # If plugin has network permission, allow socket
+        if (
+            PluginPermission.NETWORK_LOCAL in ctx.permissions
+            or PluginPermission.NETWORK_INTERNET in ctx.permissions
+        ):
+            blocked.discard("socket")
+
+        with RestrictedImporter(blocked=blocked, whitelist=whitelist):
+            result = await asyncio.wait_for(
+                handler(**args),
+                timeout=ctx.timeout_seconds,
+            )
 
         # Ensure result is a ToolResult
         if isinstance(result, ToolResult):

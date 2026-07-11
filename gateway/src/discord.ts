@@ -10,7 +10,7 @@
  *   /logs [service]  - Service logs
  *   /help            - All commands
  *
- * Also responds to DMs and mentions.
+ * Also responds to DMs and @mentions in guild channels.
  * Uses discord.js (open source, MIT license).
  */
 
@@ -26,6 +26,18 @@ import type { Interaction, Message } from "discord.js";
 import { MKBridge } from "./bridge.js";
 import { isDiscordUserAllowed } from "./config.js";
 import type { GatewayConfig } from "./types.js";
+
+/** All available commands with descriptions (for /help). */
+const COMMAND_DESCRIPTIONS: Array<{ name: string; description: string }> = [
+  { name: "/mk [message]", description: "Send any message to MK" },
+  { name: "/status", description: "System health overview" },
+  { name: "/containers", description: "Docker container status" },
+  { name: "/storage", description: "ZFS storage status" },
+  { name: "/backup", description: "Backup job health" },
+  { name: "/logs [service]", description: "Recent logs for a service" },
+  { name: "/help", description: "Show this help message" },
+  { name: "@mention", description: "Mention the bot in any channel to chat" },
+];
 
 /**
  * Create and start the Discord bot.
@@ -74,6 +86,9 @@ export async function createDiscordBot(
       .addStringOption((opt) =>
         opt.setName("service").setDescription("Service name").setRequired(true)
       ),
+    new SlashCommandBuilder()
+      .setName("help")
+      .setDescription("List all available commands"),
   ];
 
   // Ready event
@@ -134,6 +149,9 @@ export async function createDiscordBot(
           lines: 30,
         });
         await interaction.editReply(codeBlock(response.text || "(no logs)"));
+      } else if (cmd === "help") {
+        const helpText = formatHelpMessage();
+        await interaction.reply({ content: helpText, ephemeral: false });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown error";
@@ -148,26 +166,80 @@ export async function createDiscordBot(
   // DM handler — plain text to MK
   client.on(Events.MessageCreate, async (message: Message) => {
     if (message.author.bot) return;
-    if (!message.channel.isDMBased()) return;
 
-    const userId = message.author.id;
-    if (!isDiscordUserAllowed(userId, config)) return;
+    // Handle DMs
+    if (message.channel.isDMBased()) {
+      const userId = message.author.id;
+      if (!isDiscordUserAllowed(userId, config)) return;
 
-    try {
-      const response = await bridge.sendMessage(
-        message.content,
-        userId,
-        "discord"
-      );
-      await message.reply(truncate(response.text || "(no response)"));
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      await message.reply(`❌ Error: ${msg}`);
+      try {
+        const response = await bridge.sendMessage(
+          message.content,
+          userId,
+          "discord"
+        );
+        await message.reply(truncate(response.text || "(no response)"));
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        await message.reply(`❌ Error: ${msg}`);
+      }
+      return;
     }
+
+    // Handle @mentions in guild channels
+    if (client.user && message.mentions.has(client.user)) {
+      const userId = message.author.id;
+      if (!isDiscordUserAllowed(userId, config)) return;
+
+      // Strip the mention from the message content
+      const content = message.content
+        .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
+        .trim();
+
+      if (!content) {
+        await message.reply(
+          "Hey! Send me a message after the mention, or use `/help` to see available commands."
+        );
+        return;
+      }
+
+      try {
+        const response = await bridge.sendMessage(content, userId, "discord");
+        await message.reply(truncate(response.text || "(no response)"));
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        await message.reply(`❌ Error: ${msg}`);
+      }
+    }
+  });
+
+  // Graceful reconnection on disconnect
+  client.on(Events.Error, (error) => {
+    console.error("Discord: Client error:", error.message);
+  });
+
+  client.on("disconnect", () => {
+    console.warn("Discord: Disconnected. Will attempt automatic reconnection.");
+  });
+
+  client.on("reconnecting", () => {
+    console.log("Discord: Reconnecting...");
   });
 
   await client.login(config.discordBotToken);
   return client;
+}
+
+/**
+ * Format the help message listing all commands.
+ */
+function formatHelpMessage(): string {
+  const lines = ["**MK Bot Commands**\n"];
+  for (const cmd of COMMAND_DESCRIPTIONS) {
+    lines.push(`\`${cmd.name}\` - ${cmd.description}`);
+  }
+  lines.push("\nYou can also DM the bot directly for a private conversation.");
+  return lines.join("\n");
 }
 
 function truncate(text: string, max: number = 1900): string {

@@ -33,6 +33,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from mk.observability import RequestIDMiddleware, metrics, setup_logging
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════
@@ -252,6 +254,10 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Structured logging and request tracking
+    setup_logging(level=os.environ.get("MK_LOG_LEVEL", "INFO"), json_format=True)
+    app.add_middleware(RequestIDMiddleware)
+
     # Rate limiting middleware
     api_rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
 
@@ -279,6 +285,7 @@ def create_app(
     _register_media_routes(app)
     _register_protection_routes(app)
     _register_keys_routes(app)
+    _register_metrics_routes(app)
     _register_websocket(app)
 
     # Serve static frontend (if build exists)
@@ -1601,6 +1608,22 @@ def _register_keys_routes(app: FastAPI) -> None:
         os.environ["MK_PIN"] = new_pin
 
         return {"status": "changed"}
+
+
+def _register_metrics_routes(app: FastAPI) -> None:
+    """Prometheus-compatible metrics endpoint."""
+
+    @app.get("/metrics")
+    async def get_metrics():
+        """Expose metrics in Prometheus text exposition format.
+
+        No authentication required for metrics scraping (standard practice).
+        """
+        content = metrics.render_prometheus()
+        return Response(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+        )
 
 
 def _register_websocket(app: FastAPI) -> None:
