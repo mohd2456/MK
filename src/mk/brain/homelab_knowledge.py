@@ -34,7 +34,9 @@ def _load_network_knowledge(graph: KnowledgeGraph) -> None:
     """Network topology and private network knowledge."""
 
     # Network concepts
-    graph.add_node("private_network", kind="network",
+    graph.add_node(
+        "private_network",
+        kind="network",
         description="Isolated local network for fast file transfers between homelab machines",
         purpose="Transfer files between machines without using internet bandwidth",
         router="old_router",
@@ -42,30 +44,40 @@ def _load_network_knowledge(graph: KnowledgeGraph) -> None:
         internet="no",
     )
 
-    graph.add_node("main_network", kind="network",
+    graph.add_node(
+        "main_network",
+        kind="network",
         description="Primary network with internet access for API calls and downloads",
         purpose="Internet access, API calls, Telegram, downloads",
         internet="yes",
     )
 
-    graph.add_node("old_router", kind="hardware",
+    graph.add_node(
+        "old_router",
+        kind="hardware",
         description="Dedicated router for private network file transfers",
         speed="1gbps",
         purpose="Private LAN for inter-machine transfers",
     )
 
     # Network rules
-    graph.add_node("network_rule_transfer", kind="rule",
+    graph.add_node(
+        "network_rule_transfer",
+        kind="rule",
         rule="Always use private network (old router) for file transfers between machines",
         reason="Faster, doesn't use internet bandwidth, more secure",
     )
 
-    graph.add_node("network_rule_api", kind="rule",
+    graph.add_node(
+        "network_rule_api",
+        kind="rule",
         rule="Use main network for API calls, Telegram, and external downloads",
         reason="Needs internet access",
     )
 
-    graph.add_node("network_rule_dual", kind="rule",
+    graph.add_node(
+        "network_rule_dual",
+        kind="rule",
         rule="Both PCs connect to BOTH networks - main for internet, private for transfers",
         reason="Each machine has two network connections",
     )
@@ -78,7 +90,9 @@ def _load_network_knowledge(graph: KnowledgeGraph) -> None:
     graph.add_edge("private_network", "old_router", "uses")
 
     # Transfer commands
-    graph.add_node("transfer_file", kind="command",
+    graph.add_node(
+        "transfer_file",
+        kind="command",
         description="Transfer a file between machines over private network",
         tool="ssh",
         command_template="scp -o 'BindAddress={source_private_ip}' {source_path} {target_user}@{target_private_ip}:{target_path}",
@@ -86,7 +100,9 @@ def _load_network_knowledge(graph: KnowledgeGraph) -> None:
         note="Always use private network IPs for transfers",
     )
 
-    graph.add_node("sync_folder", kind="command",
+    graph.add_node(
+        "sync_folder",
+        kind="command",
         description="Sync a folder between machines (only transfers changes)",
         tool="ssh",
         command_template="rsync -avz --progress --delete {source_path}/ {target_user}@{target_private_ip}:{target_path}/",
@@ -97,7 +113,9 @@ def _load_network_knowledge(graph: KnowledgeGraph) -> None:
 def _load_file_transfer_knowledge(graph: KnowledgeGraph) -> None:
     """Knowledge about moving files between machines."""
 
-    graph.add_node("file_transfer_rules", kind="knowledge",
+    graph.add_node(
+        "file_transfer_rules",
+        kind="knowledge",
         rule_1="Always use rsync for large transfers (resumable, shows progress)",
         rule_2="Use scp for single small files",
         rule_3="Use private network IPs, never public/main network for local transfers",
@@ -106,7 +124,9 @@ def _load_file_transfer_knowledge(graph: KnowledgeGraph) -> None:
         rule_6="Set correct permissions after transfer: chown plex:plex for media files",
     )
 
-    graph.add_node("rsync", kind="tool_knowledge",
+    graph.add_node(
+        "rsync",
+        kind="tool_knowledge",
         description="Best tool for transferring files between homelab machines",
         usage="rsync -avz --progress source destination",
         flags_a="Archive mode (preserves permissions, timestamps)",
@@ -117,7 +137,9 @@ def _load_file_transfer_knowledge(graph: KnowledgeGraph) -> None:
         resume="Rsync automatically resumes interrupted transfers",
     )
 
-    graph.add_node("scp", kind="tool_knowledge",
+    graph.add_node(
+        "scp",
+        kind="tool_knowledge",
         description="Simple file copy over SSH",
         usage="scp source_file user@host:/destination/path",
         when_to_use="Single files, quick one-off transfers",
@@ -125,7 +147,9 @@ def _load_file_transfer_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # Remote editing
-    graph.add_node("remote_edit", kind="command",
+    graph.add_node(
+        "remote_edit",
+        kind="command",
         description="Edit a file on another machine from MK",
         method_1="SSH + sed: ssh user@host 'sed -i \"s/old/new/g\" /path/to/file'",
         method_2="SSH + cat + write: Read file, modify, write back",
@@ -133,7 +157,9 @@ def _load_file_transfer_knowledge(graph: KnowledgeGraph) -> None:
         tool="ssh",
     )
 
-    graph.add_node("remote_config_edit", kind="command",
+    graph.add_node(
+        "remote_config_edit",
+        kind="command",
         description="Edit config files on the media server from MK",
         steps="1. Read current file via SSH cat, 2. Modify content, 3. Write back via SSH",
         docker_configs="/opt/docker/",
@@ -147,7 +173,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
     """Knowledge about media file organization for Plex."""
 
     # Plex folder structure
-    graph.add_node("media_structure", kind="knowledge",
+    graph.add_node(
+        "media_structure",
+        kind="knowledge",
         description="How media files are organized for Plex",
         base_path="/data/media",
         movies_path="/data/media/movies",
@@ -157,7 +185,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # Movie naming
-    graph.add_node("movie_naming", kind="knowledge",
+    graph.add_node(
+        "movie_naming",
+        kind="knowledge",
         description="How to name movie files for Plex",
         format="Movie Title (Year)/Movie Title (Year).ext",
         example_1="Dune Part Two (2024)/Dune Part Two (2024).mkv",
@@ -169,7 +199,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # TV show naming
-    graph.add_node("tv_naming", kind="knowledge",
+    graph.add_node(
+        "tv_naming",
+        kind="knowledge",
         description="How to name TV show files for Plex",
         format="Show Name/Season XX/Show Name - SXXEXX - Episode Title.ext",
         example_1="Severance/Season 02/Severance - S02E01 - Hello Ms Cobel.mkv",
@@ -181,7 +213,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # File formats
-    graph.add_node("media_formats", kind="knowledge",
+    graph.add_node(
+        "media_formats",
+        kind="knowledge",
         description="Preferred media file formats",
         video_best="MKV (Matroska) — supports all codecs, multiple audio/subtitle tracks",
         video_alt="MP4 — more compatible but fewer features",
@@ -194,7 +228,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # File placement after download
-    graph.add_node("media_placement", kind="knowledge",
+    graph.add_node(
+        "media_placement",
+        kind="knowledge",
         description="Where to put media files after download/rip",
         new_movies="Move to /data/media/movies/Title (Year)/Title (Year).mkv",
         new_tv="Move to /data/media/tv/Show/Season XX/Show - SXXEXX.mkv",
@@ -208,7 +244,9 @@ def _load_media_structure_knowledge(graph: KnowledgeGraph) -> None:
 def _load_disk_ripping_knowledge(graph: KnowledgeGraph) -> None:
     """Knowledge about ripping discs and handling ripped files."""
 
-    graph.add_node("disk_ripping", kind="knowledge",
+    graph.add_node(
+        "disk_ripping",
+        kind="knowledge",
         description="Process for ripping Blu-ray/DVD discs",
         tool_bluray="MakeMKV (rips Blu-ray to MKV, preserves all tracks)",
         tool_dvd="MakeMKV or HandBrake",
@@ -216,7 +254,9 @@ def _load_disk_ripping_knowledge(graph: KnowledgeGraph) -> None:
         output_format="MKV",
     )
 
-    graph.add_node("rip_workflow", kind="knowledge",
+    graph.add_node(
+        "rip_workflow",
+        kind="knowledge",
         description="Steps after a disc is ripped",
         step_1="Disc ripped → raw MKV lands in /data/rips/ (large file, 20-50GB for Blu-ray)",
         step_2="Rename file to Plex format: 'Title (Year).mkv'",
@@ -231,7 +271,9 @@ def _load_disk_ripping_knowledge(graph: KnowledgeGraph) -> None:
         note="Raw rips are HUGE. Always clean up after processing.",
     )
 
-    graph.add_node("rip_commands", kind="command",
+    graph.add_node(
+        "rip_commands",
+        kind="command",
         description="Commands MK uses after a rip is done",
         rename="mv '/data/rips/title_t00.mkv' '/data/rips/Movie Title (2024).mkv'",
         create_folder="mkdir -p '/data/media/movies/Movie Title (2024)'",
@@ -242,7 +284,9 @@ def _load_disk_ripping_knowledge(graph: KnowledgeGraph) -> None:
         check_space="df -h /data/",
     )
 
-    graph.add_node("handbrake_presets", kind="knowledge",
+    graph.add_node(
+        "handbrake_presets",
+        kind="knowledge",
         description="HandBrake encoding presets for homelab",
         preset_4k="H.265 MKV 2160p60 (for 4K Blu-rays)",
         preset_1080p="H.265 MKV 1080p30 (for regular Blu-rays)",
@@ -258,7 +302,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
     """Knowledge about homelab services and how they work together."""
 
     # Service relationships
-    graph.add_node("sonarr_knowledge", kind="knowledge",
+    graph.add_node(
+        "sonarr_knowledge",
+        kind="knowledge",
         description="Sonarr manages TV show downloads automatically",
         purpose="Monitors for new episodes, sends to download client, renames and moves files",
         api_port=8989,
@@ -267,7 +313,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
         root_folder="/data/media/tv/",
     )
 
-    graph.add_node("radarr_knowledge", kind="knowledge",
+    graph.add_node(
+        "radarr_knowledge",
+        kind="knowledge",
         description="Radarr manages movie downloads automatically",
         purpose="Search for movies, send to download client, rename and move to library",
         api_port=7878,
@@ -276,7 +324,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
         root_folder="/data/media/movies/",
     )
 
-    graph.add_node("transmission_knowledge", kind="knowledge",
+    graph.add_node(
+        "transmission_knowledge",
+        kind="knowledge",
         description="Transmission is the download client (torrent)",
         purpose="Downloads files requested by Sonarr/Radarr",
         api_port=9091,
@@ -285,7 +335,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
         incomplete_dir="/data/downloads/incomplete/",
     )
 
-    graph.add_node("plex_knowledge", kind="knowledge",
+    graph.add_node(
+        "plex_knowledge",
+        kind="knowledge",
         description="Plex serves media to all your devices",
         purpose="Stream movies and shows to TV, phone, anywhere",
         api_port=32400,
@@ -295,7 +347,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
         config="/opt/docker/plex/config/",
     )
 
-    graph.add_node("overseerr_knowledge", kind="knowledge",
+    graph.add_node(
+        "overseerr_knowledge",
+        kind="knowledge",
         description="Overseerr is the request system — you ask for media here",
         purpose="Request movies/shows, it tells Sonarr/Radarr to grab them",
         api_port=5055,
@@ -311,7 +365,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
     graph.add_edge("radarr", "plex", "organizes_for")
 
     # Docker knowledge
-    graph.add_node("docker_knowledge", kind="knowledge",
+    graph.add_node(
+        "docker_knowledge",
+        kind="knowledge",
         description="All services run in Docker containers on media-server",
         compose_file="/opt/docker/docker-compose.yml",
         data_volume="/data/",
@@ -323,7 +379,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
     )
 
     # Folder structure on media-server
-    graph.add_node("folder_structure", kind="knowledge",
+    graph.add_node(
+        "folder_structure",
+        kind="knowledge",
         description="Folder layout on media-server",
         root="/data/",
         media="/data/media/ (organized library)",
@@ -340,7 +398,9 @@ def _load_homelab_services_knowledge(graph: KnowledgeGraph) -> None:
 def _load_plex_knowledge(graph: KnowledgeGraph) -> None:
     """Plex-specific knowledge."""
 
-    graph.add_node("plex_api", kind="knowledge",
+    graph.add_node(
+        "plex_api",
+        kind="knowledge",
         description="Plex API commands MK can use",
         scan_all="curl 'http://localhost:32400/library/sections/all/refresh?X-Plex-Token=$PLEX_TOKEN'",
         scan_movies="curl 'http://localhost:32400/library/sections/1/refresh?X-Plex-Token=$PLEX_TOKEN'",
@@ -350,7 +410,9 @@ def _load_plex_knowledge(graph: KnowledgeGraph) -> None:
         recently_added="curl 'http://localhost:32400/library/recentlyAdded?X-Plex-Token=$PLEX_TOKEN'",
     )
 
-    graph.add_node("plex_troubleshooting", kind="knowledge",
+    graph.add_node(
+        "plex_troubleshooting",
+        kind="knowledge",
         description="Common Plex issues and fixes",
         buffering="Check: 1. Network speed 2. Transcoding (direct play better) 3. Disk I/O 4. RAM usage",
         not_finding_media="Check: 1. File naming matches Plex format 2. Permissions (plex:plex) 3. Run library scan 4. Check library root path",

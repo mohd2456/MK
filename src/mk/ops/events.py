@@ -186,11 +186,12 @@ class EventBus:
         self._total_events += 1
         self._history.append(event)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         # Find matching handlers
         matching = [
-            h for h in self._handlers.values()
+            h
+            for h in self._handlers.values()
             if h.enabled and h.matches(event.type) and h.is_cooled_down
         ]
 
@@ -207,18 +208,14 @@ class EventBus:
 
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error(
-                    f"Event handler '{matching[i].name}' failed: {result}"
-                )
+                logger.error(f"Event handler '{matching[i].name}' failed: {result}")
             else:
                 triggered += 1
 
         self._total_handled += triggered
         return triggered
 
-    async def emit_simple(
-        self, event_type: str, source: str = "system", **data: Any
-    ) -> int:
+    async def emit_simple(self, event_type: str, source: str = "system", **data: Any) -> int:
         """Convenience: emit an event from type and data.
 
         Args:

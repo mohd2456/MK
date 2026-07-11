@@ -32,14 +32,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from mk.tools.base import ToolResult
-from ._shell import safe_quote, validate_name
+from ._shell import safe_quote
 from ._run import run_cmd
 
 logger = logging.getLogger(__name__)
@@ -105,10 +103,10 @@ class DiscRipper:
             ToolResult with drive information.
         """
         rc, out, err = await run_cmd(
-            "lsblk -Jno NAME,TYPE,SIZE,MODEL,TRAN | python3 -c \""
+            'lsblk -Jno NAME,TYPE,SIZE,MODEL,TRAN | python3 -c "'
             "import json,sys; data=json.load(sys.stdin); "
             "drives=[d for d in data.get('blockdevices',[]) if d.get('type')=='rom']; "
-            "print(json.dumps(drives, indent=2))\"",
+            'print(json.dumps(drives, indent=2))"',
             sudo=False,
         )
         if rc != 0:
@@ -140,7 +138,9 @@ class DiscRipper:
             sudo=True,
         )
         if rc != 0:
-            return ToolResult(success=True, output="No disc inserted", metadata={"disc_present": False})
+            return ToolResult(
+                success=True, output="No disc inserted", metadata={"disc_present": False}
+            )
 
         # Get disc label
         rc, label, _ = await run_cmd(
@@ -150,14 +150,14 @@ class DiscRipper:
 
         # Determine disc type (BD or DVD)
         rc2, bd_check, _ = await run_cmd(
-            f"find /dev/disk/by-id/ -name '*BD*' 2>/dev/null | head -1",
+            "find /dev/disk/by-id/ -name '*BD*' 2>/dev/null | head -1",
             sudo=False,
         )
         disc_type = "bluray" if bd_check else "dvd"
 
         # Get title count from MakeMKV
         rc3, title_info, _ = await run_cmd(
-            f"makemkvcon -r info disc:0 2>/dev/null | grep -c '^TINFO'",
+            "makemkvcon -r info disc:0 2>/dev/null | grep -c '^TINFO'",
             sudo=False,
             timeout=30,
         )
@@ -266,7 +266,7 @@ class DiscRipper:
             output="\n".join(output_lines),
             side_effects=[
                 f"Ripped {len(final_paths)} file(s) from disc",
-                f"Files placed in library",
+                "Files placed in library",
                 "Library scan triggered",
                 "Disc ejected",
             ],
@@ -388,9 +388,7 @@ class DiscRipper:
 
     # --- File Organization ---
 
-    async def _organize_movie(
-        self, files: List[str], title: str, year: Optional[int]
-    ) -> List[str]:
+    async def _organize_movie(self, files: List[str], title: str, year: Optional[int]) -> List[str]:
         """Move ripped files to movie library structure.
 
         Structure: /media/movies/{Title} ({Year})/{Title} ({Year}).mkv
@@ -418,9 +416,7 @@ class DiscRipper:
                 filename = f"{folder_name} - Part {i + 1}.mkv"
 
             dest = f"{dest_dir}/{filename}"
-            rc, _, err = await run_cmd(
-                f"mv {safe_quote(src)} {safe_quote(dest)}", sudo=False
-            )
+            rc, _, err = await run_cmd(f"mv {safe_quote(src)} {safe_quote(dest)}", sudo=False)
             if rc == 0:
                 final_paths.append(dest)
             else:
@@ -453,9 +449,7 @@ class DiscRipper:
             filename = f"{show_name} - S{season:02d}E{ep_num:02d}.mkv"
             dest = f"{season_dir}/{filename}"
 
-            rc, _, err = await run_cmd(
-                f"mv {safe_quote(src)} {safe_quote(dest)}", sudo=False
-            )
+            rc, _, err = await run_cmd(f"mv {safe_quote(src)} {safe_quote(dest)}", sudo=False)
             if rc == 0:
                 final_paths.append(dest)
             else:
@@ -550,11 +544,11 @@ class DiscRipper:
         # Replace underscores with spaces
         title = raw_label.replace("_", " ")
         # Remove disc indicators (D1, D2, DISC1, etc.)
-        title = re.sub(r'\b(D|DISC)\s*\d+\b', '', title, flags=re.IGNORECASE)
+        title = re.sub(r"\b(D|DISC)\s*\d+\b", "", title, flags=re.IGNORECASE)
         # Title case
         title = title.strip().title()
         # Clean up multiple spaces
-        title = re.sub(r'\s+', ' ', title).strip()
+        title = re.sub(r"\s+", " ", title).strip()
         return title
 
     # --- Configuration ---

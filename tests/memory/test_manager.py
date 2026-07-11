@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import tempfile
 
-import pytest
 
 from mk.memory.long_term import LongTermMemory
 from mk.memory.manager import MemoryManager
@@ -88,9 +87,7 @@ class TestMemoryManager:
         """Context retrieval includes system state information."""
         manager = self._make_manager()
         manager.update_machine_state("plex-server", "online", host="192.168.1.50")
-        manager.system_state.update_service(
-            "plex-server", "plex", ServiceStatus.RUNNING
-        )
+        manager.system_state.update_service("plex-server", "plex", ServiceStatus.RUNNING)
 
         entries = manager.retrieve_context("plex-server")
         state_entries = [e for e in entries if e.category == MemoryCategory.SYSTEM_STATE]

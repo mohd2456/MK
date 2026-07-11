@@ -15,16 +15,14 @@ Responsibilities:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 from mk.plugins.loader import LoadedPlugin, PluginLoader
-from mk.plugins.manifest import PluginManifest, PluginPermission, PluginTool
-from mk.plugins.sandbox import PluginSandbox, SandboxConfig, SandboxViolation
-from mk.tools.base import Tool, ToolResult
+from mk.plugins.sandbox import PluginSandbox, SandboxConfig
+from mk.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -278,12 +276,14 @@ class PluginManager:
 
         for plugin in self._plugins.values():
             for tool_def in plugin.manifest.tools:
-                definitions.append({
-                    "name": f"{plugin.name}.{tool_def.name}",
-                    "description": f"[{plugin.name}] {tool_def.description}",
-                    "parameters": tool_def.parameters,
-                    "dangerous": tool_def.dangerous,
-                })
+                definitions.append(
+                    {
+                        "name": f"{plugin.name}.{tool_def.name}",
+                        "description": f"[{plugin.name}] {tool_def.description}",
+                        "parameters": tool_def.parameters,
+                        "dangerous": tool_def.dangerous,
+                    }
+                )
 
         return definitions
 
@@ -302,8 +302,7 @@ class PluginManager:
             for tool_def in plugin.manifest.tools:
                 dangerous_mark = " ⚠️" if tool_def.dangerous else ""
                 lines.append(
-                    f"  - **{plugin.name}.{tool_def.name}**{dangerous_mark}: "
-                    f"{tool_def.description}"
+                    f"  - **{plugin.name}.{tool_def.name}**{dangerous_mark}: {tool_def.description}"
                 )
 
         return "\n".join(lines)
@@ -361,13 +360,9 @@ class PluginManager:
             "total_executions": self._total_executions,
             "total_errors": self._total_errors,
             "error_rate": (
-                self._total_errors / self._total_executions
-                if self._total_executions > 0
-                else 0.0
+                self._total_errors / self._total_executions if self._total_executions > 0 else 0.0
             ),
-            "uptime_seconds": (
-                time.time() - self._started_at if self._started_at else 0.0
-            ),
+            "uptime_seconds": (time.time() - self._started_at if self._started_at else 0.0),
             "plugins": {
                 name: {
                     "version": p.manifest.version,
@@ -404,9 +399,7 @@ class PluginManager:
 
         return executor
 
-    async def _execute_unqualified(
-        self, tool_name: str, args: Dict[str, Any]
-    ) -> ToolResult:
+    async def _execute_unqualified(self, tool_name: str, args: Dict[str, Any]) -> ToolResult:
         """Execute a tool by unqualified name (searches all plugins).
 
         Args:

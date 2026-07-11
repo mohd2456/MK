@@ -15,17 +15,12 @@ import asyncio
 import os
 import platform
 import shlex
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.table import Table
-from rich.text import Text
 
 from mk.config.settings import Settings, load_config
 
@@ -112,7 +107,9 @@ def print_boot_complete(total_time_ms: float, warnings: int, failures: int) -> N
         status_line = "  [bold green]All systems online[/bold green]"
 
     console.print(status_line)
-    console.print(f"  [dim]Boot time: {total_time_ms:.0f}ms | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+    console.print(
+        f"  [dim]Boot time: {total_time_ms:.0f}ms | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]"
+    )
     console.print()
     console.print("  [bold cyan]MK is ready. Just talk.[/bold cyan]")
     console.print()
@@ -169,7 +166,9 @@ async def probe_network() -> BootPhase:
     start = time.time()
 
     # Check interfaces
-    rc, out = await _run_cmd("ip -4 addr show | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}/\\d+' | grep -v '127.0.0'")
+    rc, out = await _run_cmd(
+        "ip -4 addr show | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}/\\d+' | grep -v '127.0.0'"
+    )
     ips = [ip.strip() for ip in out.splitlines() if ip.strip()] if rc == 0 else []
 
     if not ips:
@@ -334,6 +333,7 @@ async def probe_ai(settings: Optional[Settings]) -> BootPhase:
     if primary:
         # Just verify the endpoint is resolvable
         from urllib.parse import urlparse
+
         parsed = urlparse(primary.endpoint)
         host = parsed.hostname or ""
         rc, _ = await _run_cmd(f"getent hosts {shlex.quote(host)} 2>/dev/null")
@@ -467,9 +467,15 @@ async def boot_sequence(
 
     # Boot Summary
     all_phases = [
-        hw_phase, net_phase, storage_phase,
-        docker_phase, services_phase, gateway_phase,
-        config_phase, ai_phase, memory_phase,
+        hw_phase,
+        net_phase,
+        storage_phase,
+        docker_phase,
+        services_phase,
+        gateway_phase,
+        config_phase,
+        ai_phase,
+        memory_phase,
     ]
 
     warnings = sum(1 for p in all_phases if p.status == "warn")
@@ -495,7 +501,9 @@ async def boot_sequence(
 # Entry Point
 
 
-def run_boot(config_path: Optional[str] = None, mode: str = "terminal") -> Tuple[Optional[Settings], Dict[str, Any]]:
+def run_boot(
+    config_path: Optional[str] = None, mode: str = "terminal"
+) -> Tuple[Optional[Settings], Dict[str, Any]]:
     """Synchronous wrapper for the boot sequence.
 
     Args:

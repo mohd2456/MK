@@ -78,6 +78,7 @@ def _validate_shell_identifier(value: str, label: str = "name") -> str:
         )
     return value
 
+
 # ═══════════════════════════════════════════════════════════════
 # Pydantic Models for API
 # ═══════════════════════════════════════════════════════════════
@@ -670,11 +671,13 @@ def _register_chat_routes(app: FastAPI) -> None:
         if _mk_engine and hasattr(_mk_engine, "conversation"):
             messages = []
             for msg in _mk_engine.conversation.messages[-50:]:
-                messages.append({
-                    "role": msg.role.value,
-                    "content": msg.content,
-                    "timestamp": msg.timestamp.isoformat(),
-                })
+                messages.append(
+                    {
+                        "role": msg.role.value,
+                        "content": msg.content,
+                        "timestamp": msg.timestamp.isoformat(),
+                    }
+                )
             return {"messages": messages}
         return {"messages": []}
 
@@ -729,7 +732,9 @@ def _register_apps_routes(app: FastAPI) -> None:
     async def restart_container(name: str):
         name = _validate_shell_identifier(name, "container name")
         proc = await asyncio.create_subprocess_exec(
-            "docker", "restart", name,
+            "docker",
+            "restart",
+            name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -742,7 +747,9 @@ def _register_apps_routes(app: FastAPI) -> None:
     async def stop_container(name: str):
         name = _validate_shell_identifier(name, "container name")
         proc = await asyncio.create_subprocess_exec(
-            "docker", "stop", name,
+            "docker",
+            "stop",
+            name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -753,7 +760,9 @@ def _register_apps_routes(app: FastAPI) -> None:
     async def start_container(name: str):
         name = _validate_shell_identifier(name, "container name")
         proc = await asyncio.create_subprocess_exec(
-            "docker", "start", name,
+            "docker",
+            "start",
+            name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -1092,7 +1101,9 @@ def _register_system_routes(app: FastAPI) -> None:
         name = _validate_shell_identifier(name, "service name")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "systemctl", "start", name,
+                "systemctl",
+                "start",
+                name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1110,7 +1121,9 @@ def _register_system_routes(app: FastAPI) -> None:
         name = _validate_shell_identifier(name, "service name")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "systemctl", "stop", name,
+                "systemctl",
+                "stop",
+                name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1128,7 +1141,9 @@ def _register_system_routes(app: FastAPI) -> None:
         name = _validate_shell_identifier(name, "service name")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "systemctl", "restart", name,
+                "systemctl",
+                "restart",
+                name,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1224,8 +1239,12 @@ def _register_system_routes(app: FastAPI) -> None:
     async def update_ai_settings(request: Request):
         """Update AI configuration."""
         _allowed_ai_keys = {
-            "provider", "model", "temperature", "max_tokens",
-            "system_prompt", "context_options",
+            "provider",
+            "model",
+            "temperature",
+            "max_tokens",
+            "system_prompt",
+            "context_options",
         }
         body = await request.json()
         filtered = {k: v for k, v in body.items() if k in _allowed_ai_keys}
@@ -1267,6 +1286,7 @@ def _register_media_routes(app: FastAPI) -> None:
 
         try:
             from mk.plugins.media_organizer import MediaOrganizer
+
             organizer = MediaOrganizer(dest_root=dest)
             result = organizer.quick_organize(source, dry_run=dry_run)
             return {"result": result, "dry_run": dry_run}
@@ -1285,10 +1305,7 @@ def _register_media_routes(app: FastAPI) -> None:
             stdout, _ = await proc.communicate()
             if proc.returncode == 0:
                 data = json.loads(stdout.decode())
-                drives = [
-                    d for d in data.get("blockdevices", [])
-                    if d.get("type") == "rom"
-                ]
+                drives = [d for d in data.get("blockdevices", []) if d.get("type") == "rom"]
                 return {"drives": drives}
         except Exception:
             pass
@@ -1300,6 +1317,7 @@ def _register_media_routes(app: FastAPI) -> None:
         dev = _validate_shell_identifier(dev, "device name")
         try:
             from mk.server.ripper import DiscRipper
+
             ripper = DiscRipper(drive_device=f"/dev/{dev}")
             result = await ripper.disc_status()
             return result.metadata if result.success else {"disc_present": False}
@@ -1313,14 +1331,16 @@ def _register_media_routes(app: FastAPI) -> None:
         if _rip_status["active"]:
             raise HTTPException(409, "A rip is already in progress")
 
-        _rip_status.update({
-            "active": True,
-            "progress": 0,
-            "title": body.get("title", "Unknown"),
-            "eta_seconds": 0,
-            "speed_mbps": 0,
-            "current_task": "Starting rip...",
-        })
+        _rip_status.update(
+            {
+                "active": True,
+                "progress": 0,
+                "title": body.get("title", "Unknown"),
+                "eta_seconds": 0,
+                "speed_mbps": 0,
+                "current_task": "Starting rip...",
+            }
+        )
 
         # In production, this would spawn a background task using the DiscRipper
         return {
@@ -1339,14 +1359,16 @@ def _register_media_routes(app: FastAPI) -> None:
         """Cancel the current rip."""
         if not _rip_status["active"]:
             raise HTTPException(409, "No rip in progress")
-        _rip_status.update({
-            "active": False,
-            "progress": 0,
-            "title": "",
-            "eta_seconds": 0,
-            "speed_mbps": 0,
-            "current_task": "Cancelled",
-        })
+        _rip_status.update(
+            {
+                "active": False,
+                "progress": 0,
+                "title": "",
+                "eta_seconds": 0,
+                "speed_mbps": 0,
+                "current_task": "Cancelled",
+            }
+        )
         return {"status": "cancelled"}
 
     @app.post("/api/v1/media/eject/{dev}", dependencies=[Depends(require_auth)])
@@ -1355,7 +1377,8 @@ def _register_media_routes(app: FastAPI) -> None:
         dev = _validate_shell_identifier(dev, "device name")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "eject", f"/dev/{dev}",
+                "eject",
+                f"/dev/{dev}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1395,8 +1418,11 @@ def _register_media_routes(app: FastAPI) -> None:
     async def update_media_settings(request: Request):
         """Update media settings."""
         _allowed_media_keys = {
-            "auto_rip", "output_path", "default_format",
-            "min_length_minutes", "notifications",
+            "auto_rip",
+            "output_path",
+            "default_format",
+            "min_length_minutes",
+            "notifications",
         }
         body = await request.json()
         filtered = {k: v for k, v in body.items() if k in _allowed_media_keys}
@@ -1533,7 +1559,9 @@ def _register_protection_routes(app: FastAPI) -> None:
         pool = _validate_shell_identifier(pool, "pool name")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "zpool", "scrub", pool,
+                "zpool",
+                "scrub",
+                pool,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1633,6 +1661,7 @@ def _register_keys_routes(app: FastAPI) -> None:
             try:
                 # Try to store via the engine's tailscale key path
                 from mk.safety.secrets import SecretsManager
+
                 secrets = SecretsManager()
                 secrets.store_secret(f"llm_{provider}", key)
             except Exception:
@@ -1646,6 +1675,7 @@ def _register_keys_routes(app: FastAPI) -> None:
         """Remove an LLM API key."""
         try:
             from mk.safety.secrets import SecretsManager
+
             secrets = SecretsManager()
             secrets.delete_secret(f"llm_{provider}")
         except Exception:
@@ -1662,6 +1692,7 @@ def _register_keys_routes(app: FastAPI) -> None:
         if token:
             try:
                 from mk.safety.secrets import SecretsManager
+
                 secrets = SecretsManager()
                 secrets.store_secret("telegram_bot_token", token)
             except Exception:
@@ -1681,6 +1712,7 @@ def _register_keys_routes(app: FastAPI) -> None:
         # Store and connect
         try:
             from mk.safety.secrets import SecretsManager
+
             secrets = SecretsManager()
             secrets.store_secret("tailscale_auth_key", auth_key)
         except Exception:
@@ -1689,6 +1721,7 @@ def _register_keys_routes(app: FastAPI) -> None:
         # Try to connect
         try:
             from mk.server.network import NetworkManager
+
             nm = NetworkManager(sudo=True)
             result = await nm.tailscale_up(auth_key=auth_key, ssh=True, accept_routes=True)
             if result.success:
@@ -1713,6 +1746,7 @@ def _register_keys_routes(app: FastAPI) -> None:
 
         try:
             from mk.safety.secrets import SecretsManager
+
             secrets = SecretsManager()
             secrets.store_secret(f"service_{service}", key)
         except Exception:
@@ -1799,14 +1833,16 @@ def _register_websocket(app: FastAPI) -> None:
                             response_text = f"Error: {str(e)}"
 
                     # Send response
-                    await ws.send_json({
-                        "type": "chat_response",
-                        "id": secrets.token_hex(8),
-                        "reply_to": msg.get("id", ""),
-                        "content": response_text,
-                        "actions": [],
-                        "done": True,
-                    })
+                    await ws.send_json(
+                        {
+                            "type": "chat_response",
+                            "id": secrets.token_hex(8),
+                            "reply_to": msg.get("id", ""),
+                            "content": response_text,
+                            "actions": [],
+                            "done": True,
+                        }
+                    )
 
         except WebSocketDisconnect:
             logger.info("WebSocket chat disconnected")

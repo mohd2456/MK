@@ -9,10 +9,9 @@ from __future__ import annotations
 import time
 from typing import List
 
-import pytest
 
 from mk.llm.models import LLMMessage, LLMResponse, MessageRole
-from mk.llm.prompt_compiler import MK_SYSTEM_PROMPT, PromptCompiler
+from mk.llm.prompt_compiler import PromptCompiler
 from mk.llm.token_manager import (
     ResponseCache,
     TokenBudget,
@@ -283,9 +282,7 @@ class TestTokenManager:
         """Test cache through the manager."""
         manager = TokenManager()
         messages = [LLMMessage(role=MessageRole.USER, content="hello")]
-        response = LLMResponse(
-            content="hi", tokens_used=5, provider_used="test", model_used="m"
-        )
+        response = LLMResponse(content="hi", tokens_used=5, provider_used="test", model_used="m")
 
         assert manager.check_cache(messages) is None
         manager.cache_response(messages, response)
@@ -377,10 +374,7 @@ class TestPromptCompiler:
         """Test that compilation respects token budget."""
         compiler = PromptCompiler()
         # Create many messages that exceed budget
-        messages = [
-            LLMMessage(role=MessageRole.USER, content="question " * 100)
-            for _ in range(20)
-        ]
+        messages = [LLMMessage(role=MessageRole.USER, content="question " * 100) for _ in range(20)]
 
         result = compiler.compile(messages, max_tokens=200)
         # Should be fewer messages than input
@@ -424,10 +418,7 @@ class TestPromptCompiler:
     def test_compress_history(self) -> None:
         """Test conversation history compression."""
         compiler = PromptCompiler()
-        messages = [
-            LLMMessage(role=MessageRole.USER, content=f"Message {i}")
-            for i in range(20)
-        ]
+        messages = [LLMMessage(role=MessageRole.USER, content=f"Message {i}") for i in range(20)]
 
         result = compiler.compress_history(messages, max_messages=5)
         # Should have a summary + 5 recent messages

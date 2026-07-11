@@ -49,7 +49,12 @@ class UniversalProvider(OpenAIProvider):
     the same response format (choices, usage, tool_calls).
     """
 
-    def __init__(self, config: ProviderConfig, chat_path: Optional[str] = None, models_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        config: ProviderConfig,
+        chat_path: Optional[str] = None,
+        models_path: Optional[str] = None,
+    ) -> None:
         """Initialize the universal provider.
 
         Args:
@@ -60,7 +65,9 @@ class UniversalProvider(OpenAIProvider):
                 If None, uses the default path for the provider name or /v1/models.
         """
         super().__init__(config)
-        self._chat_path = chat_path or CHAT_COMPLETIONS_PATHS.get(config.name, "/v1/chat/completions")
+        self._chat_path = chat_path or CHAT_COMPLETIONS_PATHS.get(
+            config.name, "/v1/chat/completions"
+        )
         self._models_path = models_path or MODELS_PATHS.get(config.name, "/v1/models")
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
@@ -116,9 +123,7 @@ class UniversalProvider(OpenAIProvider):
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)
 
-                    tool_calls = self._parse_tool_calls(
-                        message.get("tool_calls", [])
-                    )
+                    tool_calls = self._parse_tool_calls(message.get("tool_calls", []))
 
                     return LLMResponse(
                         content=message.get("content", "") or "",
@@ -133,9 +138,7 @@ class UniversalProvider(OpenAIProvider):
                     )
 
                 elif response.status_code == 429:
-                    retry_after = float(
-                        response.headers.get("retry-after", str(2 ** attempt))
-                    )
+                    retry_after = float(response.headers.get("retry-after", str(2**attempt)))
                     if attempt < self.config.max_retries - 1:
                         await asyncio.sleep(retry_after)
                         continue
@@ -156,14 +159,14 @@ class UniversalProvider(OpenAIProvider):
             except httpx.TimeoutException:
                 last_error = ProviderTimeoutError(self.name, self.config.timeout_seconds)
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
             except (RateLimitError, AuthenticationError, ProviderError):
                 raise
             except Exception as e:
                 last_error = e
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
 
         if last_error:

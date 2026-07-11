@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -122,7 +121,9 @@ class TestServerToolRouting:
         expected = ToolResult(success=True, output="pong")
         mock_server_manager.network.ping = AsyncMock(return_value=expected)
 
-        result = await server_tool.execute(domain="network", action="ping", args={"host": "1.1.1.1"})
+        result = await server_tool.execute(
+            domain="network", action="ping", args={"host": "1.1.1.1"}
+        )
         assert result.success is True
         mock_server_manager.network.ping.assert_awaited_once_with(host="1.1.1.1")
 
@@ -217,8 +218,13 @@ class TestActionTables:
 
     def test_all_action_values_are_strings(self):
         for table in [
-            SYSTEM_ACTIONS, STORAGE_ACTIONS, CONTAINER_ACTIONS,
-            NETWORK_ACTIONS, SERVICE_ACTIONS, BACKUP_ACTIONS, USER_ACTIONS,
+            SYSTEM_ACTIONS,
+            STORAGE_ACTIONS,
+            CONTAINER_ACTIONS,
+            NETWORK_ACTIONS,
+            SERVICE_ACTIONS,
+            BACKUP_ACTIONS,
+            USER_ACTIONS,
         ]:
             for key, value in table.items():
                 assert isinstance(key, str), f"Key {key!r} is not a string"

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
-from mk.safety.confirmation import ConfirmationManager, ConfirmationResult
+from mk.safety.confirmation import ConfirmationManager
 
 
 class TestConfirmationManager:

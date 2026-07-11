@@ -19,24 +19,24 @@ from httpx import AsyncClient
 # (no unencoded slashes or spaces that would break routing).
 # These reach the handler and must be rejected by our validator.
 INJECTION_PAYLOADS = [
-    "test$(whoami)",       # command substitution
-    "name`id`",           # backtick command substitution
-    "name>file",          # redirect
-    "name<file",          # redirect
-    'name"quoted',        # double quote
-    "name'quoted",        # single quote
-    "name\\backslash",    # backslash
-    "a" * 200,            # too long (over 128 chars)
+    "test$(whoami)",  # command substitution
+    "name`id`",  # backtick command substitution
+    "name>file",  # redirect
+    "name<file",  # redirect
+    'name"quoted',  # double quote
+    "name'quoted",  # single quote
+    "name\\backslash",  # backslash
+    "a" * 200,  # too long (over 128 chars)
 ]
 
 # Payloads that are encoded in the URL but decoded by FastAPI before
 # reaching the handler. These test the actual injection vectors.
 ENCODED_INJECTION_PAYLOADS = [
-    "nginx;rm",           # semicolons (decoded from %3B by FastAPI)
-    "test$(whoami)",      # dollar sign + parens
-    "name`id`",          # backtick
-    "a&&b",              # double ampersand
-    "x|nc",              # pipe
+    "nginx;rm",  # semicolons (decoded from %3B by FastAPI)
+    "test$(whoami)",  # dollar sign + parens
+    "name`id`",  # backtick
+    "a&&b",  # double ampersand
+    "x|nc",  # pipe
 ]
 
 

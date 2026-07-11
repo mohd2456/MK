@@ -107,9 +107,7 @@ class SQLiteMemoryStore:
 
         async with aiosqlite.connect(str(self._db_path)) as db:
             # Check if key exists - update if so
-            cursor = await db.execute(
-                "SELECT id, created_at FROM memories WHERE key = ?", (key,)
-            )
+            cursor = await db.execute("SELECT id, created_at FROM memories WHERE key = ?", (key,))
             existing = await cursor.fetchone()
 
             if existing:
@@ -147,9 +145,7 @@ class SQLiteMemoryStore:
 
         async with aiosqlite.connect(str(self._db_path)) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM memories WHERE key = ?", (key,)
-            )
+            cursor = await db.execute("SELECT * FROM memories WHERE key = ?", (key,))
             row = await cursor.fetchone()
 
             if row is None:
@@ -211,14 +207,16 @@ class SQLiteMemoryStore:
             rows = await cursor.fetchall()
 
             for row in rows:
-                results.append({
-                    "id": row["id"],
-                    "key": row["key"],
-                    "value": row["value"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                })
+                results.append(
+                    {
+                        "id": row["id"],
+                        "key": row["key"],
+                        "value": row["value"],
+                        "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                    }
+                )
 
         return results
 
@@ -234,9 +232,7 @@ class SQLiteMemoryStore:
         await self._ensure_initialized()
 
         async with aiosqlite.connect(str(self._db_path)) as db:
-            cursor = await db.execute(
-                "DELETE FROM memories WHERE key = ?", (key,)
-            )
+            cursor = await db.execute("DELETE FROM memories WHERE key = ?", (key,))
             await db.commit()
             return cursor.rowcount > 0
 
@@ -252,20 +248,20 @@ class SQLiteMemoryStore:
 
         async with aiosqlite.connect(str(self._db_path)) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM memories ORDER BY updated_at DESC"
-            )
+            cursor = await db.execute("SELECT * FROM memories ORDER BY updated_at DESC")
             rows = await cursor.fetchall()
 
             for row in rows:
-                results.append({
-                    "id": row["id"],
-                    "key": row["key"],
-                    "value": row["value"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                })
+                results.append(
+                    {
+                        "id": row["id"],
+                        "key": row["key"],
+                        "value": row["value"],
+                        "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                    }
+                )
 
         return results
 

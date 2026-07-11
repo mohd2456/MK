@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from mk.planner.graph import TaskGraph, TaskNode
 
@@ -32,11 +32,11 @@ class RiskLevel(str, Enum):
     Ordered from lowest to highest severity. Use .severity for comparison.
     """
 
-    SAFE = "safe"            # No concerns, proceed automatically
-    LOW = "low"              # Minor risk, proceed with logging
-    MEDIUM = "medium"        # Moderate risk, notify user
-    HIGH = "high"            # Significant risk, require confirmation
-    CRITICAL = "critical"    # Extreme risk, block without explicit override
+    SAFE = "safe"  # No concerns, proceed automatically
+    LOW = "low"  # Minor risk, proceed with logging
+    MEDIUM = "medium"  # Moderate risk, notify user
+    HIGH = "high"  # Significant risk, require confirmation
+    CRITICAL = "critical"  # Extreme risk, block without explicit override
 
     @property
     def severity(self) -> int:
@@ -109,27 +109,48 @@ class CritiqueResult:
 # Risk patterns — commands/actions and their risk levels
 RISK_PATTERNS: List[Dict[str, Any]] = [
     # Critical: irreversible data destruction
-    {"pattern": r"rm\s+-rf\s+/(?!tmp)", "level": RiskLevel.CRITICAL, "reason": "Recursive delete outside /tmp"},
+    {
+        "pattern": r"rm\s+-rf\s+/(?!tmp)",
+        "level": RiskLevel.CRITICAL,
+        "reason": "Recursive delete outside /tmp",
+    },
     {"pattern": r"zfs\s+destroy", "level": RiskLevel.CRITICAL, "reason": "ZFS dataset destruction"},
     {"pattern": r"dd\s+if=.+of=/dev/", "level": RiskLevel.CRITICAL, "reason": "Raw disk write"},
     {"pattern": r"mkfs", "level": RiskLevel.CRITICAL, "reason": "Filesystem format"},
-    {"pattern": r"drop\s+(database|table)", "level": RiskLevel.CRITICAL, "reason": "Database destruction"},
-
+    {
+        "pattern": r"drop\s+(database|table)",
+        "level": RiskLevel.CRITICAL,
+        "reason": "Database destruction",
+    },
     # High: service disruption, security changes
     {"pattern": r"shutdown|poweroff|halt", "level": RiskLevel.HIGH, "reason": "Server shutdown"},
-    {"pattern": r"systemctl\s+(stop|disable|mask)", "level": RiskLevel.HIGH, "reason": "Service disruption"},
+    {
+        "pattern": r"systemctl\s+(stop|disable|mask)",
+        "level": RiskLevel.HIGH,
+        "reason": "Service disruption",
+    },
     {"pattern": r"docker\s+rm\s+-f", "level": RiskLevel.HIGH, "reason": "Force container removal"},
     {"pattern": r"iptables\s+-F", "level": RiskLevel.HIGH, "reason": "Firewall flush"},
     {"pattern": r"chmod\s+777", "level": RiskLevel.HIGH, "reason": "World-writable permissions"},
-    {"pattern": r"expose.*0\.0\.0\.0", "level": RiskLevel.HIGH, "reason": "Public internet exposure"},
-
+    {
+        "pattern": r"expose.*0\.0\.0\.0",
+        "level": RiskLevel.HIGH,
+        "reason": "Public internet exposure",
+    },
     # Medium: state changes that could cause issues
-    {"pattern": r"docker\s+(stop|restart)", "level": RiskLevel.MEDIUM, "reason": "Container state change"},
+    {
+        "pattern": r"docker\s+(stop|restart)",
+        "level": RiskLevel.MEDIUM,
+        "reason": "Container state change",
+    },
     {"pattern": r"systemctl\s+restart", "level": RiskLevel.MEDIUM, "reason": "Service restart"},
     {"pattern": r"apt\s+(remove|purge)", "level": RiskLevel.MEDIUM, "reason": "Package removal"},
     {"pattern": r"git\s+push\s+--force", "level": RiskLevel.MEDIUM, "reason": "Force push"},
-    {"pattern": r"rsync.*--delete", "level": RiskLevel.MEDIUM, "reason": "Rsync with delete (removes files at destination)"},
-
+    {
+        "pattern": r"rsync.*--delete",
+        "level": RiskLevel.MEDIUM,
+        "reason": "Rsync with delete (removes files at destination)",
+    },
     # Low: observable changes that are generally safe
     {"pattern": r"docker\s+pull", "level": RiskLevel.LOW, "reason": "Image pull (bandwidth/disk)"},
     {"pattern": r"apt\s+(update|upgrade)", "level": RiskLevel.LOW, "reason": "System update"},
@@ -313,25 +334,19 @@ class CritiqueGate:
 
         # Check: is there a backup/snapshot step before dangerous tasks?
         has_backup_step = any(
-            "backup" in t.name.lower() or "snapshot" in t.name.lower()
-            for t in graph.nodes.values()
+            "backup" in t.name.lower() or "snapshot" in t.name.lower() for t in graph.nodes.values()
         )
 
         if not has_backup_step and len(dangerous) > 0:
-            concerns.append(
-                "Plan has dangerous actions but no backup/snapshot step"
-            )
+            concerns.append("Plan has dangerous actions but no backup/snapshot step")
 
         # Check: multiple dangerous tasks in the same wave (parallel risk)
         waves = graph.execution_order()
         for i, wave in enumerate(waves):
-            dangerous_in_wave = [
-                tid for tid in wave
-                if graph.nodes[tid].is_dangerous
-            ]
+            dangerous_in_wave = [tid for tid in wave if graph.nodes[tid].is_dangerous]
             if len(dangerous_in_wave) > 1:
                 concerns.append(
-                    f"Wave {i+1} has {len(dangerous_in_wave)} dangerous tasks running in parallel"
+                    f"Wave {i + 1} has {len(dangerous_in_wave)} dangerous tasks running in parallel"
                 )
 
         return concerns

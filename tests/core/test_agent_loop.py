@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 
@@ -15,9 +15,9 @@ from tests.conftest import MockLLMProvider
 @pytest.mark.asyncio
 async def test_simple_response() -> None:
     """Agent loop returns final response when LLM gives no tool calls."""
-    provider = MockLLMProvider([
-        {"content": "Hello! I'm MK.", "tokens_used": 20, "cost": 0.001, "tool_calls": []}
-    ])
+    provider = MockLLMProvider(
+        [{"content": "Hello! I'm MK.", "tokens_used": 20, "cost": 0.001, "tool_calls": []}]
+    )
     context_builder = ContextBuilder(token_budget=4000)
     loop = AgentLoop(
         llm_provider=provider,
@@ -39,22 +39,24 @@ async def test_simple_response() -> None:
 @pytest.mark.asyncio
 async def test_tool_call_and_response() -> None:
     """Agent loop executes tool calls and then gets final response."""
-    provider = MockLLMProvider([
-        # First call: LLM wants to use a tool
-        {
-            "content": "Let me check that.",
-            "tokens_used": 30,
-            "cost": 0.001,
-            "tool_calls": [{"name": "check_status", "args": {"target": "plex"}}],
-        },
-        # Second call: LLM gives final answer after seeing tool result
-        {
-            "content": "Plex is running fine.",
-            "tokens_used": 20,
-            "cost": 0.001,
-            "tool_calls": [],
-        },
-    ])
+    provider = MockLLMProvider(
+        [
+            # First call: LLM wants to use a tool
+            {
+                "content": "Let me check that.",
+                "tokens_used": 30,
+                "cost": 0.001,
+                "tool_calls": [{"name": "check_status", "args": {"target": "plex"}}],
+            },
+            # Second call: LLM gives final answer after seeing tool result
+            {
+                "content": "Plex is running fine.",
+                "tokens_used": 20,
+                "cost": 0.001,
+                "tool_calls": [],
+            },
+        ]
+    )
 
     async def mock_executor(name: str, args: Dict[str, Any]) -> str:
         return "Service 'plex' is running (uptime: 3 days)"
@@ -82,20 +84,22 @@ async def test_tool_call_and_response() -> None:
 @pytest.mark.asyncio
 async def test_tool_error_handling() -> None:
     """Agent loop handles tool execution errors gracefully."""
-    provider = MockLLMProvider([
-        {
-            "content": "Let me restart that.",
-            "tokens_used": 25,
-            "cost": 0.001,
-            "tool_calls": [{"name": "restart_service", "args": {"target": "sonarr"}}],
-        },
-        {
-            "content": "The restart failed due to a connection error.",
-            "tokens_used": 30,
-            "cost": 0.001,
-            "tool_calls": [],
-        },
-    ])
+    provider = MockLLMProvider(
+        [
+            {
+                "content": "Let me restart that.",
+                "tokens_used": 25,
+                "cost": 0.001,
+                "tool_calls": [{"name": "restart_service", "args": {"target": "sonarr"}}],
+            },
+            {
+                "content": "The restart failed due to a connection error.",
+                "tokens_used": 30,
+                "cost": 0.001,
+                "tool_calls": [],
+            },
+        ]
+    )
 
     async def failing_executor(name: str, args: Dict[str, Any]) -> str:
         raise ConnectionError("Cannot connect to host")
@@ -150,9 +154,9 @@ async def test_max_iterations_reached() -> None:
 @pytest.mark.asyncio
 async def test_conversation_context_passed() -> None:
     """Agent loop passes conversation context to the LLM."""
-    provider = MockLLMProvider([
-        {"content": "Got it.", "tokens_used": 10, "cost": 0.0, "tool_calls": []}
-    ])
+    provider = MockLLMProvider(
+        [{"content": "Got it.", "tokens_used": 10, "cost": 0.0, "tool_calls": []}]
+    )
 
     context_builder = ContextBuilder(token_budget=4000)
     loop = AgentLoop(

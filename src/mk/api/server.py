@@ -12,7 +12,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -105,7 +104,6 @@ class APIServer:
         Returns:
             HealthResponse with current status.
         """
-        import time
 
         from mk import __version__
 
@@ -151,9 +149,7 @@ class APIServer:
         """
         if platform:
             matching = [m for m in self.proactive_queue if m["platform"] == platform]
-            self.proactive_queue = [
-                m for m in self.proactive_queue if m["platform"] != platform
-            ]
+            self.proactive_queue = [m for m in self.proactive_queue if m["platform"] != platform]
             return matching
         else:
             messages = list(self.proactive_queue)

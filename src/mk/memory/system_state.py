@@ -198,12 +198,14 @@ class SystemStateMemory:
                 "services": [],
             }
             for service in state.services:
-                entry["services"].append({
-                    "name": service.name,
-                    "status": service.status.value,
-                    "last_check": service.last_check.isoformat(),
-                    "metadata": service.metadata,
-                })
+                entry["services"].append(
+                    {
+                        "name": service.name,
+                        "status": service.status.value,
+                        "last_check": service.last_check.isoformat(),
+                        "metadata": service.metadata,
+                    }
+                )
             data[name] = entry
 
         with open(data_file, "w") as f:
@@ -226,12 +228,14 @@ class SystemStateMemory:
         for name, entry in data.items():
             services = []
             for svc in entry.get("services", []):
-                services.append(ServiceInfo(
-                    name=svc["name"],
-                    status=ServiceStatus(svc["status"]),
-                    last_check=datetime.fromisoformat(svc["last_check"]),
-                    metadata=svc.get("metadata", {}),
-                ))
+                services.append(
+                    ServiceInfo(
+                        name=svc["name"],
+                        status=ServiceStatus(svc["status"]),
+                        last_check=datetime.fromisoformat(svc["last_check"]),
+                        metadata=svc.get("metadata", {}),
+                    )
+                )
 
             self._states[name] = SystemState(
                 machine_name=entry["machine_name"],

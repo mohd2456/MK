@@ -86,7 +86,9 @@ class LongTermMemory:
         """Return the storage path."""
         return self._storage_path
 
-    def learn(self, key: str, value: str, source: str = "conversation", tags: Optional[List[str]] = None) -> UserKnowledge:
+    def learn(
+        self, key: str, value: str, source: str = "conversation", tags: Optional[List[str]] = None
+    ) -> UserKnowledge:
         """Store a new piece of knowledge about the user.
 
         If the key already exists, updates the value and increases

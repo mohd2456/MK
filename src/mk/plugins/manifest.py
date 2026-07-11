@@ -145,9 +145,7 @@ class PluginManifest(BaseModel):
         import re
 
         if not re.match(r"^[a-z][a-z0-9\-]*$", v):
-            raise ValueError(
-                f"Plugin name must be kebab-case (lowercase, hyphens): got '{v}'"
-            )
+            raise ValueError(f"Plugin name must be kebab-case (lowercase, hyphens): got '{v}'")
         if len(v) > 64:
             raise ValueError("Plugin name must be 64 characters or less")
         return v

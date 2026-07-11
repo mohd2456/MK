@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from mk.planner.critique import CritiqueGate, CritiqueResult
 from mk.planner.graph import TaskGraph, TaskNode, TaskStatus
-from mk.planner.sub_agent import SubAgent, SubAgentRegistry
+from mk.planner.sub_agent import SubAgentRegistry
 from mk.tools.base import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,9 @@ class ExecutionResult:
     def format_summary(self) -> str:
         """Generate a human-readable execution summary."""
         lines = [f"Plan: {self.graph.name}"]
-        lines.append(f"Result: {'SUCCESS' if self.success else 'PARTIAL' if self.partial_success else 'FAILED'}")
+        lines.append(
+            f"Result: {'SUCCESS' if self.success else 'PARTIAL' if self.partial_success else 'FAILED'}"
+        )
         lines.append(
             f"Tasks: {self.tasks_completed} completed, "
             f"{self.tasks_failed} failed, "
@@ -152,9 +154,7 @@ class PlanExecutor:
                 for task_id in critique_result.blocked_tasks:
                     task = graph.get_task(task_id)
                     if task:
-                        task.mark_blocked(
-                            f"Critique gate: requires confirmation"
-                        )
+                        task.mark_blocked("Critique gate: requires confirmation")
                         graph.propagate_failure(task_id)
 
                 return ExecutionResult(
@@ -173,13 +173,12 @@ class PlanExecutor:
             if not ready_tasks:
                 # No ready tasks but not complete — stuck (shouldn't happen with valid DAG)
                 remaining = [
-                    t for t in graph.nodes.values()
+                    t
+                    for t in graph.nodes.values()
                     if t.status in (TaskStatus.PENDING, TaskStatus.READY)
                 ]
                 if remaining:
-                    logger.error(
-                        f"Execution stuck: {len(remaining)} tasks have unmet dependencies"
-                    )
+                    logger.error(f"Execution stuck: {len(remaining)} tasks have unmet dependencies")
                     for t in remaining:
                         t.mark_failed("Unmet dependencies — execution stuck")
                 break
@@ -200,18 +199,10 @@ class PlanExecutor:
         elapsed = time.time() - start_time
         graph.completed_at = time.time()
 
-        tasks_completed = sum(
-            1 for t in graph.nodes.values() if t.status == TaskStatus.COMPLETED
-        )
-        tasks_failed = sum(
-            1 for t in graph.nodes.values() if t.status == TaskStatus.FAILED
-        )
-        tasks_skipped = sum(
-            1 for t in graph.nodes.values() if t.status == TaskStatus.SKIPPED
-        )
-        tasks_blocked = sum(
-            1 for t in graph.nodes.values() if t.status == TaskStatus.BLOCKED
-        )
+        tasks_completed = sum(1 for t in graph.nodes.values() if t.status == TaskStatus.COMPLETED)
+        tasks_failed = sum(1 for t in graph.nodes.values() if t.status == TaskStatus.FAILED)
+        tasks_skipped = sum(1 for t in graph.nodes.values() if t.status == TaskStatus.SKIPPED)
+        tasks_blocked = sum(1 for t in graph.nodes.values() if t.status == TaskStatus.BLOCKED)
 
         errors = [
             f"{t.name}: {t.error}"

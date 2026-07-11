@@ -28,10 +28,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 
 from mk.memory.vector.embeddings import EmbeddingProvider, LocalEmbedder
-from mk.memory.vector.store import SearchResult, VectorStore
+from mk.memory.vector.store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +39,11 @@ class MemoryType(str, Enum):
     """Types of semantic memories."""
 
     CONVERSATION = "conversation"  # Past conversation summaries
-    DECISION = "decision"          # Decisions made and reasoning
-    FACT = "fact"                   # Learned facts about user/system
-    EVENT = "event"                # Things that happened
-    PREFERENCE = "preference"      # User preferences
-    PROCEDURE = "procedure"        # How to do things
+    DECISION = "decision"  # Decisions made and reasoning
+    FACT = "fact"  # Learned facts about user/system
+    EVENT = "event"  # Things that happened
+    PREFERENCE = "preference"  # User preferences
+    PROCEDURE = "procedure"  # How to do things
 
 
 @dataclass
@@ -207,10 +206,7 @@ class SemanticMemory:
         # Post-filter by tags if specified
         if tags:
             tag_set = set(tags)
-            results = [
-                r for r in results
-                if tag_set & set(r.entry.metadata.get("tags", []))
-            ]
+            results = [r for r in results if tag_set & set(r.entry.metadata.get("tags", []))]
 
         # Build response with record data
         output: List[Dict[str, Any]] = []
@@ -220,16 +216,18 @@ class SemanticMemory:
                 record.access_count += 1
                 record.last_accessed = time.time()
 
-            output.append({
-                "id": result.entry.id,
-                "content": result.entry.content,
-                "score": round(result.score, 4),
-                "type": result.entry.metadata.get("category", "unknown"),
-                "source": result.entry.metadata.get("source", "unknown"),
-                "importance": result.entry.metadata.get("importance", 1.0),
-                "tags": result.entry.metadata.get("tags", []),
-                "created_at": result.entry.created_at,
-            })
+            output.append(
+                {
+                    "id": result.entry.id,
+                    "content": result.entry.content,
+                    "score": round(result.score, 4),
+                    "type": result.entry.metadata.get("category", "unknown"),
+                    "source": result.entry.metadata.get("source", "unknown"),
+                    "importance": result.entry.metadata.get("importance", 1.0),
+                    "tags": result.entry.metadata.get("tags", []),
+                    "created_at": result.entry.created_at,
+                }
+            )
 
         return output
 

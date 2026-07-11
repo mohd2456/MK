@@ -100,9 +100,7 @@ class ContextBuilder:
         if system_state:
             state_text = self._format_system_state(system_state)
             state_tokens = self.estimate_tokens(state_text)
-            if (
-                used_tokens + state_tokens + self.estimate_tokens(sys_content) < self.token_budget
-            ):
+            if used_tokens + state_tokens + self.estimate_tokens(sys_content) < self.token_budget:
                 sys_content += f"\n\n## Current system state:\n{state_text}"
 
         messages.append({"role": "system", "content": sys_content})
@@ -111,7 +109,8 @@ class ContextBuilder:
         # 2. Conversation history (fit as much recent history as possible)
         if conversation and conversation.messages:
             history_messages = self._fit_conversation_history(
-                conversation.messages, self.token_budget - used_tokens - self.estimate_tokens(user_input) - 50
+                conversation.messages,
+                self.token_budget - used_tokens - self.estimate_tokens(user_input) - 50,
             )
             for msg in history_messages:
                 messages.append({"role": msg.role.value, "content": msg.content})
@@ -174,9 +173,7 @@ class ContextBuilder:
             lines.append(f"- {key}: {value}")
         return "\n".join(lines)
 
-    def _fit_conversation_history(
-        self, messages: List[Message], budget: int
-    ) -> List[Message]:
+    def _fit_conversation_history(self, messages: List[Message], budget: int) -> List[Message]:
         """Select conversation messages that fit within the token budget.
 
         Prioritizes most recent messages. Walks backward from the end

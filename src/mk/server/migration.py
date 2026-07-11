@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from mk.tools.base import ToolResult
 from ._shell import safe_quote
@@ -84,10 +84,14 @@ class MigrationManager:
         )
 
         # WireGuard configs
-        await run_cmd(f"cp -r /etc/wireguard {staging_dir}/wireguard 2>/dev/null || true", sudo=True)
+        await run_cmd(
+            f"cp -r /etc/wireguard {staging_dir}/wireguard 2>/dev/null || true", sudo=True
+        )
 
         # Samba config
-        await run_cmd(f"cp /etc/samba/smb.conf {staging_dir}/smb.conf 2>/dev/null || true", sudo=True)
+        await run_cmd(
+            f"cp /etc/samba/smb.conf {staging_dir}/smb.conf 2>/dev/null || true", sudo=True
+        )
 
         # NFS exports
         await run_cmd(f"cp /etc/exports {staging_dir}/nfs-exports 2>/dev/null || true", sudo=True)
@@ -186,33 +190,45 @@ class MigrationManager:
             restored.append("memory/state")
 
         # Restore stacks
-        rc, _, _ = await run_cmd(f"cp -r {staging_dir}/stacks/* /opt/mk/stacks/ 2>/dev/null", sudo=True)
+        rc, _, _ = await run_cmd(
+            f"cp -r {staging_dir}/stacks/* /opt/mk/stacks/ 2>/dev/null", sudo=True
+        )
         if rc == 0:
             restored.append("docker stacks")
 
         # Restore WireGuard
-        rc, _, _ = await run_cmd(f"cp -r {staging_dir}/wireguard/* /etc/wireguard/ 2>/dev/null", sudo=True)
+        rc, _, _ = await run_cmd(
+            f"cp -r {staging_dir}/wireguard/* /etc/wireguard/ 2>/dev/null", sudo=True
+        )
         if rc == 0:
             restored.append("wireguard")
 
         # Restore Samba
-        rc, _, _ = await run_cmd(f"cp {staging_dir}/smb.conf /etc/samba/smb.conf 2>/dev/null", sudo=True)
+        rc, _, _ = await run_cmd(
+            f"cp {staging_dir}/smb.conf /etc/samba/smb.conf 2>/dev/null", sudo=True
+        )
         if rc == 0:
             restored.append("samba shares")
 
         # Restore NFS
-        rc, _, _ = await run_cmd(f"cp {staging_dir}/nfs-exports /etc/exports 2>/dev/null", sudo=True)
+        rc, _, _ = await run_cmd(
+            f"cp {staging_dir}/nfs-exports /etc/exports 2>/dev/null", sudo=True
+        )
         if rc == 0:
             restored.append("nfs exports")
 
         # Restore backup timers
-        rc, _, _ = await run_cmd(f"cp {staging_dir}/mk-backup-* /etc/systemd/system/ 2>/dev/null", sudo=True)
+        rc, _, _ = await run_cmd(
+            f"cp {staging_dir}/mk-backup-* /etc/systemd/system/ 2>/dev/null", sudo=True
+        )
         if rc == 0:
             await run_cmd("systemctl daemon-reload", sudo=True)
             restored.append("backup timers")
 
         # Read old hardware profile
-        rc, hw_json, _ = await run_cmd(f"cat {staging_dir}/hardware-profile.json 2>/dev/null", sudo=False)
+        rc, hw_json, _ = await run_cmd(
+            f"cat {staging_dir}/hardware-profile.json 2>/dev/null", sudo=False
+        )
         old_hw = json.loads(hw_json) if rc == 0 and hw_json else {}
 
         # Detect current hardware
@@ -230,10 +246,12 @@ class MigrationManager:
         output_lines = [f"MK state imported from {archive_path}"]
         output_lines.append(f"Restored: {', '.join(restored)}")
         if old_hw:
-            output_lines.append(f"\nHardware change:")
-            old_ram_gb = old_hw.get('ram_bytes', 0) / (1024**3)
-            new_ram_gb = new_hw['ram_bytes'] / (1024**3)
-            output_lines.append(f"  CPU: {old_hw.get('cpu_cores', '?')} cores → {new_hw['cpu_cores']} cores")
+            output_lines.append("\nHardware change:")
+            old_ram_gb = old_hw.get("ram_bytes", 0) / (1024**3)
+            new_ram_gb = new_hw["ram_bytes"] / (1024**3)
+            output_lines.append(
+                f"  CPU: {old_hw.get('cpu_cores', '?')} cores → {new_hw['cpu_cores']} cores"
+            )
             output_lines.append(f"  RAM: {old_ram_gb:.1f}GB → {new_ram_gb:.1f}GB")
 
         return ToolResult(
@@ -269,7 +287,9 @@ class MigrationManager:
         rc, out, _ = await run_cmd("hostname", sudo=False)
         info["hostname"] = out or "unknown"
 
-        rc, out, _ = await run_cmd("cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'", sudo=False)
+        rc, out, _ = await run_cmd(
+            "cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'", sudo=False
+        )
         info["os"] = out or "unknown"
 
         return ToolResult(

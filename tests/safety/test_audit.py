@@ -6,9 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
-from mk.safety.audit import AuditEntry, AuditLogger
+from mk.safety.audit import AuditLogger
 
 
 class TestAuditLogger:

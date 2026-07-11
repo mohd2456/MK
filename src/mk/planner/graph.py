@@ -6,7 +6,7 @@ each other can run in parallel; tasks with dependencies wait.
 
 Example:
     "Set up a new media server" becomes:
-    
+
     ┌─────────────────┐     ┌──────────────────┐
     │ check_storage   │     │ pull_image       │
     └────────┬────────┘     └────────┬─────────┘
@@ -45,14 +45,14 @@ from pydantic import BaseModel, Field
 class TaskStatus(str, Enum):
     """Lifecycle status of a task node."""
 
-    PENDING = "pending"          # Waiting for dependencies
-    READY = "ready"              # Dependencies met, can execute
-    RUNNING = "running"          # Currently executing
-    COMPLETED = "completed"      # Finished successfully
-    FAILED = "failed"            # Execution failed
-    SKIPPED = "skipped"          # Skipped (dependency failed, or critique blocked)
-    BLOCKED = "blocked"          # Blocked by critique gate
-    CANCELLED = "cancelled"      # User or system cancelled
+    PENDING = "pending"  # Waiting for dependencies
+    READY = "ready"  # Dependencies met, can execute
+    RUNNING = "running"  # Currently executing
+    COMPLETED = "completed"  # Finished successfully
+    FAILED = "failed"  # Execution failed
+    SKIPPED = "skipped"  # Skipped (dependency failed, or critique blocked)
+    BLOCKED = "blocked"  # Blocked by critique gate
+    CANCELLED = "cancelled"  # User or system cancelled
 
 
 class TaskNode(BaseModel):
@@ -234,9 +234,7 @@ class TaskGraph(BaseModel):
 
         return task
 
-    def add_dependency(
-        self, from_id: str, to_id: str, data_key: Optional[str] = None
-    ) -> None:
+    def add_dependency(self, from_id: str, to_id: str, data_key: Optional[str] = None) -> None:
         """Add a dependency edge: to_id depends on from_id.
 
         Args:
@@ -254,9 +252,7 @@ class TaskGraph(BaseModel):
 
         # Check for cycles
         if self._would_create_cycle(from_id, to_id):
-            raise ValueError(
-                f"Adding edge {from_id} -> {to_id} would create a cycle"
-            )
+            raise ValueError(f"Adding edge {from_id} -> {to_id} would create a cycle")
 
         self.edges.append(TaskEdge(source=from_id, target=to_id, data_key=data_key))
         if from_id not in self.nodes[to_id].depends_on:
@@ -338,9 +334,7 @@ class TaskGraph(BaseModel):
 
             for dependent in self.get_dependents(current):
                 if dependent.status in (TaskStatus.PENDING, TaskStatus.READY):
-                    dependent.mark_skipped(
-                        f"Skipped: dependency '{current}' failed"
-                    )
+                    dependent.mark_skipped(f"Skipped: dependency '{current}' failed")
                     skipped.append(dependent.id)
                     to_process.append(dependent.id)
 
@@ -361,9 +355,7 @@ class TaskGraph(BaseModel):
     @property
     def is_successful(self) -> bool:
         """Whether all tasks completed successfully."""
-        return all(
-            t.status == TaskStatus.COMPLETED for t in self.nodes.values()
-        )
+        return all(t.status == TaskStatus.COMPLETED for t in self.nodes.values())
 
     @property
     def progress(self) -> Dict[str, int]:
@@ -398,17 +390,12 @@ class TaskGraph(BaseModel):
         """
         # Kahn's algorithm with batching
         # Only consider edges where both source and target exist
-        valid_edges = [
-            e for e in self.edges
-            if e.source in self.nodes and e.target in self.nodes
-        ]
+        valid_edges = [e for e in self.edges if e.source in self.nodes and e.target in self.nodes]
 
         # Exclude tasks with invalid (unresolvable) dependencies
         valid_nodes = set()
         for tid, task in self.nodes.items():
-            has_invalid_dep = any(
-                dep_id not in self.nodes for dep_id in task.depends_on
-            )
+            has_invalid_dep = any(dep_id not in self.nodes for dep_id in task.depends_on)
             if not has_invalid_dep:
                 valid_nodes.add(tid)
 
@@ -422,10 +409,7 @@ class TaskGraph(BaseModel):
 
         while remaining:
             # Find all nodes with in-degree 0 (among remaining)
-            wave = [
-                tid for tid in remaining
-                if in_degree.get(tid, 0) == 0
-            ]
+            wave = [tid for tid in remaining if in_degree.get(tid, 0) == 0]
 
             if not wave:
                 # Cycle detected (shouldn't happen if we validate)
@@ -469,9 +453,7 @@ class TaskGraph(BaseModel):
                 }.get(task.status, "?")
 
                 danger = " ⚠️" if task.is_dangerous else ""
-                lines.append(
-                    f"    {status_icon} [{task.agent}] {task.name}{danger}"
-                )
+                lines.append(f"    {status_icon} [{task.agent}] {task.name}{danger}")
 
         return "\n".join(lines)
 

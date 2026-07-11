@@ -51,7 +51,9 @@ class Node:
 class Edge:
     """A relationship between two nodes."""
 
-    def __init__(self, source: str, target: str, relation: str, data: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, source: str, target: str, relation: str, data: Optional[Dict[str, Any]] = None
+    ):
         """Create an edge.
 
         Args:
@@ -99,9 +101,7 @@ class KnowledgeGraph:
         """
         self._nodes: Dict[str, Node] = {}
         self._edges: List[Edge] = []
-        self._storage_path = Path(
-            storage_path or Path.home() / ".mk" / "brain.json"
-        )
+        self._storage_path = Path(storage_path or Path.home() / ".mk" / "brain.json")
 
     # ─── Add/Remove ───────────────────────────────────────
 
@@ -171,7 +171,8 @@ class KnowledgeGraph:
         """
         before = len(self._edges)
         self._edges = [
-            e for e in self._edges
+            e
+            for e in self._edges
             if not (e.source == source and e.target == target and e.relation == relation)
         ]
         return len(self._edges) < before
@@ -298,9 +299,7 @@ class KnowledgeGraph:
             return False
 
         data = json.loads(self._storage_path.read_text())
-        self._nodes = {
-            n["id"]: Node.from_dict(n) for n in data.get("nodes", [])
-        }
+        self._nodes = {n["id"]: Node.from_dict(n) for n in data.get("nodes", [])}
         self._edges = [Edge.from_dict(e) for e in data.get("edges", [])]
         return True
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from mk.llm.keys import MAX_KEYS
 from mk.tools.base import Tool, ToolResult
 
 from .manager import ServerManager
@@ -17,10 +18,12 @@ class KeyActions:
 
     def __init__(self) -> None:
         from mk.llm.keys import KeyManager
+
         self._km = KeyManager()
 
     async def add_key_action(self, key: str = "", provider: str = "") -> "ToolResult":
         from mk.tools.base import ToolResult
+
         if not key:
             return ToolResult(success=False, error="No key provided")
         override = provider if provider else None
@@ -29,17 +32,20 @@ class KeyActions:
 
     async def remove_key_action(self, provider: str = "", index: int = 0) -> "ToolResult":
         from mk.tools.base import ToolResult
+
         if not provider:
             return ToolResult(success=False, error="Provider name required")
         ok, msg = self._km.remove_key(provider, index)
         return ToolResult(success=ok, output=msg)
 
     async def list_keys_action(self) -> "ToolResult":
-        import json
         from mk.tools.base import ToolResult
+
         keys_info = self._km.list_keys()
         if not keys_info:
-            return ToolResult(success=True, output="No API keys configured.\nUse /setkey to add one.")
+            return ToolResult(
+                success=True, output="No API keys configured.\nUse /setkey to add one."
+            )
         lines = [f"API Keys ({self._km.total_keys()}/{MAX_KEYS}):\n"]
         for provider, info in keys_info.items():
             lines.append(f"  {provider}: {info['key_count']} key(s)")
@@ -47,22 +53,23 @@ class KeyActions:
         return ToolResult(success=True, output="\n".join(lines))
 
     async def strategy_action(self) -> "ToolResult":
-        import json
         from mk.tools.base import ToolResult
+
         strategy = self._km.get_token_budget_strategy()
-        lines = [f"Model Strategy ({strategy['total_providers']} providers, {strategy['total_keys']} keys):\n"]
+        lines = [
+            f"Model Strategy ({strategy['total_providers']} providers, {strategy['total_keys']} keys):\n"
+        ]
         for tier in ("cheap", "fast", "smart"):
             pick = strategy.get(tier)
             if pick:
                 lines.append(f"  {tier.upper()}: {pick['provider']}/{pick['model']}")
-                lines.append(f"    Cost: ${pick['input_cost']}/1K in, ${pick['output_cost']}/1K out")
+                lines.append(
+                    f"    Cost: ${pick['input_cost']}/1K in, ${pick['output_cost']}/1K out"
+                )
             else:
                 lines.append(f"  {tier.upper()}: (no model available)")
         lines.append(f"\n{strategy['strategy']}")
         return ToolResult(success=True, output="\n".join(lines))
-
-
-from mk.llm.keys import MAX_KEYS
 
 
 class ChatActions:
@@ -70,10 +77,12 @@ class ChatActions:
 
     def __init__(self) -> None:
         from mk.chat import ChatMode
+
         self._chat = ChatMode()
 
     async def remember_action(self, fact: str = "") -> "ToolResult":
         from mk.tools.base import ToolResult
+
         if not fact or len(fact.strip()) < 3:
             return ToolResult(success=False, error="Nothing meaningful to remember")
         fact = fact.strip()[:200]  # Cap length
@@ -90,6 +99,7 @@ class ChatActions:
 
     async def forget_action(self, key: str = "") -> "ToolResult":
         from mk.tools.base import ToolResult
+
         if not key:
             return ToolResult(success=False, error="What should I forget?")
         forgotten = self._chat.forget(key)
@@ -98,8 +108,8 @@ class ChatActions:
         return ToolResult(success=True, output=f"I don't have anything stored about '{key}'")
 
     async def profile_action(self) -> "ToolResult":
-        import json
         from mk.tools.base import ToolResult
+
         profile = self._chat.get_profile()
         lines = []
         name = profile.get("name")
@@ -125,8 +135,10 @@ class ChatActions:
     async def stats_action(self) -> "ToolResult":
         import json
         from mk.tools.base import ToolResult
+
         stats = self._chat.get_stats()
         return ToolResult(success=True, output=json.dumps(stats, indent=2))
+
 
 # Action-to-method mappings for each domain.
 # Keys are action names exposed to the LLM, values are method names on the sub-manager.
@@ -405,9 +417,20 @@ class ServerTool(Tool):
                 "domain": {
                     "type": "string",
                     "enum": [
-                        "system", "storage", "containers", "vms", "lxc",
-                        "network", "services", "backups", "users", "homelab",
-                        "ripper", "migration", "keys", "chat",
+                        "system",
+                        "storage",
+                        "containers",
+                        "vms",
+                        "lxc",
+                        "network",
+                        "services",
+                        "backups",
+                        "users",
+                        "homelab",
+                        "ripper",
+                        "migration",
+                        "keys",
+                        "chat",
                     ],
                     "description": "Server management domain",
                 },

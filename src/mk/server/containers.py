@@ -5,13 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import ComposeStack, ContainerInfo, ContainerState
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +147,9 @@ class ContainerManager:
             metadata={"container": name, "action": "restart"},
         )
 
-    async def remove_container(self, name: str, force: bool = False, volumes: bool = False) -> ToolResult:
+    async def remove_container(
+        self, name: str, force: bool = False, volumes: bool = False
+    ) -> ToolResult:
         """Remove a container."""
         validate_name(name, "container name")
         flags = ""
@@ -331,9 +331,7 @@ class ContainerManager:
             if rc != 0:
                 return ToolResult(success=False, error=f"Failed to write .env: {err}")
 
-        rc, out, err = await self._run(
-            f"docker compose -f {safe_quote(compose_path)} up -d"
-        )
+        rc, out, err = await self._run(f"docker compose -f {safe_quote(compose_path)} up -d")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to deploy stack: {err}")
 
@@ -391,7 +389,9 @@ class ContainerManager:
             metadata={"stack": name, "action": "destroy", "volumes_removed": remove_volumes},
         )
 
-    async def stack_logs(self, name: str, lines: int = 100, service: Optional[str] = None) -> ToolResult:
+    async def stack_logs(
+        self, name: str, lines: int = 100, service: Optional[str] = None
+    ) -> ToolResult:
         """Get logs from a compose stack."""
         validate_name(name, "stack name")
         compose_path = f"{self._compose_dir}/{name}/docker-compose.yml"
@@ -413,9 +413,7 @@ class ContainerManager:
 
     async def list_images(self) -> ToolResult:
         """List all Docker images."""
-        rc, out, err = await self._run(
-            "docker images --format '{{json .}}'"
-        )
+        rc, out, err = await self._run("docker images --format '{{json .}}'")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to list images: {err}")
 
@@ -485,7 +483,9 @@ class ContainerManager:
     async def create_volume(self, name: str, driver: str = "local") -> ToolResult:
         """Create a Docker volume."""
         validate_name(name, "volume name")
-        rc, out, err = await self._run(f"docker volume create --driver {safe_quote(driver)} {safe_quote(name)}")
+        rc, out, err = await self._run(
+            f"docker volume create --driver {safe_quote(driver)} {safe_quote(name)}"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to create volume: {err}")
 

@@ -73,11 +73,7 @@ def setup_logging(
     if json_format:
         handler.setFormatter(JSONFormatter())
     else:
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-            )
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
     root_logger.addHandler(handler)
 
@@ -102,7 +98,9 @@ class MetricsCollector:
         self._counters: Dict[str, float] = {}
         self._histograms: Dict[str, list] = {}
 
-    def increment(self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
+    def increment(
+        self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None
+    ) -> None:
         """Increment a counter metric.
 
         Args:
@@ -249,6 +247,7 @@ def timed(name: Optional[str] = None):
     Args:
         name: Metric name. Defaults to the function name.
     """
+
     def decorator(func: Callable) -> Callable:
         metric_name = name or f"mk_{func.__name__}_seconds"
 

@@ -25,7 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -239,10 +239,7 @@ class VectorStore:
             if category_filter and entry.category != category_filter:
                 continue
             if metadata_filter:
-                if not all(
-                    entry.metadata.get(k) == v
-                    for k, v in metadata_filter.items()
-                ):
+                if not all(entry.metadata.get(k) == v for k, v in metadata_filter.items()):
                     continue
 
             # Update access stats
@@ -321,21 +318,27 @@ class VectorStore:
         entries_data = []
         for entry_id in self._id_index:
             entry = self._entries[entry_id]
-            entries_data.append({
-                "id": entry.id,
-                "content": entry.content,
-                "metadata": entry.metadata,
-                "created_at": entry.created_at,
-                "access_count": entry.access_count,
-                "last_accessed": entry.last_accessed,
-            })
+            entries_data.append(
+                {
+                    "id": entry.id,
+                    "content": entry.content,
+                    "metadata": entry.metadata,
+                    "created_at": entry.created_at,
+                    "access_count": entry.access_count,
+                    "last_accessed": entry.last_accessed,
+                }
+            )
 
         with open(self._storage_path / "metadata.json", "w") as f:
-            json.dump({
-                "dimension": self._dimension,
-                "count": len(entries_data),
-                "entries": entries_data,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "dimension": self._dimension,
+                    "count": len(entries_data),
+                    "entries": entries_data,
+                },
+                f,
+                indent=2,
+            )
 
         logger.debug(f"VectorStore saved: {self.count} entries to {self._storage_path}")
 
@@ -390,7 +393,7 @@ class VectorStore:
                 self._entries[entry.id] = entry
 
             self._matrix = matrix
-            self._id_index = [e["id"] for e in entries_data[:len(matrix)]]
+            self._id_index = [e["id"] for e in entries_data[: len(matrix)]]
             self._dirty = False
 
             logger.info(f"VectorStore loaded: {self.count} entries from {self._storage_path}")
@@ -406,9 +409,5 @@ class VectorStore:
             "count": self.count,
             "dimension": self._dimension,
             "storage_path": str(self._storage_path) if self._storage_path else None,
-            "memory_mb": (
-                self._matrix.nbytes / (1024 * 1024)
-                if self._matrix is not None
-                else 0.0
-            ),
+            "memory_mb": (self._matrix.nbytes / (1024 * 1024) if self._matrix is not None else 0.0),
         }

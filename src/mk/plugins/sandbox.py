@@ -79,26 +79,34 @@ class SandboxConfig:
     default_memory_mb: int = 256
 
     # Filesystem limits
-    allowed_read_paths: List[str] = field(default_factory=lambda: [
-        "/data/",
-        "/opt/docker/",
-        "/tmp/mk/",
-    ])
-    allowed_write_paths: List[str] = field(default_factory=lambda: [
-        "/tmp/mk/",
-    ])
-    blocked_paths: List[str] = field(default_factory=lambda: [
-        "/etc/shadow",
-        "/etc/passwd",
-        "/root/.ssh/",
-        "/etc/mk/secrets/",
-    ])
+    allowed_read_paths: List[str] = field(
+        default_factory=lambda: [
+            "/data/",
+            "/opt/docker/",
+            "/tmp/mk/",
+        ]
+    )
+    allowed_write_paths: List[str] = field(
+        default_factory=lambda: [
+            "/tmp/mk/",
+        ]
+    )
+    blocked_paths: List[str] = field(
+        default_factory=lambda: [
+            "/etc/shadow",
+            "/etc/passwd",
+            "/root/.ssh/",
+            "/etc/mk/secrets/",
+        ]
+    )
 
     # Network limits
-    blocked_hosts: List[str] = field(default_factory=lambda: [
-        "169.254.169.254",  # AWS metadata
-        "metadata.google.internal",
-    ])
+    blocked_hosts: List[str] = field(
+        default_factory=lambda: [
+            "169.254.169.254",  # AWS metadata
+            "metadata.google.internal",
+        ]
+    )
 
     # Execution tracking
     max_concurrent_executions: int = 5
@@ -313,8 +321,7 @@ class PluginSandbox:
             )
         except asyncio.TimeoutError:
             logger.warning(
-                f"Plugin '{manifest.name}' tool '{tool_name}' timed out "
-                f"after {timeout}s"
+                f"Plugin '{manifest.name}' tool '{tool_name}' timed out after {timeout}s"
             )
             self._record_execution(ctx, None, violation="timeout")
             return ToolResult(
@@ -394,9 +401,7 @@ class PluginSandbox:
         else:
             return ToolResult(success=True, output=str(result))
 
-    def check_file_access(
-        self, ctx: ExecutionContext, path: str, write: bool = False
-    ) -> None:
+    def check_file_access(self, ctx: ExecutionContext, path: str, write: bool = False) -> None:
         """Check if a file access is allowed by the sandbox.
 
         Called by sandboxed filesystem operations to validate access.
@@ -429,9 +434,7 @@ class PluginSandbox:
                     permission=PluginPermission.FILESYSTEM_WRITE.value,
                 )
             # Check against allowed write paths
-            allowed = any(
-                resolved.startswith(p) for p in self.config.allowed_write_paths
-            )
+            allowed = any(resolved.startswith(p) for p in self.config.allowed_write_paths)
             if not allowed:
                 raise SandboxViolation(
                     ctx.plugin_name,
@@ -466,9 +469,7 @@ class PluginSandbox:
             )
         ctx.commands_executed.append(command)
 
-    def check_network_access(
-        self, ctx: ExecutionContext, host: str, local: bool = False
-    ) -> None:
+    def check_network_access(self, ctx: ExecutionContext, host: str, local: bool = False) -> None:
         """Check if network access is allowed.
 
         Args:

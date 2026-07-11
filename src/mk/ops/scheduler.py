@@ -31,14 +31,14 @@ class ScheduleInterval(str, Enum):
     Custom intervals can also be specified in seconds.
     """
 
-    EVERY_MINUTE = "every_minute"       # 60s
+    EVERY_MINUTE = "every_minute"  # 60s
     EVERY_5_MINUTES = "every_5_minutes"  # 300s
     EVERY_15_MINUTES = "every_15_minutes"  # 900s
     EVERY_30_MINUTES = "every_30_minutes"  # 1800s
-    HOURLY = "hourly"                   # 3600s
-    EVERY_6_HOURS = "every_6_hours"     # 21600s
-    DAILY = "daily"                     # 86400s
-    WEEKLY = "weekly"                   # 604800s
+    HOURLY = "hourly"  # 3600s
+    EVERY_6_HOURS = "every_6_hours"  # 21600s
+    DAILY = "daily"  # 86400s
+    WEEKLY = "weekly"  # 604800s
 
     @property
     def seconds(self) -> int:
@@ -106,18 +106,24 @@ class ScheduledJob:
         return (self.total_runs - self.total_failures) / self.total_runs
 
     def record_execution(
-        self, success: bool, duration: float, error: Optional[str] = None, result: Optional[str] = None
+        self,
+        success: bool,
+        duration: float,
+        error: Optional[str] = None,
+        result: Optional[str] = None,
     ) -> None:
         """Record a job execution."""
-        self.history.append(JobExecution(
-            timestamp=time.time(),
-            success=success,
-            duration_seconds=duration,
-            error=error,
-            result=result,
-        ))
+        self.history.append(
+            JobExecution(
+                timestamp=time.time(),
+                success=success,
+                duration_seconds=duration,
+                error=error,
+                result=result,
+            )
+        )
         if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history:]
+            self.history = self.history[-self.max_history :]
 
         self.total_runs += 1
         self.last_run = time.time()

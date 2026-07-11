@@ -61,7 +61,7 @@ class TokenEstimator:
         word_estimate = word_count * 1.3  # ~1.3 tokens per word on average
 
         # Use weighted average
-        estimate = (char_estimate * 0.6 + word_estimate * 0.4)
+        estimate = char_estimate * 0.6 + word_estimate * 0.4
 
         return max(1, int(estimate))
 
@@ -293,9 +293,7 @@ class TokenManager:
         """
         self.estimator = TokenEstimator()
         self.cache = ResponseCache(max_size=cache_size, ttl_seconds=cache_ttl)
-        self._default_budget = TokenBudget(
-            max_tokens=context_window, reserve_output=reserve_output
-        )
+        self._default_budget = TokenBudget(max_tokens=context_window, reserve_output=reserve_output)
         self._budgets: Dict[str, TokenBudget] = {}
 
     def get_budget(self, conversation_id: str) -> TokenBudget:
@@ -336,9 +334,7 @@ class TokenManager:
         """
         return self.estimator.estimate_messages_tokens(messages)
 
-    def truncate_messages(
-        self, messages: List[LLMMessage], max_tokens: int
-    ) -> List[LLMMessage]:
+    def truncate_messages(self, messages: List[LLMMessage], max_tokens: int) -> List[LLMMessage]:
         """Truncate messages to fit within a token budget.
 
         Strategy: Keep the system message and the most recent messages.
@@ -370,7 +366,9 @@ class TokenManager:
         # Add messages from the end (most recent first) until budget is full
         added_from_end: List[LLMMessage] = []
         for msg in reversed(conv_msgs):
-            msg_tokens = self.estimator.estimate_tokens(msg.content) + TokenEstimator.MESSAGE_OVERHEAD
+            msg_tokens = (
+                self.estimator.estimate_tokens(msg.content) + TokenEstimator.MESSAGE_OVERHEAD
+            )
             if used + msg_tokens <= max_tokens:
                 added_from_end.insert(0, msg)
                 used += msg_tokens

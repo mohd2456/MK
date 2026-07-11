@@ -17,9 +17,7 @@ it tells the user exactly what will change and what policies apply.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mk.policy.rules import (
@@ -313,9 +311,7 @@ class PolicyEngine:
             PolicyRule(
                 name="builtin:confirm-service-stop",
                 description="Confirm before stopping services",
-                match=PolicyMatch(
-                    command_pattern=r"systemctl\s+(stop|disable|mask)"
-                ),
+                match=PolicyMatch(command_pattern=r"systemctl\s+(stop|disable|mask)"),
                 action=PolicyAction.CONFIRM,
                 priority=-90,
                 confirm_message="Stopping a system service — confirm?",
@@ -394,10 +390,6 @@ class PolicyEngine:
             "evaluations": self._evaluation_count,
             "denials": self._deny_count,
             "denial_rate": (
-                self._deny_count / self._evaluation_count
-                if self._evaluation_count > 0
-                else 0.0
+                self._deny_count / self._evaluation_count if self._evaluation_count > 0 else 0.0
             ),
         }
-
-

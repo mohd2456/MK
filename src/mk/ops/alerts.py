@@ -27,19 +27,19 @@ logger = logging.getLogger(__name__)
 class AlertChannel(str, Enum):
     """Where alerts get delivered."""
 
-    TELEGRAM = "telegram"       # Send via Telegram bot
-    PROACTIVE = "proactive"     # Queue in proactive message system
-    LOG = "log"                 # Just log it (for INFO)
-    SILENT = "silent"           # Suppress (acknowledged alerts)
+    TELEGRAM = "telegram"  # Send via Telegram bot
+    PROACTIVE = "proactive"  # Queue in proactive message system
+    LOG = "log"  # Just log it (for INFO)
+    SILENT = "silent"  # Suppress (acknowledged alerts)
 
 
 class AlertState(str, Enum):
     """Lifecycle state of an alert."""
 
-    FIRING = "firing"           # Active and unresolved
+    FIRING = "firing"  # Active and unresolved
     ACKNOWLEDGED = "acknowledged"  # User saw it, still active
-    RESOLVED = "resolved"       # Issue fixed
-    SILENCED = "silenced"       # Manually silenced
+    RESOLVED = "resolved"  # Issue fixed
+    SILENCED = "silenced"  # Manually silenced
 
 
 @dataclass
@@ -118,7 +118,7 @@ class AlertManager:
         self,
         notify_callback: Optional[Callable[[str], Coroutine]] = None,
         default_cooldown_seconds: float = 1800.0,  # 30 minutes
-        critical_cooldown_seconds: float = 300.0,    # 5 minutes for critical
+        critical_cooldown_seconds: float = 300.0,  # 5 minutes for critical
     ) -> None:
         """Initialize the alert manager.
 

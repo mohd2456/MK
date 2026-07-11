@@ -1,12 +1,11 @@
 """Tests for MK's knowledge graph brain."""
 
 import tempfile
-from pathlib import Path
 
 import pytest
 
 from mk.brain.graph import KnowledgeGraph
-from mk.brain.router import BrainRouter, BrainResponse
+from mk.brain.router import BrainRouter
 from mk.brain.gate import APIGate
 
 
@@ -277,13 +276,9 @@ class TestAPIGate:
 
     def test_setup_homelab(self, tmp_graph):
         gate = APIGate(tmp_graph)
-        gate.setup_homelab({
-            "my-server": {
-                "host": "10.0.0.1",
-                "role": "media",
-                "services": ["plex", "sonarr"]
-            }
-        })
+        gate.setup_homelab(
+            {"my-server": {"host": "10.0.0.1", "role": "media", "services": ["plex", "sonarr"]}}
+        )
 
         assert tmp_graph.get_node("my-server") is not None
         assert tmp_graph.get_node("plex") is not None

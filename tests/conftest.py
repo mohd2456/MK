@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from mk.config.settings import Settings
-from mk.core.models import Conversation, Message, Role
+from mk.core.models import Conversation, Role
 
 
 @pytest.fixture
@@ -90,9 +90,7 @@ class MockLLMProvider:
         """Provider name."""
         return "mock-provider"
 
-    async def complete(
-        self, messages: List[Dict[str, str]], **kwargs: Any
-    ) -> Dict[str, Any]:
+    async def complete(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
         """Return the next mock response.
 
         Args:
@@ -106,6 +104,3 @@ class MockLLMProvider:
         idx = min(self._call_count, len(self._responses) - 1)
         self._call_count += 1
         return self._responses[idx]
-
-
-

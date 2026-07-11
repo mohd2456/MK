@@ -68,9 +68,7 @@ class MKEngine:
             max_iterations=self.settings.safety.max_iterations,
         )
 
-    def register_tool(
-        self, name: str, handler: Callable[..., Any], description: str = ""
-    ) -> None:
+    def register_tool(self, name: str, handler: Callable[..., Any], description: str = "") -> None:
         """Register a tool for the agent to use.
 
         Args:
@@ -143,7 +141,7 @@ class MKEngine:
             fact = user_input.strip()
             for prefix in ("remember that ", "remember "):
                 if fact.lower().startswith(prefix):
-                    fact = fact[len(prefix):]
+                    fact = fact[len(prefix) :]
                     break
             if not fact or fact.lower() in ("remember", "that", "remember that"):
                 return AgentResponse(
@@ -157,16 +155,20 @@ class MKEngine:
                     result = await self._tools["server"](
                         domain="chat", action="remember", args={"fact": fact}
                     )
-                    output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    output = (
+                        getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    )
                     return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
                 except Exception as e:
-                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+                    return AgentResponse(
+                        steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0
+                    )
 
         if text.startswith("forget"):
             key = user_input.strip()
             for prefix in ("forget that ", "forget about ", "forget "):
                 if key.lower().startswith(prefix):
-                    key = key[len(prefix):]
+                    key = key[len(prefix) :]
                     break
             if not key or key.lower() in ("forget", "that", "about"):
                 return AgentResponse(
@@ -180,10 +182,14 @@ class MKEngine:
                     result = await self._tools["server"](
                         domain="chat", action="forget", args={"key": key}
                     )
-                    output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    output = (
+                        getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                    )
                     return AgentResponse(steps=[], final_response=output, tokens_used=0, cost=0.0)
                 except Exception as e:
-                    return AgentResponse(steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0)
+                    return AgentResponse(
+                        steps=[], final_response=f"Error: {str(e)}", tokens_used=0, cost=0.0
+                    )
 
         # --- 2. Try to learn from natural conversation ---
         # "my name is X", "I like X", "I live in X", etc.
@@ -238,7 +244,11 @@ class MKEngine:
                         result = await self._tools["server"](
                             domain=domain, action=action, args=args
                         )
-                        output = getattr(result, "output", "") or getattr(result, "error", "") or str(result)
+                        output = (
+                            getattr(result, "output", "")
+                            or getattr(result, "error", "")
+                            or str(result)
+                        )
                         return AgentResponse(
                             steps=[],
                             final_response=output,
@@ -311,7 +321,7 @@ class MKEngine:
         return AgentResponse(
             steps=[],
             final_response=(
-                f"No AI configured — can't process: \"{user_input}\"\n"
+                f'No AI configured — can\'t process: "{user_input}"\n'
                 "Type 'help' to see what works without AI,\n"
                 "or add a key: /setkey your-api-key"
             ),
@@ -335,6 +345,7 @@ class MKEngine:
             return ""
 
         from mk.chat import ChatMode
+
         chat = ChatMode()
         learnings = chat.extract_learnings(user_input)
 
@@ -343,15 +354,15 @@ class MKEngine:
 
         # Build response
         responses = []
-        for l in learnings:
-            if l.startswith("name:"):
-                name = l.split(":", 1)[1]
+        for learning in learnings:
+            if learning.startswith("name:"):
+                name = learning.split(":", 1)[1]
                 responses.append(f"Got it, {name}.")
-            elif l.startswith("fact:"):
-                fact = l.split(":", 1)[1]
+            elif learning.startswith("fact:"):
+                fact = learning.split(":", 1)[1]
                 responses.append(f"✓ Noted: {fact}")
-            elif l.startswith("preference:"):
-                pref = l.split(":", 1)[1]
+            elif learning.startswith("preference:"):
+                pref = learning.split(":", 1)[1]
                 responses.append(f"✓ Preference saved: {pref}")
 
         return "\n".join(responses) if responses else ""
@@ -397,9 +408,7 @@ class MKEngine:
             was_direct_command=True,
         )
 
-    async def _execute_tool(
-        self, name: str, args: Dict[str, Any]
-    ) -> Any:
+    async def _execute_tool(self, name: str, args: Dict[str, Any]) -> Any:
         """Execute a registered tool.
 
         Args:

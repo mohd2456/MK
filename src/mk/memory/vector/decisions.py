@@ -16,21 +16,24 @@ This enables MK to improve over time:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class DecisionOutcome(str, Enum):
     """Outcome of a decision after it was executed."""
 
-    PENDING = "pending"         # Not yet evaluated
-    SUCCESS = "success"         # Worked as intended
-    PARTIAL = "partial"         # Partially worked
-    FAILURE = "failure"         # Did not work
-    UNKNOWN = "unknown"         # Can't determine
+    PENDING = "pending"  # Not yet evaluated
+    SUCCESS = "success"  # Worked as intended
+    PARTIAL = "partial"  # Partially worked
+    FAILURE = "failure"  # Did not work
+    UNKNOWN = "unknown"  # Can't determine
 
 
 @dataclass
@@ -126,9 +129,7 @@ class DecisionLog:
         Args:
             storage_path: Directory for persistence.
         """
-        self._storage_path = Path(
-            storage_path or Path.home() / ".mk" / "memory" / "decisions"
-        )
+        self._storage_path = Path(storage_path or Path.home() / ".mk" / "memory" / "decisions")
         self._decisions: Dict[str, Decision] = {}
         self._counter: int = 0
 
@@ -272,9 +273,9 @@ class DecisionLog:
             Failed decisions.
         """
         return [
-            d for d in self._decisions.values()
-            if d.outcome == DecisionOutcome.FAILURE
-            and (category is None or d.category == category)
+            d
+            for d in self._decisions.values()
+            if d.outcome == DecisionOutcome.FAILURE and (category is None or d.category == category)
         ]
 
     def recent(self, limit: int = 10) -> List[Decision]:
@@ -293,9 +294,7 @@ class DecisionLog:
         )
         return sorted_decisions[:limit]
 
-    def _score_relevance(
-        self, decision: Decision, query_lower: str, query_words: set
-    ) -> float:
+    def _score_relevance(self, decision: Decision, query_lower: str, query_words: set) -> float:
         """Score a decision's relevance to a query."""
         score = 0.0
 
@@ -336,21 +335,23 @@ class DecisionLog:
 
         data = []
         for decision in self._decisions.values():
-            data.append({
-                "id": decision.id,
-                "description": decision.description,
-                "reasoning": decision.reasoning,
-                "alternatives": decision.alternatives,
-                "context": decision.context,
-                "category": decision.category,
-                "outcome": decision.outcome.value,
-                "outcome_notes": decision.outcome_notes,
-                "learning": decision.learning,
-                "decided_at": decision.decided_at,
-                "evaluated_at": decision.evaluated_at,
-                "tags": decision.tags,
-                "confidence": decision.confidence,
-            })
+            data.append(
+                {
+                    "id": decision.id,
+                    "description": decision.description,
+                    "reasoning": decision.reasoning,
+                    "alternatives": decision.alternatives,
+                    "context": decision.context,
+                    "category": decision.category,
+                    "outcome": decision.outcome.value,
+                    "outcome_notes": decision.outcome_notes,
+                    "learning": decision.learning,
+                    "decided_at": decision.decided_at,
+                    "evaluated_at": decision.evaluated_at,
+                    "tags": decision.tags,
+                    "confidence": decision.confidence,
+                }
+            )
 
         with open(data_file, "w") as f:
             json.dump({"counter": self._counter, "decisions": data}, f, indent=2)

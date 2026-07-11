@@ -5,19 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import (
-    FirewallRule,
-    InterfaceState,
-    InterfaceType,
-    NetworkInterface,
-    WireGuardInterface,
-    WireGuardPeer,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +96,9 @@ class NetworkManager:
         validate_name(interface, "interface")
         await self._run(f"ip addr flush dev {safe_quote(interface)}")
 
-        rc, out, err = await self._run(f"ip addr add {safe_quote(address)} dev {safe_quote(interface)}")
+        rc, out, err = await self._run(
+            f"ip addr add {safe_quote(address)} dev {safe_quote(interface)}"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set IP: {err}")
 
@@ -123,7 +117,8 @@ class NetworkManager:
 
         return ToolResult(
             success=True,
-            output=f"Interface '{interface}' configured: {address}" + (f" gw {gateway}" if gateway else ""),
+            output=f"Interface '{interface}' configured: {address}"
+            + (f" gw {gateway}" if gateway else ""),
             side_effects=side_effects,
             metadata={"interface": interface, "address": address, "gateway": gateway},
         )
@@ -156,7 +151,9 @@ class NetworkManager:
             metadata={"interface": name, "state": "down"},
         )
 
-    async def create_vlan(self, parent: str, vlan_id: int, name: Optional[str] = None) -> ToolResult:
+    async def create_vlan(
+        self, parent: str, vlan_id: int, name: Optional[str] = None
+    ) -> ToolResult:
         """Create a VLAN interface."""
         validate_name(parent, "parent interface")
         iface_name = name or f"{parent}.{vlan_id}"
@@ -237,14 +234,12 @@ class NetworkManager:
         if port and protocol:
             rule_parts.append(f"{protocol} dport {int(port)}")
         if comment:
-            rule_parts.append(f'comment {safe_quote(comment)}')
+            rule_parts.append(f"comment {safe_quote(comment)}")
         rule_parts.append(action)
 
         rule_expr = " ".join(rule_parts)
 
-        await self._run(
-            "nft add table inet mk_firewall 2>/dev/null", check=False
-        )
+        await self._run("nft add table inet mk_firewall 2>/dev/null", check=False)
         await self._run(
             f"nft add chain inet mk_firewall {safe_quote(chain)} "
             f"'{{ type filter hook {chain} priority 0; policy accept; }}' 2>/dev/null",
@@ -290,9 +285,7 @@ class NetworkManager:
         """Add a port forwarding rule (DNAT)."""
         validate_name(protocol, "protocol")
 
-        await self._run(
-            "nft add table ip mk_nat 2>/dev/null", check=False
-        )
+        await self._run("nft add table ip mk_nat 2>/dev/null", check=False)
         await self._run(
             "nft add chain ip mk_nat prerouting '{ type nat hook prerouting priority -100; }' 2>/dev/null",
             check=False,
@@ -324,9 +317,7 @@ class NetworkManager:
         rc, out, err = await self._run("cat /etc/resolv.conf", check=False)
         resolv = out if rc == 0 else ""
 
-        rc2, resolved, _ = await self._run(
-            "resolvectl status 2>/dev/null", check=False
-        )
+        rc2, resolved, _ = await self._run("resolvectl status 2>/dev/null", check=False)
 
         result = {"resolv_conf": resolv}
         if rc2 == 0:
@@ -338,7 +329,9 @@ class NetworkManager:
             metadata={"format": "dns_config"},
         )
 
-    async def set_dns_servers(self, servers: List[str], search_domains: Optional[List[str]] = None) -> ToolResult:
+    async def set_dns_servers(
+        self, servers: List[str], search_domains: Optional[List[str]] = None
+    ) -> ToolResult:
         """Set DNS server addresses."""
         lines = []
         if search_domains:
@@ -349,9 +342,7 @@ class NetworkManager:
         content = "\n".join(lines) + "\n"
 
         # Use stdin to write content safely (avoids interpolation issues)
-        rc, _, err = await self._run_with_stdin(
-            "tee /etc/resolv.conf > /dev/null", content
-        )
+        rc, _, err = await self._run_with_stdin("tee /etc/resolv.conf > /dev/null", content)
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set DNS: {err}")
 
@@ -404,9 +395,7 @@ class NetworkManager:
 
         # Write private key via stdin (avoids key interpolation in shell)
         key_path = f"/etc/wireguard/{name}.key"
-        rc, _, err = await self._run_with_stdin(
-            f"tee {safe_quote(key_path)} > /dev/null", privkey
-        )
+        rc, _, err = await self._run_with_stdin(f"tee {safe_quote(key_path)} > /dev/null", privkey)
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to write private key: {err}")
 
@@ -560,7 +549,9 @@ PersistentKeepalive = 25
     async def dns_lookup(self, hostname: str, record_type: str = "A") -> ToolResult:
         """Perform a DNS lookup."""
         validate_name(record_type, "record_type")
-        rc, out, err = await self._run(f"dig +short {safe_quote(record_type)} {safe_quote(hostname)}")
+        rc, out, err = await self._run(
+            f"dig +short {safe_quote(record_type)} {safe_quote(hostname)}"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"DNS lookup failed: {err}")
 
@@ -583,7 +574,6 @@ PersistentKeepalive = 25
             metadata={"target": target, "ports": ports},
         )
 
-
     # ═══════════════════════════════════════════════════════════════
     # Tailscale — Secure mesh VPN (replaces manual WireGuard for
     # zero-config remote access to the homelab from anywhere)
@@ -605,9 +595,7 @@ PersistentKeepalive = 25
             )
 
         # Install via official script
-        rc, out, err = await self._run(
-            "curl -fsSL https://tailscale.com/install.sh | sh"
-        )
+        rc, out, err = await self._run("curl -fsSL https://tailscale.com/install.sh | sh")
         if rc != 0:
             return ToolResult(
                 success=False,
@@ -773,13 +761,15 @@ PersistentKeepalive = 25
         for line in out.splitlines():
             parts = line.split()
             if len(parts) >= 3 and not line.startswith("#"):
-                peers.append({
-                    "ip": parts[0],
-                    "hostname": parts[1],
-                    "user": parts[2] if len(parts) > 2 else "",
-                    "os": parts[3] if len(parts) > 3 else "",
-                    "online": "offline" not in line.lower(),
-                })
+                peers.append(
+                    {
+                        "ip": parts[0],
+                        "hostname": parts[1],
+                        "user": parts[2] if len(parts) > 2 else "",
+                        "os": parts[3] if len(parts) > 3 else "",
+                        "online": "offline" not in line.lower(),
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -789,9 +779,7 @@ PersistentKeepalive = 25
 
     async def tailscale_ping(self, target: str) -> ToolResult:
         """Ping a peer via Tailscale (tests direct connection)."""
-        rc, out, err = await self._run(
-            f"tailscale ping --c 3 {safe_quote(target)}", check=False
-        )
+        rc, out, err = await self._run(f"tailscale ping --c 3 {safe_quote(target)}", check=False)
         success = rc == 0 or "pong" in (out + err).lower()
 
         return ToolResult(
@@ -853,9 +841,7 @@ PersistentKeepalive = 25
 
     async def tailscale_serve_off(self, path: str = "/") -> ToolResult:
         """Stop serving a path via Tailscale Serve."""
-        rc, out, err = await self._run(
-            f"tailscale serve off {safe_quote(path)}", check=False
-        )
+        rc, out, err = await self._run(f"tailscale serve off {safe_quote(path)}", check=False)
         return ToolResult(
             success=True,
             output=f"Stopped serving at {path}",
@@ -902,9 +888,7 @@ PersistentKeepalive = 25
 
     async def tailscale_funnel_off(self, path: str = "/") -> ToolResult:
         """Stop funneling a path to the public internet."""
-        rc, out, err = await self._run(
-            f"tailscale funnel off {safe_quote(path)}", check=False
-        )
+        rc, out, err = await self._run(f"tailscale funnel off {safe_quote(path)}", check=False)
         return ToolResult(
             success=True,
             output=f"Funnel stopped at {path} — no longer publicly accessible",
@@ -918,9 +902,7 @@ PersistentKeepalive = 25
             node: Hostname or IP of the exit node (use "" to disable).
         """
         if node:
-            rc, out, err = await self._run(
-                f"tailscale set --exit-node={safe_quote(node)}"
-            )
+            rc, out, err = await self._run(f"tailscale set --exit-node={safe_quote(node)}")
         else:
             rc, out, err = await self._run("tailscale set --exit-node=")
 
@@ -950,9 +932,7 @@ PersistentKeepalive = 25
         Args:
             domain: The domain to get a cert for (e.g., "mk.tail12345.ts.net").
         """
-        rc, out, err = await self._run(
-            f"tailscale cert {safe_quote(domain)}", check=False
-        )
+        rc, out, err = await self._run(f"tailscale cert {safe_quote(domain)}", check=False)
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to get cert: {err or out}")
 

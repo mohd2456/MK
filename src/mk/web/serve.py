@@ -18,11 +18,9 @@ The server:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -64,6 +62,7 @@ def get_tailscale_hostname() -> Optional[str]:
         )
         if result.returncode == 0:
             import json
+
             status = json.loads(result.stdout)
             return status.get("Self", {}).get("HostName", None)
     except Exception:
@@ -146,7 +145,7 @@ def start_server(
     if ts_ip:
         print(f"║  Tailscale: http://{ts_ip}:{port:<5}          ║")
 
-    print(f"""║  PIN:      {'*' * len(os.environ.get('MK_PIN', '1234'))} (set MK_PIN env)    ║
+    print(f"""║  PIN:      {"*" * len(os.environ.get("MK_PIN", "1234"))} (set MK_PIN env)    ║
 ╚══════════════════════════════════════════════╝
 """)
 

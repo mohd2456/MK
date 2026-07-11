@@ -54,24 +54,28 @@ class OllamaProvider(LLMProvider):
         """Convert LLMMessage list to Ollama API format."""
         formatted = []
         for msg in messages:
-            formatted.append({
-                "role": msg.role.value,
-                "content": msg.content,
-            })
+            formatted.append(
+                {
+                    "role": msg.role.value,
+                    "content": msg.content,
+                }
+            )
         return formatted
 
     def _format_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
         """Convert tool definitions to Ollama tool format."""
         formatted = []
         for tool in tools:
-            formatted.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            })
+            formatted.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    },
+                }
+            )
         return formatted
 
     def _parse_tool_calls(self, message: Dict[str, Any]) -> List[ToolCall]:
@@ -80,11 +84,13 @@ class OllamaProvider(LLMProvider):
         raw_calls = message.get("tool_calls", [])
         for raw in raw_calls:
             func = raw.get("function", {})
-            calls.append(ToolCall(
-                id=f"ollama_{func.get('name', '')}",
-                name=func.get("name", ""),
-                arguments=func.get("arguments", {}),
-            ))
+            calls.append(
+                ToolCall(
+                    id=f"ollama_{func.get('name', '')}",
+                    name=func.get("name", ""),
+                    arguments=func.get("arguments", {}),
+                )
+            )
         return calls
 
     async def complete(self, request: LLMRequest) -> LLMResponse:

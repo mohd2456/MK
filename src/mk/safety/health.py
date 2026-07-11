@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel, Field
 

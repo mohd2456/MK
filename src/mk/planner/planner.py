@@ -20,10 +20,10 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
-from mk.planner.graph import TaskGraph, TaskNode, TaskStatus
-from mk.planner.sub_agent import AgentCapability, SubAgentRegistry
+from mk.planner.graph import TaskGraph, TaskNode
+from mk.planner.sub_agent import SubAgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +153,17 @@ class TaskPlanner:
 
         # Greetings and meta-commands
         trivial_starts = (
-            "hi", "hey", "hello", "thanks", "help", "status",
-            "bye", "quit", "exit", "version", "who",
+            "hi",
+            "hey",
+            "hello",
+            "thanks",
+            "help",
+            "status",
+            "bye",
+            "quit",
+            "exit",
+            "version",
+            "who",
         )
         first_word = text.split()[0].lower().rstrip("?!.")
         return first_word in trivial_starts
@@ -194,16 +203,12 @@ class TaskPlanner:
             },
             # "Update/upgrade all/everything"
             {
-                "pattern": re.compile(
-                    r"(?:update|upgrade)\s+(?:all|everything|containers|system)"
-                ),
+                "pattern": re.compile(r"(?:update|upgrade)\s+(?:all|everything|containers|system)"),
                 "builder": self._plan_update_all,
             },
             # "Backup X" or "run backup"
             {
-                "pattern": re.compile(
-                    r"(?:backup|back\s*up|snapshot)\s+(.+)"
-                ),
+                "pattern": re.compile(r"(?:backup|back\s*up|snapshot)\s+(.+)"),
                 "builder": self._plan_backup,
             },
             # "Rip/process disc"
@@ -226,7 +231,7 @@ class TaskPlanner:
 
         # Task 1: Check resources (parallel with 2)
         t1 = TaskNode(
-            name=f"Check available resources",
+            name="Check available resources",
             description=f"Verify disk space and memory for {service_name}",
             agent="devops",
             tool="system_monitor",
@@ -304,7 +309,7 @@ class TaskPlanner:
 
         # Task 2: Check destination space
         t2 = TaskNode(
-            name=f"Check space at destination",
+            name="Check space at destination",
             description=f"Verify {destination} has enough space",
             agent="devops",
             tool="ssh",
@@ -313,7 +318,7 @@ class TaskPlanner:
 
         # Task 3: Transfer (depends on 1, 2)
         t3 = TaskNode(
-            name=f"Transfer via rsync",
+            name="Transfer via rsync",
             description=f"rsync {source} → {destination} over private network",
             agent="devops",
             tool="ssh",

@@ -34,7 +34,8 @@ def _make_manifest(
         description="Test plugin for sandbox tests",
         permissions=permissions or [],
         timeout_seconds=timeout,
-        tools=tools or [
+        tools=tools
+        or [
             PluginTool(name="test_tool", description="A test tool"),
         ],
     )
@@ -113,12 +114,14 @@ class TestRestrictedImporter:
         with RestrictedImporter(blocked={"os"}):
             # json is not blocked, should work fine
             import json
+
             assert json is not None
 
     def test_whitelist_overrides_blocked(self) -> None:
         """Whitelisted modules are allowed even if in blocked set."""
         with RestrictedImporter(blocked={"os"}, whitelist={"os"}):
             import os
+
             assert os is not None
 
     def test_submodule_blocked_by_parent(self) -> None:
@@ -139,6 +142,7 @@ class TestRestrictedImporter:
         # Import should work normally now
         assert builtins.__import__ is original
         import os
+
         assert os is not None
 
     def test_default_blocked_imports_include_dangerous_modules(self) -> None:
@@ -186,6 +190,7 @@ class TestSandboxImportRestrictions:
 
         async def handler_importing_os() -> ToolResult:
             import os
+
             return ToolResult(success=True, output=f"cwd={os.getcwd()}")
 
         result = await sandbox.execute(manifest, "test_tool", handler_importing_os, {})
@@ -199,6 +204,7 @@ class TestSandboxImportRestrictions:
 
         async def handler_importing_socket() -> ToolResult:
             import socket
+
             return ToolResult(success=True, output=f"socket={socket.__name__}")
 
         result = await sandbox.execute(manifest, "test_tool", handler_importing_socket, {})

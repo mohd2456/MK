@@ -6,7 +6,7 @@ and usage statistics.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 import pytest
 
@@ -22,9 +22,7 @@ from mk.llm.models import (
 from mk.llm.router import LLMRouter
 
 
-def make_config(
-    name: str, cost_input: float = 0.001, cost_output: float = 0.002
-) -> ProviderConfig:
+def make_config(name: str, cost_input: float = 0.001, cost_output: float = 0.002) -> ProviderConfig:
     """Create a test provider config."""
     return ProviderConfig(
         name=name,

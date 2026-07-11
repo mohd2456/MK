@@ -76,14 +76,16 @@ class GroqProvider(LLMProvider):
         """Convert tool definitions to OpenAI function calling format."""
         formatted = []
         for tool in tools:
-            formatted.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            })
+            formatted.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    },
+                }
+            )
         return formatted
 
     def _parse_tool_calls(self, raw_calls: List[Dict[str, Any]]) -> List[ToolCall]:
@@ -95,11 +97,13 @@ class GroqProvider(LLMProvider):
                 args = json.loads(args_str)
             except (json.JSONDecodeError, TypeError):
                 args = {}
-            calls.append(ToolCall(
-                id=raw.get("id", ""),
-                name=raw.get("function", {}).get("name", ""),
-                arguments=args,
-            ))
+            calls.append(
+                ToolCall(
+                    id=raw.get("id", ""),
+                    name=raw.get("function", {}).get("name", ""),
+                    arguments=args,
+                )
+            )
         return calls
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
@@ -143,9 +147,7 @@ class GroqProvider(LLMProvider):
                     input_tokens = usage.get("prompt_tokens", 0)
                     output_tokens = usage.get("completion_tokens", 0)
 
-                    tool_calls = self._parse_tool_calls(
-                        message.get("tool_calls", [])
-                    )
+                    tool_calls = self._parse_tool_calls(message.get("tool_calls", []))
 
                     return LLMResponse(
                         content=message.get("content", "") or "",
@@ -160,9 +162,7 @@ class GroqProvider(LLMProvider):
                     )
 
                 elif response.status_code == 429:
-                    retry_after = float(
-                        response.headers.get("retry-after", str(2 ** attempt))
-                    )
+                    retry_after = float(response.headers.get("retry-after", str(2**attempt)))
                     if attempt < self.config.max_retries - 1:
                         await asyncio.sleep(retry_after)
                         continue
@@ -183,14 +183,14 @@ class GroqProvider(LLMProvider):
             except httpx.TimeoutException:
                 last_error = ProviderTimeoutError(self.name, self.config.timeout_seconds)
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
             except (RateLimitError, AuthenticationError, ProviderError):
                 raise
             except Exception as e:
                 last_error = e
                 if attempt < self.config.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
 
         if last_error:
@@ -224,9 +224,7 @@ class GroqProvider(LLMProvider):
         }
 
         try:
-            async with client.stream(
-                "POST", "/openai/v1/chat/completions", json=body
-            ) as response:
+            async with client.stream("POST", "/openai/v1/chat/completions", json=body) as response:
                 if response.status_code != 200:
                     await response.aread()
                     raise ProviderError(

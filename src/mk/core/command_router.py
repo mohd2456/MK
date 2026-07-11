@@ -132,9 +132,7 @@ class CommandRouter:
         # No pattern matched - needs LLM
         return RouteResult(is_direct=False, confidence=0.0)
 
-    def _try_match(
-        self, text: str, cmd_pattern: CommandPattern
-    ) -> Optional[RouteResult]:
+    def _try_match(self, text: str, cmd_pattern: CommandPattern) -> Optional[RouteResult]:
         """Try to match input against a command pattern.
 
         Args:
@@ -175,8 +173,20 @@ class CommandRouter:
         parts = text.strip().split()
         # Skip common verbs and prepositions
         skip_words = {
-            "restart", "reboot", "check", "status", "of", "is",
-            "start", "stop", "kill", "up", "running", "alive", "ok", "how",
+            "restart",
+            "reboot",
+            "check",
+            "status",
+            "of",
+            "is",
+            "start",
+            "stop",
+            "kill",
+            "up",
+            "running",
+            "alive",
+            "ok",
+            "how",
         }
         for part in reversed(parts):
             cleaned = part.rstrip("?").rstrip(".")

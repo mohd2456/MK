@@ -114,9 +114,7 @@ class MediaTool(Tool):
         elif action == "search_show":
             return await self._search_show(kwargs.get("query", ""))
         elif action == "request_show":
-            return await self._request_show(
-                kwargs.get("title", ""), kwargs.get("season")
-            )
+            return await self._request_show(kwargs.get("title", ""), kwargs.get("season"))
         elif action == "check_download_status":
             return await self._check_download_status()
         elif action == "get_plex_libraries":
@@ -142,9 +140,7 @@ class MediaTool(Tool):
             return ToolResult(success=False, error="Query is required for search_movie")
 
         if not self._radarr_url:
-            return ToolResult(
-                success=False, error="Radarr is not configured"
-            )
+            return ToolResult(success=False, error="Radarr is not configured")
 
         # In production, would call: GET {radarr_url}/api/v3/movie/lookup?term={query}
         return ToolResult(
@@ -170,9 +166,7 @@ class MediaTool(Tool):
             return ToolResult(success=False, error="Title is required for request_movie")
 
         if not self._radarr_url:
-            return ToolResult(
-                success=False, error="Radarr is not configured"
-            )
+            return ToolResult(success=False, error="Radarr is not configured")
 
         return ToolResult(
             success=True,
@@ -198,9 +192,7 @@ class MediaTool(Tool):
             return ToolResult(success=False, error="Query is required for search_show")
 
         if not self._sonarr_url:
-            return ToolResult(
-                success=False, error="Sonarr is not configured"
-            )
+            return ToolResult(success=False, error="Sonarr is not configured")
 
         return ToolResult(
             success=True,
@@ -226,9 +218,7 @@ class MediaTool(Tool):
             return ToolResult(success=False, error="Title is required for request_show")
 
         if not self._sonarr_url:
-            return ToolResult(
-                success=False, error="Sonarr is not configured"
-            )
+            return ToolResult(success=False, error="Sonarr is not configured")
 
         season_str = f" (Season {season})" if season else ""
         return ToolResult(

@@ -6,7 +6,7 @@ machines. Provides health checks for services and self-monitoring.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mk.tools.base import Tool, ToolResult
 
@@ -79,9 +79,7 @@ class SystemMonitorTool(Tool):
         if action == "get_system_stats":
             return await self._get_system_stats(machine)
         elif action == "get_service_status":
-            return await self._get_service_status(
-                kwargs.get("service_name", ""), machine
-            )
+            return await self._get_service_status(kwargs.get("service_name", ""), machine)
         elif action == "check_health":
             return await self._check_health(machine)
         else:
@@ -122,9 +120,7 @@ class SystemMonitorTool(Tool):
             ToolResult with service status.
         """
         if not service_name:
-            return ToolResult(
-                success=False, error="service_name is required"
-            )
+            return ToolResult(success=False, error="service_name is required")
 
         # In production: `systemctl status {service_name}` via SSH
         return ToolResult(

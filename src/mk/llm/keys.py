@@ -53,91 +53,343 @@ KEY_PATTERNS = {
 # Best models per provider (ranked by capability)
 PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     "anthropic": [
-        {"model": "claude-sonnet-4-20250514", "input": 0.003, "output": 0.015, "max_ctx": 200000, "tier": "smart"},
-        {"model": "claude-3-5-haiku-20241022", "input": 0.001, "output": 0.005, "max_ctx": 200000, "tier": "fast"},
+        {
+            "model": "claude-sonnet-4-20250514",
+            "input": 0.003,
+            "output": 0.015,
+            "max_ctx": 200000,
+            "tier": "smart",
+        },
+        {
+            "model": "claude-3-5-haiku-20241022",
+            "input": 0.001,
+            "output": 0.005,
+            "max_ctx": 200000,
+            "tier": "fast",
+        },
     ],
     "openai": [
         {"model": "gpt-4o", "input": 0.0025, "output": 0.01, "max_ctx": 128000, "tier": "smart"},
-        {"model": "gpt-4o-mini", "input": 0.00015, "output": 0.0006, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "gpt-4o-mini",
+            "input": 0.00015,
+            "output": 0.0006,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
         {"model": "o3-mini", "input": 0.0011, "output": 0.0044, "max_ctx": 200000, "tier": "smart"},
     ],
     "gemini": [
-        {"model": "gemini-2.5-flash", "input": 0.00015, "output": 0.0006, "max_ctx": 1000000, "tier": "fast"},
-        {"model": "gemini-2.5-pro", "input": 0.00125, "output": 0.01, "max_ctx": 1000000, "tier": "smart"},
+        {
+            "model": "gemini-2.5-flash",
+            "input": 0.00015,
+            "output": 0.0006,
+            "max_ctx": 1000000,
+            "tier": "fast",
+        },
+        {
+            "model": "gemini-2.5-pro",
+            "input": 0.00125,
+            "output": 0.01,
+            "max_ctx": 1000000,
+            "tier": "smart",
+        },
     ],
     "groq": [
-        {"model": "llama-3.3-70b-versatile", "input": 0.00059, "output": 0.00079, "max_ctx": 128000, "tier": "fast"},
-        {"model": "llama-3.1-8b-instant", "input": 0.00005, "output": 0.00008, "max_ctx": 128000, "tier": "cheap"},
-        {"model": "mixtral-8x7b-32768", "input": 0.00024, "output": 0.00024, "max_ctx": 32768, "tier": "cheap"},
+        {
+            "model": "llama-3.3-70b-versatile",
+            "input": 0.00059,
+            "output": 0.00079,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "llama-3.1-8b-instant",
+            "input": 0.00005,
+            "output": 0.00008,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
+        {
+            "model": "mixtral-8x7b-32768",
+            "input": 0.00024,
+            "output": 0.00024,
+            "max_ctx": 32768,
+            "tier": "cheap",
+        },
     ],
     "mistral": [
-        {"model": "mistral-large-latest", "input": 0.002, "output": 0.006, "max_ctx": 128000, "tier": "smart"},
-        {"model": "mistral-small-latest", "input": 0.0002, "output": 0.0006, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "mistral-large-latest",
+            "input": 0.002,
+            "output": 0.006,
+            "max_ctx": 128000,
+            "tier": "smart",
+        },
+        {
+            "model": "mistral-small-latest",
+            "input": 0.0002,
+            "output": 0.0006,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "openrouter": [
-        {"model": "anthropic/claude-sonnet-4-20250514", "input": 0.003, "output": 0.015, "max_ctx": 200000, "tier": "smart"},
-        {"model": "google/gemini-2.5-flash", "input": 0.00015, "output": 0.0006, "max_ctx": 1000000, "tier": "fast"},
-        {"model": "meta-llama/llama-3.3-70b-instruct", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "anthropic/claude-sonnet-4-20250514",
+            "input": 0.003,
+            "output": 0.015,
+            "max_ctx": 200000,
+            "tier": "smart",
+        },
+        {
+            "model": "google/gemini-2.5-flash",
+            "input": 0.00015,
+            "output": 0.0006,
+            "max_ctx": 1000000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama/llama-3.3-70b-instruct",
+            "input": 0.0004,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "together": [
-        {"model": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "input": 0.00054, "output": 0.00054, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta-llama/Llama-3.1-8B-Instruct-Turbo", "input": 0.00005, "output": 0.00005, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            "input": 0.00054,
+            "output": 0.00054,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+            "input": 0.00005,
+            "output": 0.00005,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "fireworks": [
-        {"model": "accounts/fireworks/models/llama-v3p3-70b-instruct", "input": 0.0009, "output": 0.0009, "max_ctx": 128000, "tier": "fast"},
+        {
+            "model": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+            "input": 0.0009,
+            "output": 0.0009,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
     ],
     "perplexity": [
         {"model": "sonar-pro", "input": 0.003, "output": 0.015, "max_ctx": 200000, "tier": "smart"},
         {"model": "sonar", "input": 0.001, "output": 0.001, "max_ctx": 128000, "tier": "fast"},
     ],
     "deepseek": [
-        {"model": "deepseek-chat", "input": 0.00014, "output": 0.00028, "max_ctx": 128000, "tier": "cheap"},
-        {"model": "deepseek-reasoner", "input": 0.00055, "output": 0.0022, "max_ctx": 128000, "tier": "smart"},
+        {
+            "model": "deepseek-chat",
+            "input": 0.00014,
+            "output": 0.00028,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
+        {
+            "model": "deepseek-reasoner",
+            "input": 0.00055,
+            "output": 0.0022,
+            "max_ctx": 128000,
+            "tier": "smart",
+        },
     ],
     "cohere": [
-        {"model": "command-r-plus", "input": 0.003, "output": 0.015, "max_ctx": 128000, "tier": "smart"},
-        {"model": "command-r", "input": 0.0005, "output": 0.0015, "max_ctx": 128000, "tier": "fast"},
+        {
+            "model": "command-r-plus",
+            "input": 0.003,
+            "output": 0.015,
+            "max_ctx": 128000,
+            "tier": "smart",
+        },
+        {
+            "model": "command-r",
+            "input": 0.0005,
+            "output": 0.0015,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
     ],
     "xai": [
         {"model": "grok-3", "input": 0.003, "output": 0.015, "max_ctx": 131072, "tier": "smart"},
-        {"model": "grok-3-mini", "input": 0.0003, "output": 0.0005, "max_ctx": 131072, "tier": "fast"},
-        {"model": "grok-build-0.1", "input": 0.001, "output": 0.002, "max_ctx": 256000, "tier": "smart"},
+        {
+            "model": "grok-3-mini",
+            "input": 0.0003,
+            "output": 0.0005,
+            "max_ctx": 131072,
+            "tier": "fast",
+        },
+        {
+            "model": "grok-build-0.1",
+            "input": 0.001,
+            "output": 0.002,
+            "max_ctx": 256000,
+            "tier": "smart",
+        },
     ],
     "nvidia": [
-        {"model": "nvidia/llama-3.1-nemotron-70b-instruct", "input": 0.00035, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
-        {"model": "nvidia/nemotron-4-340b-instruct", "input": 0.0042, "output": 0.0042, "max_ctx": 4096, "tier": "smart"},
-        {"model": "meta/llama-3.3-70b-instruct", "input": 0.00035, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta/llama-3.1-8b-instruct", "input": 0.00005, "output": 0.00005, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+            "input": 0.00035,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "nvidia/nemotron-4-340b-instruct",
+            "input": 0.0042,
+            "output": 0.0042,
+            "max_ctx": 4096,
+            "tier": "smart",
+        },
+        {
+            "model": "meta/llama-3.3-70b-instruct",
+            "input": 0.00035,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta/llama-3.1-8b-instruct",
+            "input": 0.00005,
+            "output": 0.00005,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "sambanova": [
-        {"model": "Meta-Llama-3.3-70B-Instruct", "input": 0.0006, "output": 0.0006, "max_ctx": 128000, "tier": "fast"},
-        {"model": "Meta-Llama-3.1-8B-Instruct", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
-        {"model": "DeepSeek-R1", "input": 0.002, "output": 0.008, "max_ctx": 128000, "tier": "smart"},
+        {
+            "model": "Meta-Llama-3.3-70B-Instruct",
+            "input": 0.0006,
+            "output": 0.0006,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "Meta-Llama-3.1-8B-Instruct",
+            "input": 0.0001,
+            "output": 0.0001,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
+        {
+            "model": "DeepSeek-R1",
+            "input": 0.002,
+            "output": 0.008,
+            "max_ctx": 128000,
+            "tier": "smart",
+        },
     ],
     "cerebras": [
-        {"model": "llama-3.3-70b", "input": 0.00059, "output": 0.00079, "max_ctx": 128000, "tier": "fast"},
-        {"model": "llama-3.1-8b", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "llama-3.3-70b",
+            "input": 0.00059,
+            "output": 0.00079,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "llama-3.1-8b",
+            "input": 0.0001,
+            "output": 0.0001,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "hyperbolic": [
-        {"model": "meta-llama/Llama-3.3-70B-Instruct", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta-llama/Llama-3.1-8B-Instruct", "input": 0.00006, "output": 0.00006, "max_ctx": 128000, "tier": "cheap"},
-        {"model": "deepseek-ai/DeepSeek-R1", "input": 0.002, "output": 0.002, "max_ctx": 128000, "tier": "smart"},
+        {
+            "model": "meta-llama/Llama-3.3-70B-Instruct",
+            "input": 0.0004,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama/Llama-3.1-8B-Instruct",
+            "input": 0.00006,
+            "output": 0.00006,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
+        {
+            "model": "deepseek-ai/DeepSeek-R1",
+            "input": 0.002,
+            "output": 0.002,
+            "max_ctx": 128000,
+            "tier": "smart",
+        },
     ],
     "lepton": [
-        {"model": "llama-3.3-70b", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
-        {"model": "llama-3.1-8b", "input": 0.00006, "output": 0.00006, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "llama-3.3-70b",
+            "input": 0.0004,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "llama-3.1-8b",
+            "input": 0.00006,
+            "output": 0.00006,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "novita": [
-        {"model": "meta-llama/llama-3.3-70b-instruct", "input": 0.0004, "output": 0.0004, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta-llama/llama-3.1-8b-instruct", "input": 0.00005, "output": 0.00005, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "meta-llama/llama-3.3-70b-instruct",
+            "input": 0.0004,
+            "output": 0.0004,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama/llama-3.1-8b-instruct",
+            "input": 0.00005,
+            "output": 0.00005,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "octo": [
-        {"model": "meta-llama-3.1-70b-instruct", "input": 0.0009, "output": 0.0009, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta-llama-3.1-8b-instruct", "input": 0.0001, "output": 0.0001, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "meta-llama-3.1-70b-instruct",
+            "input": 0.0009,
+            "output": 0.0009,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama-3.1-8b-instruct",
+            "input": 0.0001,
+            "output": 0.0001,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
     "anyscale": [
-        {"model": "meta-llama/Meta-Llama-3.1-70B-Instruct", "input": 0.001, "output": 0.001, "max_ctx": 128000, "tier": "fast"},
-        {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct", "input": 0.00015, "output": 0.00015, "max_ctx": 128000, "tier": "cheap"},
+        {
+            "model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            "input": 0.001,
+            "output": 0.001,
+            "max_ctx": 128000,
+            "tier": "fast",
+        },
+        {
+            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "input": 0.00015,
+            "output": 0.00015,
+            "max_ctx": 128000,
+            "tier": "cheap",
+        },
     ],
 }
 
@@ -233,10 +485,16 @@ class KeyManager:
 
         provider = provider_override or self.detect_provider(api_key)
         if not provider:
-            return False, "Cannot detect provider from key format. Use: /setkey provider_name your-key"
+            return (
+                False,
+                "Cannot detect provider from key format. Use: /setkey provider_name your-key",
+            )
 
         if provider not in PROVIDER_ENDPOINTS:
-            return False, f"Unknown provider '{provider}'. Supported: {', '.join(PROVIDER_ENDPOINTS.keys())}"
+            return (
+                False,
+                f"Unknown provider '{provider}'. Supported: {', '.join(PROVIDER_ENDPOINTS.keys())}",
+            )
 
         # Check for duplicate
         existing = self._keys.get(provider, [])
@@ -348,14 +606,16 @@ class KeyManager:
             models = PROVIDER_MODELS.get(provider, [])
             for model in models:
                 if model["tier"] == tier or (tier == "fast" and model["tier"] in ("fast", "cheap")):
-                    candidates.append({
-                        "provider": provider,
-                        "model": model["model"],
-                        "input_cost": model["input"],
-                        "output_cost": model["output"],
-                        "max_ctx": model["max_ctx"],
-                        "tier": model["tier"],
-                    })
+                    candidates.append(
+                        {
+                            "provider": provider,
+                            "model": model["model"],
+                            "input_cost": model["input"],
+                            "output_cost": model["output"],
+                            "max_ctx": model["max_ctx"],
+                            "tier": model["tier"],
+                        }
+                    )
 
         if not candidates:
             # Fallback: any available model
@@ -363,14 +623,16 @@ class KeyManager:
                 models = PROVIDER_MODELS.get(provider, [])
                 if models:
                     m = models[0]
-                    candidates.append({
-                        "provider": provider,
-                        "model": m["model"],
-                        "input_cost": m["input"],
-                        "output_cost": m["output"],
-                        "max_ctx": m["max_ctx"],
-                        "tier": m["tier"],
-                    })
+                    candidates.append(
+                        {
+                            "provider": provider,
+                            "model": m["model"],
+                            "input_cost": m["input"],
+                            "output_cost": m["output"],
+                            "max_ctx": m["max_ctx"],
+                            "tier": m["tier"],
+                        }
+                    )
 
         if not candidates:
             return None

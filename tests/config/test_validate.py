@@ -204,7 +204,9 @@ class TestInvalidFields:
         """Non-existent config file path produces an error."""
         result = validate_config("/tmp/nonexistent_path_xyz_12345/config.yaml")
         assert result.valid is False
-        assert any("not found" in e.message.lower() or "No config" in e.message for e in result.errors)
+        assert any(
+            "not found" in e.message.lower() or "No config" in e.message for e in result.errors
+        )
 
     def test_empty_yaml_file(self, tmp_path: Path) -> None:
         """Completely empty YAML file produces an error."""
@@ -223,10 +225,12 @@ class TestValidationResult:
         """errors property filters correctly."""
         from mk.config.validate import ValidationIssue
 
-        result = ValidationResult(issues=[
-            ValidationIssue(level="error", field="a", message="bad"),
-            ValidationIssue(level="warning", field="b", message="hmm"),
-            ValidationIssue(level="error", field="c", message="also bad"),
-        ])
+        result = ValidationResult(
+            issues=[
+                ValidationIssue(level="error", field="a", message="bad"),
+                ValidationIssue(level="warning", field="b", message="hmm"),
+                ValidationIssue(level="error", field="c", message="also bad"),
+            ]
+        )
         assert len(result.errors) == 2
         assert len(result.warnings) == 1

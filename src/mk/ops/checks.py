@@ -29,11 +29,11 @@ class CheckSeverity(str, Enum):
     Determines how the alert manager routes the notification.
     """
 
-    OK = "ok"               # Everything fine, no action needed
-    INFO = "info"           # Informational, log only
-    WARNING = "warning"     # Something needs attention soon
-    CRITICAL = "critical"   # Immediate action required
-    UNKNOWN = "unknown"     # Check couldn't determine state
+    OK = "ok"  # Everything fine, no action needed
+    INFO = "info"  # Informational, log only
+    WARNING = "warning"  # Something needs attention soon
+    CRITICAL = "critical"  # Immediate action required
+    UNKNOWN = "unknown"  # Check couldn't determine state
 
 
 @dataclass
@@ -313,7 +313,7 @@ async def disk_prediction() -> CheckResult:
         return CheckResult(
             name="disk_prediction",
             severity=CheckSeverity.WARNING,
-            message=f"Disk trending full within 30 days",
+            message="Disk trending full within 30 days",
             data={"pools": pools, "warnings": warnings},
             recommendations=["Monitor growth rate", "Plan capacity expansion"],
         )
@@ -465,7 +465,12 @@ async def service_health() -> CheckResult:
         {"name": "plex", "url": "http://localhost:32400/identity", "status": 200, "ms": 45},
         {"name": "sonarr", "url": "http://localhost:8989/api/v3/health", "status": 200, "ms": 120},
         {"name": "radarr", "url": "http://localhost:7878/api/v3/health", "status": 200, "ms": 95},
-        {"name": "overseerr", "url": "http://localhost:5055/api/v1/status", "status": 200, "ms": 210},
+        {
+            "name": "overseerr",
+            "url": "http://localhost:5055/api/v1/status",
+            "status": 200,
+            "ms": 210,
+        },
     ]
 
     down = [s for s in services if s["status"] != 200]
@@ -500,7 +505,6 @@ async def service_health() -> CheckResult:
         message=f"All {len(services)} services responding normally",
         data={"services": services},
     )
-
 
 
 async def tailscale_health() -> CheckResult:
@@ -556,7 +560,7 @@ async def tailscale_health() -> CheckResult:
             )
 
         # Connected — count peers
-        lines = [l for l in output.splitlines() if l.strip() and not l.startswith("#")]
+        lines = [line for line in output.splitlines() if line.strip() and not line.startswith("#")]
         peer_count = max(0, len(lines) - 1)  # Subtract self
 
         return CheckResult(
@@ -568,6 +572,7 @@ async def tailscale_health() -> CheckResult:
 
     # Full JSON status available
     import json as _json
+
     try:
         status = _json.loads(stdout.decode())
     except Exception:
@@ -612,6 +617,7 @@ async def tailscale_health() -> CheckResult:
     # Check if key is expiring soon (within 7 days)
     if key_expiry:
         from datetime import datetime
+
         try:
             # Tailscale uses RFC3339 format
             expiry_str = key_expiry.replace("Z", "+00:00")

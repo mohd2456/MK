@@ -22,7 +22,6 @@ Tools used:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 from ._shell import safe_quote, validate_name
@@ -170,7 +169,7 @@ class LXCManager:
         return ToolResult(
             success=True,
             output=f"Snapshot created for '{name}'",
-            side_effects=[f"LXC snapshot created"],
+            side_effects=["LXC snapshot created"],
         )
 
     async def restore_snapshot(self, name: str, snap_name: str) -> ToolResult:

@@ -15,7 +15,10 @@ Provider mapping:
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from mk.llm.router import LLMRouter
 
 from mk.llm.base import LLMProvider
 from mk.llm.keys import PROVIDER_ENDPOINTS, PROVIDER_MODELS, KeyManager

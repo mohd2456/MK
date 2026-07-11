@@ -9,7 +9,6 @@ is reached. This is the heart of MK's intelligence.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from mk.core.context import ContextBuilder
@@ -19,9 +18,7 @@ from mk.core.models import AgentResponse, AgentStep, Conversation, ToolCall
 class LLMProvider(Protocol):
     """Protocol for LLM provider implementations."""
 
-    async def complete(
-        self, messages: List[Dict[str, str]], **kwargs: Any
-    ) -> Dict[str, Any]:
+    async def complete(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
         """Send messages to the LLM and get a completion.
 
         Args:
@@ -139,9 +136,7 @@ class AgentLoop:
                     # Execute tool if executor available
                     if self.tool_executor:
                         try:
-                            result = await self._execute_tool(
-                                tool_call.name, tool_call.args
-                            )
+                            result = await self._execute_tool(tool_call.name, tool_call.args)
                             tool_call.result = str(result)
                             tool_call.executed = True
                         except Exception as e:
@@ -156,7 +151,7 @@ class AgentLoop:
                     steps.append(step)
 
                 # Continue loop with tool results as context
-                tool_results = self._format_tool_results(steps[-len(tool_calls_raw):])
+                tool_results = self._format_tool_results(steps[-len(tool_calls_raw) :])
                 working_input = (
                     f"{user_input}\n\n"
                     f"[Tool execution results]\n{tool_results}\n\n"
@@ -176,9 +171,8 @@ class AgentLoop:
                 )
 
         # Max iterations reached
-        final_msg = (
-            "I've reached my iteration limit. Here's what I have so far: "
-            + (steps[-1].thought or "Unable to complete the task.")
+        final_msg = "I've reached my iteration limit. Here's what I have so far: " + (
+            steps[-1].thought or "Unable to complete the task."
         )
         return AgentResponse(
             steps=steps,

@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from mk.tools.base import ToolResult
 
 from ._shell import safe_quote, validate_name
-from .models import GroupInfo, UserAccount
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +75,16 @@ class UserManager:
                 continue
             parts = line.split(":")
             if len(parts) >= 7:
-                users.append({
-                    "username": parts[0],
-                    "uid": int(parts[2]),
-                    "gid": int(parts[3]),
-                    "comment": parts[4],
-                    "home": parts[5],
-                    "shell": parts[6],
-                })
+                users.append(
+                    {
+                        "username": parts[0],
+                        "uid": int(parts[2]),
+                        "gid": int(parts[3]),
+                        "comment": parts[4],
+                        "home": parts[5],
+                        "shell": parts[6],
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -99,9 +100,15 @@ class UserManager:
             return ToolResult(success=False, error=f"User '{username}' not found: {err}")
 
         rc2, groups_out, _ = await self._run(f"groups {safe_quote(username)}")
-        rc3, login_out, _ = await self._run(f"lastlog -u {safe_quote(username)} 2>/dev/null", check=False)
-        rc4, shadow_out, _ = await self._run(f"passwd -S {safe_quote(username)} 2>/dev/null", check=False)
-        locked = "L" in shadow_out.split()[1] if shadow_out and len(shadow_out.split()) > 1 else False
+        rc3, login_out, _ = await self._run(
+            f"lastlog -u {safe_quote(username)} 2>/dev/null", check=False
+        )
+        rc4, shadow_out, _ = await self._run(
+            f"passwd -S {safe_quote(username)} 2>/dev/null", check=False
+        )
+        locked = (
+            "L" in shadow_out.split()[1] if shadow_out and len(shadow_out.split()) > 1 else False
+        )
 
         result = {
             "id_info": out,
@@ -249,11 +256,13 @@ class UserManager:
             parts = line.split(":")
             if len(parts) >= 4:
                 members = parts[3].split(",") if parts[3] else []
-                groups.append({
-                    "name": parts[0],
-                    "gid": int(parts[2]),
-                    "members": members,
-                })
+                groups.append(
+                    {
+                        "name": parts[0],
+                        "gid": int(parts[2]),
+                        "members": members,
+                    }
+                )
 
         return ToolResult(
             success=True,
@@ -325,9 +334,7 @@ class UserManager:
     async def list_ssh_keys(self, username: str) -> ToolResult:
         """List SSH authorized keys for a user."""
         validate_name(username, "username")
-        rc, home, err = await self._run(
-            f"getent passwd {safe_quote(username)} | cut -d: -f6"
-        )
+        rc, home, err = await self._run(f"getent passwd {safe_quote(username)} | cut -d: -f6")
         if rc != 0 or not home:
             return ToolResult(success=False, error=f"User '{username}' not found")
 
@@ -341,12 +348,14 @@ class UserManager:
                     parts = line.split()
                     key_type = parts[0] if parts else "unknown"
                     comment = parts[-1] if len(parts) >= 3 else ""
-                    keys.append({
-                        "index": i,
-                        "type": key_type,
-                        "comment": comment,
-                        "key_preview": line[:80] + "..." if len(line) > 80 else line,
-                    })
+                    keys.append(
+                        {
+                            "index": i,
+                            "type": key_type,
+                            "comment": comment,
+                            "key_preview": line[:80] + "..." if len(line) > 80 else line,
+                        }
+                    )
 
         return ToolResult(
             success=True,
@@ -368,7 +377,9 @@ class UserManager:
         # Ensure .ssh directory exists with correct permissions
         await self._run(f"mkdir -p {safe_quote(ssh_dir)}")
         await self._run(f"chmod 700 {safe_quote(ssh_dir)}")
-        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(ssh_dir)}")
+        await self._run(
+            f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(ssh_dir)}"
+        )
 
         # Append key via stdin to avoid shell interpolation issues with key content
         rc, _, err = await self._run_with_stdin(
@@ -379,7 +390,9 @@ class UserManager:
 
         # Fix permissions
         await self._run(f"chmod 600 {safe_quote(auth_keys)}")
-        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(auth_keys)}")
+        await self._run(
+            f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(auth_keys)}"
+        )
 
         key_parts = public_key.split()
         comment = key_parts[-1] if len(key_parts) >= 3 else "unnamed"
@@ -433,7 +446,9 @@ class UserManager:
             return ToolResult(success=False, error=f"Key generation failed: {err}")
 
         rc, pubkey, _ = await self._run(f"cat {safe_quote(key_path)}.pub")
-        await self._run(f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(key_path)} {safe_quote(key_path)}.pub")
+        await self._run(
+            f"chown {safe_quote(username)}:{safe_quote(username)} {safe_quote(key_path)} {safe_quote(key_path)}.pub"
+        )
 
         return ToolResult(
             success=True,
@@ -535,7 +550,9 @@ class UserManager:
         else:
             acl_spec = f"{d_prefix}g:{group}:{permissions}"
 
-        rc, out, err = await self._run(f"setfacl {r_flag}-m {safe_quote(acl_spec)} {safe_quote(path)}")
+        rc, out, err = await self._run(
+            f"setfacl {r_flag}-m {safe_quote(acl_spec)} {safe_quote(path)}"
+        )
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set ACL: {err}")
 
@@ -546,7 +563,9 @@ class UserManager:
             metadata={"path": path, "acl": acl_spec, "recursive": recursive},
         )
 
-    async def remove_acl(self, path: str, user: Optional[str] = None, group: Optional[str] = None) -> ToolResult:
+    async def remove_acl(
+        self, path: str, user: Optional[str] = None, group: Optional[str] = None
+    ) -> ToolResult:
         """Remove ACL entries for a user or group."""
         if user:
             validate_name(user, "user")
@@ -575,9 +594,7 @@ class UserManager:
         validate_name(username, "username")
 
         # Use chpasswd via stdin to avoid shell interpolation of the password
-        rc, _, err = await self._run_with_stdin(
-            "chpasswd", f"{username}:{password}"
-        )
+        rc, _, err = await self._run_with_stdin("chpasswd", f"{username}:{password}")
         if rc != 0:
             return ToolResult(success=False, error=f"Failed to set password: {err}")
 

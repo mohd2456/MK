@@ -114,7 +114,7 @@ class TestSecretsManager:
 
     def test_special_characters_in_value(self) -> None:
         """Should handle special characters correctly."""
-        special_value = 'p@$$w0rd!#%&*(){}[]|\\:";\'<>?,./~`'
+        special_value = "p@$$w0rd!#%&*(){}[]|\\:\";'<>?,./~`"
         self.manager.store_secret("special", special_value)
         assert self.manager.get_secret("special") == special_value
 

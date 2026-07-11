@@ -74,9 +74,7 @@ class ConfirmationManager:
 
     def __post_init__(self) -> None:
         """Compile regex patterns for efficient matching."""
-        self._compiled_patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.patterns
-        ]
+        self._compiled_patterns = [re.compile(p, re.IGNORECASE) for p in self.patterns]
 
     def is_dangerous(self, command: str) -> bool:
         """Check if a command matches any dangerous action pattern.
