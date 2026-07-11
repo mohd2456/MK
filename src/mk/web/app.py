@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
+from mk.web.chat_history import ChatHistoryStore
 from mk.wrapper import InputValidationError, MKWrapper, PageContext
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,7 @@ _login_attempts: Dict[str, List[float]] = {}
 _pin_hash: Optional[str] = None
 _mk_engine: Optional[Any] = None
 _mk_wrapper: Optional[MKWrapper] = None
+_chat_history: Optional[ChatHistoryStore] = None
 _start_time: float = time.time()
 
 SESSION_DURATION = 7 * 24 * 3600  # 7 days
@@ -324,6 +326,7 @@ def create_app(
     mk_engine: Optional[Any] = None,
     pin: Optional[str] = None,
     static_dir: Optional[str] = None,
+    chat_history: Optional[ChatHistoryStore] = None,
 ) -> FastAPI:
     """Create the FastAPI application.
 
@@ -331,11 +334,13 @@ def create_app(
         mk_engine: The MKEngineV2 instance (for processing commands).
         pin: Override PIN (default: env MK_PIN or "1234").
         static_dir: Path to the built React frontend (webui/dist).
+        chat_history: Optional persistent chat-history store. If omitted, one
+            is created from ``MK_CHAT_DB`` (default in-memory for the process).
 
     Returns:
         Configured FastAPI app.
     """
-    global _mk_engine, _mk_wrapper, _pin_hash
+    global _mk_engine, _mk_wrapper, _pin_hash, _chat_history
 
     _mk_engine = mk_engine
     # The wrapper is the single, defensive integration point for all
@@ -345,6 +350,12 @@ def create_app(
     # when no engine is wired in, so the API degrades gracefully instead of
     # returning a raw "not initialized" stub.
     _mk_wrapper = MKWrapper(engine=mk_engine)
+    # Persistent, session-keyed chat history. Defaults to an in-memory store
+    # so tests and no-config deployments work; set MK_CHAT_DB to a file path
+    # for durability across restarts.
+    _chat_history = chat_history or ChatHistoryStore(
+        db_path=os.environ.get("MK_CHAT_DB", ":memory:")
+    )
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -707,6 +718,27 @@ def _chat_response_from_result(result: Any) -> ChatResponse:
     )
 
 
+async def _persist_exchange(session_id: Optional[str], user_content: str, result: Any) -> None:
+    """Best-effort persistence of a user/assistant exchange.
+
+    Never raises: history is a convenience and must not break a chat response.
+    """
+    if not session_id or _chat_history is None:
+        return
+    try:
+        await _chat_history.append(session_id, "user", user_content, ok=True)
+        await _chat_history.append(
+            session_id,
+            "assistant",
+            result.content,
+            ok=result.ok,
+            failure_type=result.failure_type,
+            actions=result.actions or None,
+        )
+    except Exception as exc:  # noqa: BLE001 - persistence is best-effort
+        logger.warning("chat history persistence failed: %s", exc)
+
+
 def _register_chat_routes(app: FastAPI) -> None:
     """Chat routes: send message (HTTP), context suggestions, history."""
 
@@ -731,6 +763,7 @@ def _register_chat_routes(app: FastAPI) -> None:
             result = await wrapper.chat(payload)
         except InputValidationError as exc:
             raise HTTPException(status_code=422, detail=exc.detail)
+        await _persist_exchange(msg.session_id, msg.content, result)
         return _chat_response_from_result(result)
 
     @app.get("/api/v1/chat/suggestions", dependencies=[Depends(require_auth)])
@@ -748,8 +781,23 @@ def _register_chat_routes(app: FastAPI) -> None:
         )
 
     @app.get("/api/v1/chat/history", dependencies=[Depends(require_auth)])
-    async def chat_history():
-        """Get chat history."""
+    async def chat_history(
+        session_id: Optional[str] = Query(None, description="Session to load history for"),
+    ):
+        """Get chat history.
+
+        Prefers the persistent, session-keyed store when a ``session_id`` is
+        supplied; otherwise falls back to the engine's in-memory conversation.
+        """
+        if session_id and _chat_history is not None:
+            try:
+                stored = await _chat_history.get_messages(session_id, limit=50)
+            except Exception as exc:  # noqa: BLE001 - history is best-effort
+                logger.warning("chat history read failed: %s", exc)
+                stored = []
+            if stored:
+                return {"messages": stored}
+
         if _mk_engine and hasattr(_mk_engine, "conversation"):
             messages = []
             for msg in _mk_engine.conversation.messages[-50:]:
@@ -1929,6 +1977,8 @@ def _register_websocket(app: FastAPI) -> None:
                             }
                         )
                         continue
+
+                    await _persist_exchange(msg.get("session_id"), content, result)
 
                     await ws.send_json(
                         {

@@ -8,9 +8,24 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from mk.web import app as web_app
 from mk.web.app import create_app
 
 TEST_PIN = "1234"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _close_chat_history():
+    """Close the persistent chat-history store after each test.
+
+    The store keeps a long-lived (non-daemon) aiosqlite connection open on
+    first use; closing it here prevents connection threads from leaking and
+    keeps the test process able to exit cleanly.
+    """
+    yield
+    store = getattr(web_app, "_chat_history", None)
+    if store is not None:
+        await store.close()
 
 
 @pytest.fixture
