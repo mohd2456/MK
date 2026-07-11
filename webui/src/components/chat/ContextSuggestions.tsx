@@ -2,101 +2,98 @@
  * ContextSuggestions Component
  * =============================
  * Page-aware suggestion chips at the bottom of the chat panel.
- * Changes based on which page the user is viewing.
+ *
+ * The suggestions are fetched from the backend `GET /api/v1/chat/suggestions`
+ * endpoint (via {@link useSuggestions}), keyed on the current route. The
+ * backend (`mk.wrapper.context`) is the single source of truth, so the chips
+ * always reflect what the assistant can actually do on the current screen.
+ *
+ * Loading, empty, and error states are all handled gracefully so the chat
+ * panel never breaks when the backend is slow or unavailable.
  */
 
 import { useLocation } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
+import { useSuggestions } from "@/hooks/useApi";
+import { LoadingState } from "@/components/LoadingState";
 import { cn } from "@/lib/utils";
 
 interface ContextSuggestionsProps {
+  /** Called with the suggestion's prompt text when a chip is clicked. */
   onSuggestionClick: (text: string) => void;
+  /** Max number of chips to display (defaults to 3 to fit the panel). */
+  limit?: number;
 }
 
-const suggestions: Record<string, string[]> = {
-  "/": [
-    "Show me pool health",
-    "Start a backup now",
-    "Any alerts I should know about?",
-    "How's my system doing?",
-  ],
-  "/storage": [
-    "Show disk temperatures",
-    "Create a snapshot of tank",
-    "Which disks need attention?",
-    "How much space is left?",
-  ],
-  "/apps": [
-    "Which containers are using the most RAM?",
-    "Restart the plex container",
-    "Show me stopped containers",
-    "Deploy a new stack",
-  ],
-  "/network": [
-    "Show active WireGuard peers",
-    "Any firewall blocks today?",
-    "Check reverse proxy status",
-    "What's my external IP?",
-  ],
-  "/protection": [
-    "When was the last backup?",
-    "Run a scrub on tank",
-    "Show replication lag",
-    "Any failed backup jobs?",
-  ],
-  "/media": [
-    "What's in the drive?",
-    "Show recent rips",
-    "How big is my library?",
-    "Start ripping the disc",
-  ],
-  "/media-manager": [
-    "What's in the drop queue?",
-    "Process all pending drops now",
-    "Show failed items",
-    "Trigger Jellyfin library scan",
-  ],
-  "/system": [
-    "What services are running?",
-    "Any updates available?",
-    "Show system uptime",
-    "Check UPS status",
-  ],
-};
-
-export function ContextSuggestions({ onSuggestionClick }: ContextSuggestionsProps) {
+export function ContextSuggestions({ onSuggestionClick, limit = 3 }: ContextSuggestionsProps) {
   const location = useLocation();
+  // Request a few extra so `limit` slicing below still has options if the
+  // backend returns fewer for some routes.
+  const { data, error, isLoading } = useSuggestions(location.pathname, Math.max(limit, 4));
 
-  // Match the current page to get relevant suggestions
-  const pagePath = Object.keys(suggestions).find((path) => {
-    if (path === "/") return location.pathname === "/";
-    return location.pathname.startsWith(path);
-  }) ?? "/";
+  const contextLabel = data?.context_label ?? "Assistant";
+  const suggestions = data?.suggestions ?? [];
 
-  const pageSuggestions = suggestions[pagePath] ?? suggestions["/"];
-  const contextLabel = pagePath === "/" ? "Dashboard" : pagePath.slice(1).charAt(0).toUpperCase() + pagePath.slice(2);
+  // Error: surface a quiet, non-blocking message rather than breaking the UI.
+  if (error) {
+    return (
+      <div
+        className="px-3 py-2 border-t border-mk-border bg-mk-surface/50"
+        role="status"
+      >
+        <p className="flex items-center gap-1.5 text-[10px] text-mk-text-muted">
+          <AlertTriangle size={11} className="text-mk-warning" aria-hidden="true" />
+          Suggestions unavailable right now.
+        </p>
+      </div>
+    );
+  }
+
+  // Loading: compact inline skeleton, keeps the panel height stable.
+  if (isLoading) {
+    return (
+      <div className="px-3 py-2 border-t border-mk-border bg-mk-surface/50">
+        <p className="text-[10px] text-mk-text-muted mb-1.5">Loading suggestions…</p>
+        <LoadingState variant="inline" className="p-0" />
+      </div>
+    );
+  }
+
+  // Empty: nothing to suggest for this page — render nothing so the panel
+  // stays clean instead of showing an empty container.
+  if (suggestions.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="px-3 py-2 border-t border-mk-border bg-mk-surface/50">
+    <nav
+      aria-label={`Suggested actions for ${contextLabel}`}
+      className="px-3 py-2 border-t border-mk-border bg-mk-surface/50"
+    >
       <p className="text-[10px] text-mk-text-muted mb-1.5">
         Context: <span className="text-mk-text-secondary">{contextLabel}</span>
       </p>
       <div className="flex flex-wrap gap-1">
-        {pageSuggestions.slice(0, 3).map((suggestion) => (
+        {suggestions.slice(0, limit).map((suggestion) => (
           <button
-            key={suggestion}
-            onClick={() => onSuggestionClick(suggestion)}
+            key={suggestion.id}
+            type="button"
+            onClick={() => onSuggestionClick(suggestion.prompt)}
+            title={suggestion.prompt}
+            aria-label={`Ask: ${suggestion.prompt}`}
             className={cn(
               "text-[11px] px-2 py-1 rounded-full",
               "bg-mk-elevated border border-mk-border",
               "text-mk-text-muted hover:text-mk-accent hover:border-mk-accent/30",
+              "focus:outline-none focus-visible:ring-1 focus-visible:ring-mk-accent",
               "transition-all duration-[150ms]",
               "truncate max-w-full"
             )}
           >
-            &ldquo;{suggestion}&rdquo;
+            {suggestion.label}
           </button>
         ))}
       </div>
-    </div>
+    </nav>
   );
 }

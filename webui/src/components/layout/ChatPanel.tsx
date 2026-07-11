@@ -11,8 +11,11 @@
  */
 
 import { useRef, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { Minus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { post, ApiError } from "@/lib/api";
+import type { ChatMessageResponse } from "@/types/chat";
 import { useUIStore } from "@/stores/uiStore";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ import { ContextSuggestions } from "@/components/chat/ContextSuggestions";
 export function ChatPanel() {
   const { chatOpen, setChatOpen } = useUIStore();
   const { messages, isTyping, addUserMessage, setTyping, addAssistantMessage } = useChatStore();
+  const location = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom on new messages
@@ -48,39 +52,53 @@ export function ChatPanel() {
 
   const handleSend = useCallback(
     async (content: string) => {
-      const msgId = addUserMessage(content);
+      addUserMessage(content);
       setTyping(true);
 
-      // Call real API endpoint
+      // Route through the wired backend endpoint, always including the current
+      // page as context so answers and suggestions are context-aware.
       try {
-        const response = await fetch("/api/v1/chat/message", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ content, context: {} }),
+        const data = await post<ChatMessageResponse>("/chat/message", {
+          content,
+          context: { path: location.pathname },
         });
-        const data = await response.json();
         setTyping(false);
+        // The wrapper never throws for AI/engine problems — it returns
+        // `ok: false` with a safe fallback message and a `failure_type`. We
+        // render that gracefully instead of breaking the conversation.
         addAssistantMessage(
           crypto.randomUUID(),
           data.content || "No response",
-          data.actions || []
+          data.actions ?? [],
+          {
+            ok: data.ok,
+            failureType: data.failure_type,
+            degraded: data.degraded,
+          }
         );
-      } catch {
-        // Fallback to simulated if backend unavailable
-        setTimeout(() => {
-          setTyping(false);
+      } catch (err) {
+        setTyping(false);
+        if (err instanceof ApiError) {
+          // A 4xx/5xx (e.g. invalid input or auth) — show a clear, non-breaking
+          // failure bubble rather than a silent drop.
+          addAssistantMessage(
+            crypto.randomUUID(),
+            "I couldn't process that message. Please try rephrasing it.",
+            [],
+            { ok: false, failureType: "engine_error" }
+          );
+        } else {
+          // Network/offline: fall back to a simulated response so the demo
+          // experience keeps working without a backend.
           addAssistantMessage(
             crypto.randomUUID(),
             getSimulatedResponse(content),
             getSimulatedActions(content)
           );
-        }, 800);
+        }
       }
-
-      void msgId;
     },
-    [addUserMessage, setTyping, addAssistantMessage]
+    [addUserMessage, setTyping, addAssistantMessage, location.pathname]
   );
 
   const handleSuggestionClick = useCallback(

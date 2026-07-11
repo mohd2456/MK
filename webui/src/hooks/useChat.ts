@@ -10,7 +10,7 @@ import { useEffect, useCallback } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { useChatStore } from "@/stores/chatStore";
 import type { WSMessage } from "@/lib/ws";
-import type { ChatContext } from "@/types/chat";
+import type { ChatContext, AIFailureType } from "@/types/chat";
 import { uuid } from "@/lib/utils";
 
 interface UseChatReturn {
@@ -31,15 +31,25 @@ export function useChat(): UseChatReturn {
     const unsub = onMessage((msg: WSMessage) => {
       switch (msg.type) {
         case "chat_response": {
-          const { id, reply_to, content, actions, done } = msg as WSMessage & {
-            id: string;
-            reply_to: string;
-            content: string;
-            actions?: Array<{ label: string; action: string; target?: string }>;
-            done: boolean;
-          };
+          const { id, reply_to, content, actions, done, ok, failure_type, degraded } =
+            msg as WSMessage & {
+              id: string;
+              reply_to: string;
+              content: string;
+              actions?: Array<{ label: string; action: string; target?: string }>;
+              done: boolean;
+              ok?: boolean;
+              failure_type?: AIFailureType;
+              degraded?: boolean;
+            };
           if (done) {
-            addAssistantMessage(id, content, actions as never);
+            // Thread AI-failure metadata through so the bubble can render a
+            // graceful failure/degraded state instead of a plain reply.
+            addAssistantMessage(id, content, actions as never, {
+              ok: ok ?? true,
+              failureType: failure_type ?? null,
+              degraded: degraded ?? false,
+            });
           } else {
             startStream(id, reply_to);
           }
@@ -78,7 +88,8 @@ export function useChat(): UseChatReturn {
         id: uuid(),
         reply_to: messageId,
         content,
-        context: context ?? { page: window.location.pathname },
+        // `path` is the field the backend keys page-context off of.
+        context: context ?? { path: window.location.pathname },
       });
     },
     [send, addUserMessage]
