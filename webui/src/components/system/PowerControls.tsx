@@ -58,16 +58,18 @@ export function PowerControls({ uptime, onReboot, onShutdown }: PowerControlsPro
               variant="secondary"
               size="lg"
               onClick={() => setConfirmAction("reboot")}
+              aria-label="Reboot system"
             >
-              <RotateCcw size={16} />
+              <RotateCcw size={16} aria-hidden="true" />
               Reboot
             </Button>
             <Button
               variant="destructive"
               size="lg"
               onClick={() => setConfirmAction("shutdown")}
+              aria-label="Shutdown system"
             >
-              <Power size={16} />
+              <Power size={16} aria-hidden="true" />
               Shutdown
             </Button>
           </div>

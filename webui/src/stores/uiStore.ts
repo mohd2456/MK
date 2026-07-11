@@ -31,12 +31,14 @@ export const useUIStore = create<UIState>()(
 
       setTheme: (theme) => {
         document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.classList.toggle("light", theme === "light");
         set({ theme });
       },
 
       toggleTheme: () => {
         const newTheme = get().theme === "dark" ? "light" : "dark";
         document.documentElement.classList.toggle("dark", newTheme === "dark");
+        document.documentElement.classList.toggle("light", newTheme === "light");
         set({ theme: newTheme });
       },
 

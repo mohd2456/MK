@@ -247,3 +247,69 @@ button, [role="button"] {
     min-width: 600px;
   }
 }
+
+/* ─── Light Theme Overrides ─── */
+
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f8f9fc;
+  color: #1a1a2e;
+}
+
+html.light {
+  --color-mk-base: #f8f9fc;
+  --color-mk-surface: #ffffff;
+  --color-mk-elevated: #f0f1f5;
+  --color-mk-overlay: #ffffff;
+  --color-mk-border: #e2e4ea;
+  --color-mk-border-strong: #c8cad2;
+  --color-mk-text-primary: #1a1a2e;
+  --color-mk-text-secondary: #4a4a62;
+  --color-mk-text-muted: #8a8aa2;
+  --color-mk-accent: #0099cc;
+  --color-mk-accent-hover: #007aa3;
+  --color-mk-accent-muted: #0099cc20;
+  --color-mk-success: #00c853;
+  --color-mk-warning: #ff8f00;
+  --color-mk-error: #d32f2f;
+  --color-mk-info: #1565c0;
+  --color-mk-chat-user: #e8f4fd;
+  --color-mk-chat-mk: #f0f4f8;
+  --color-mk-chat-border: #d0dce8;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-accent: 0 0 20px rgba(0, 153, 204, 0.1);
+}
+
+/* ─── Skip to Content Link (Accessibility) ─── */
+
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 9999;
+}
+
+.skip-to-content:focus {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  height: auto;
+  padding: 8px 16px;
+  background: var(--color-mk-accent);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  outline: none;
+  z-index: 9999;
+}

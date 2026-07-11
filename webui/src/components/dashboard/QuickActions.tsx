@@ -81,11 +81,12 @@ export function QuickActions() {
             onClick={action.onClick}
             disabled={loading === action.label}
             className="justify-start w-full"
+            aria-label={action.label}
           >
             {loading === action.label ? (
-              <Loader2 size={14} className="animate-spin" />
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
             ) : (
-              action.icon
+              <span aria-hidden="true">{action.icon}</span>
             )}
             <span>{action.label}</span>
           </Button>

@@ -24,10 +24,13 @@ import { MobileNav } from "./MobileNav";
 export function MainLayout() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-mk-base">
+      <a href="#main-content" className="skip-to-content">
+        Skip to content
+      </a>
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         {/* Main content area */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden">
           <div className="max-w-[1400px] mx-auto p-4 sm:p-6 pb-[calc(env(safe-area-inset-bottom)+16px)]">
             <Outlet />
           </div>

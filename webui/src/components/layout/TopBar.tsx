@@ -86,11 +86,12 @@ export function TopBar() {
       </Link>
 
       {/* Navigation links - hidden on mobile */}
-      <nav className="hidden lg:flex items-center gap-0.5 flex-1">
+      <nav aria-label="Main navigation" className="hidden lg:flex items-center gap-0.5 flex-1">
         {navItems.map(({ label, path, icon: Icon }) => (
           <Link
             key={path}
             to={path}
+            aria-current={isActive(path) ? "page" : undefined}
             className={cn(
               "relative flex items-center gap-1.5 px-3 py-2 rounded-[4px] text-sm font-medium",
               "transition-colors duration-[150ms]",
@@ -99,10 +100,10 @@ export function TopBar() {
                 : "text-mk-text-muted hover:text-mk-text-primary hover:bg-mk-elevated"
             )}
           >
-            <Icon size={16} />
+            <Icon size={16} aria-hidden="true" />
             <span>{label}</span>
             {isActive(path) && (
-              <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-mk-accent rounded-full" />
+              <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-mk-accent rounded-full" aria-hidden="true" />
             )}
           </Link>
         ))}
