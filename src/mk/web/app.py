@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
+from mk.wrapper import ChatRequest, InputValidationError, MKWrapper, PageContext
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +97,24 @@ class LoginResponse(BaseModel):
 class ChatMessage(BaseModel):
     content: str
     context: Dict[str, Any] = Field(default_factory=dict)
+    expects_json: bool = False
 
 
 class ChatResponse(BaseModel):
     content: str
     actions: List[Dict[str, Any]] = Field(default_factory=list)
+    suggestions: List[Dict[str, Any]] = Field(default_factory=list)
+    ok: bool = True
+    degraded: bool = False
+    llm_available: bool = False
+    failure_type: Optional[str] = None
+    tokens_used: int = 0
+
+
+class SuggestionsResponse(BaseModel):
+    path: str
+    context_label: str
+    suggestions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class DashboardSummary(BaseModel):
@@ -129,6 +143,7 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 _login_attempts: Dict[str, List[float]] = {}
 _pin_hash: Optional[str] = None
 _mk_engine: Optional[Any] = None
+_mk_wrapper: Optional[MKWrapper] = None
 _start_time: float = time.time()
 
 SESSION_DURATION = 7 * 24 * 3600  # 7 days
@@ -310,9 +325,13 @@ def create_app(
     Returns:
         Configured FastAPI app.
     """
-    global _mk_engine, _pin_hash
+    global _mk_engine, _mk_wrapper, _pin_hash
 
     _mk_engine = mk_engine
+    # The wrapper is the single, robust integration point to the MK engine.
+    # When no engine is supplied (e.g. the uvicorn factory path), the wrapper
+    # lazily builds a safe default engine on first chat use.
+    _mk_wrapper = MKWrapper(engine=mk_engine)
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -652,18 +671,59 @@ def _register_chat_routes(app: FastAPI) -> None:
     """Chat routes: send message (HTTP fallback)."""
 
     @app.post("/api/v1/chat/message", dependencies=[Depends(require_auth)])
-    async def chat_message(msg: ChatMessage):
-        """Send a chat message and get a response."""
-        if _mk_engine:
-            try:
-                response = await _mk_engine.process(msg.content)
-                return ChatResponse(
-                    content=response.final_response,
-                    actions=[],
-                )
-            except Exception as e:
-                return ChatResponse(content=f"Error: {str(e)}")
-        return ChatResponse(content="MK engine not initialized")
+    async def chat_message(msg: ChatMessage, request: Request):
+        """Send a chat message and get a context-aware response.
+
+        Routes through the MK wrapper, which handles input validation,
+        timeouts, AI-failure detection, and safe fallbacks. The wrapper never
+        raises for AI/engine problems — those are returned as a non-``ok``
+        response with a user-facing message.
+        """
+        request_id = getattr(request.state, "request_id", None)
+        try:
+            chat_request = ChatRequest(
+                content=msg.content,
+                context=PageContext.from_raw(msg.context),
+                expects_json=msg.expects_json,
+            )
+        except InputValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.message) from exc
+        except Exception as exc:
+            # Pydantic validation error on the ChatRequest contract.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        result = await _mk_wrapper.chat(chat_request, request_id=request_id)
+        return ChatResponse(
+            content=result.content,
+            # ``actions`` are engine-produced inline actions (none yet);
+            # ``suggestions`` are context-aware follow-up prompts.
+            actions=[],
+            suggestions=[a.model_dump() for a in result.actions],
+            ok=result.ok,
+            degraded=result.degraded,
+            llm_available=result.llm_available,
+            failure_type=result.failure.type.value if result.failure else None,
+            tokens_used=result.tokens_used,
+        )
+
+    @app.get(
+        "/api/v1/chat/suggestions",
+        dependencies=[Depends(require_auth)],
+        response_model=SuggestionsResponse,
+    )
+    async def chat_suggestions(path: str = Query("/"), limit: int = Query(4, ge=0, le=12)):
+        """Return context-aware suggested actions for the given page/screen.
+
+        The web UI calls this so suggestion chips stay in sync with the
+        assistant's actual capabilities instead of being hard-coded twice.
+        """
+        context = PageContext(path=path)
+        actions = _mk_wrapper.suggestions(context, limit=limit)
+        return SuggestionsResponse(
+            path=context.path,
+            context_label=_mk_wrapper.context_label(context),
+            suggestions=[a.model_dump() for a in actions],
+        )
 
     @app.get("/api/v1/chat/history", dependencies=[Depends(require_auth)])
     async def chat_history():
@@ -1823,14 +1883,29 @@ def _register_websocket(app: FastAPI) -> None:
                     # Send typing indicator
                     await ws.send_json({"type": "typing_indicator", "active": True})
 
-                    # Process through MK engine
-                    response_text = "MK engine not available"
-                    if _mk_engine:
-                        try:
-                            result = await _mk_engine.process(content)
-                            response_text = result.final_response
-                        except Exception as e:
-                            response_text = f"Error: {str(e)}"
+                    # Process through the MK wrapper (validation + AI-failure
+                    # handling + safe fallbacks). Invalid input is reported
+                    # back over the socket instead of crashing the connection.
+                    try:
+                        chat_request = ChatRequest(
+                            content=content,
+                            context=PageContext.from_raw(msg.get("context")),
+                        )
+                    except (InputValidationError, Exception) as exc:  # noqa: BLE001
+                        await ws.send_json(
+                            {
+                                "type": "chat_response",
+                                "id": secrets.token_hex(8),
+                                "reply_to": msg.get("id", ""),
+                                "content": f"I couldn't read that message: {exc}",
+                                "actions": [],
+                                "ok": False,
+                                "done": True,
+                            }
+                        )
+                        continue
+
+                    result = await _mk_wrapper.chat(chat_request)
 
                     # Send response
                     await ws.send_json(
@@ -1838,8 +1913,12 @@ def _register_websocket(app: FastAPI) -> None:
                             "type": "chat_response",
                             "id": secrets.token_hex(8),
                             "reply_to": msg.get("id", ""),
-                            "content": response_text,
+                            "content": result.content,
                             "actions": [],
+                            "suggestions": [a.model_dump() for a in result.actions],
+                            "ok": result.ok,
+                            "degraded": result.degraded,
+                            "failure_type": (result.failure.type.value if result.failure else None),
                             "done": True,
                         }
                     )
