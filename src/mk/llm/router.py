@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from mk.llm.base import LLMProvider, ProviderError
+from mk.llm.compression import ContextCompressor
 from mk.llm.models import (
     LLMRequest,
     LLMResponse,
@@ -34,11 +35,18 @@ class LLMRouter:
     Supports automatic fallback when a provider fails.
     """
 
-    def __init__(self) -> None:
-        """Initialize the router with empty provider registry."""
+    def __init__(self, compressor: Optional[ContextCompressor] = None) -> None:
+        """Initialize the router with empty provider registry.
+
+        Args:
+            compressor: Optional context compressor. If omitted, one is built
+                from the environment (disabled unless ``MK_COMPRESSION`` is set),
+                so default behavior is unchanged.
+        """
         self._providers: Dict[str, LLMProvider] = {}
         self._status: Dict[str, ProviderStatus] = {}
         self._fallback_chain: List[str] = []
+        self._compressor = compressor or ContextCompressor.from_env()
 
     def register_provider(self, provider: LLMProvider) -> None:
         """Register a provider with the router.
@@ -217,6 +225,15 @@ class LLMRouter:
                 provider="router",
                 retryable=False,
             )
+
+        # Optionally compress the prompt before dispatch. This is a no-op unless
+        # compression is enabled AND headroom is installed; it never raises.
+        if self._compressor.active:
+            compressed, stats = self._compressor.compress_messages(
+                request.messages, model=request.model_override
+            )
+            if stats.applied:
+                request = request.model_copy(update={"messages": compressed})
 
         last_error: Optional[Exception] = None
         for name in candidates:
