@@ -33,9 +33,11 @@ const FALLBACK_SUGGESTIONS: Record<string, string[]> = {
 };
 
 function fallbackFor(pathname: string): string[] {
+  // Segment-based match: "/apps/x" matches "/apps", but "/media-manager"
+  // must not match "/media". Mirrors the backend (src/mk/wrapper/context.py).
   const key =
     Object.keys(FALLBACK_SUGGESTIONS).find((path) =>
-      path === "/" ? pathname === "/" : pathname.startsWith(path)
+      path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(path + "/")
     ) ?? "/";
   return FALLBACK_SUGGESTIONS[key] ?? FALLBACK_SUGGESTIONS["/"];
 }
