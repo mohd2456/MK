@@ -63,6 +63,10 @@ MK is a personal AI operating system that runs on minimal hardware (a MacBook Pr
 - **Automatic fallback**: If one provider fails, seamlessly switches to another
 - **Token management**: Tracks usage, enforces budgets, optimizes context windows
 - **Prompt compilation**: Assembles optimized prompts from system state and context
+- **Context compression** (optional): Routes prompts through [Headroom](https://github.com/chopratejas/headroom)
+  to crush large JSON tool outputs, logs, and code 40–90% before they reach the model.
+  Off by default; enable with `uv sync --extra compression` then `MK_COMPRESSION=1`.
+  Transparent no-op when the package isn't installed. See `docs/ARCHITECTURE.md`.
 
 ### Three-Tier Memory System
 

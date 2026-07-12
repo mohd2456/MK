@@ -229,6 +229,25 @@ its existing two-track design:
 policy engine — all transparent to the wrapper thanks to the shared `process`
 interface.
 
+### Context compression (`src/mk/llm/compression.py`)
+
+The homelab agent loop feeds large, data-heavy content to the model — JSON tool
+outputs (container lists, ZFS pool stats), logs, and config. `ContextCompressor`
+optionally routes that prompt through [Headroom](https://github.com/chopratejas/headroom)
+(`headroom-ai`) just before the `LLMRouter` dispatches it, shrinking JSON/log/code
+40–90% while preserving meaning. It is:
+
+- **Optional** — `headroom` is an extra (`uv sync --extra compression`); if not
+  installed, the layer is a transparent no-op.
+- **Opt-in** — off unless `MK_COMPRESSION=1` (model via `MK_COMPRESSION_MODEL`).
+- **Safe** — every failure is caught and the original messages are sent
+  unchanged; a shape mismatch skips compression rather than risk a malformed
+  conversation. Token savings are logged and metered
+  (`mk_compression_tokens_saved`, `mk_compression_total`).
+
+The router calls it once per request (`LLMRouter.complete`), so all providers in
+the fallback chain receive the same compressed prompt.
+
 ---
 
 ## 7. Testing strategy
@@ -247,6 +266,10 @@ Backend (pytest):
   idempotent close) and end-to-end persistence via the message/history
   endpoints. A shared autouse fixture closes the store after each test so no
   connection threads leak.
+- **Compression tests** (`tests/llm/test_compression.py`) inject a fake
+  `headroom` module to verify the no-op, unavailable, applied, exception, and
+  shape-mismatch paths, plus router integration when enabled/disabled — so no
+  real optional dependency is needed to test the behavior.
 
 Frontend (vitest):
 
