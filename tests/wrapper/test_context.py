@@ -48,3 +48,29 @@ def test_longest_prefix_wins():
     actions = get_suggestions(PageContext(page="/storage/pools"))
     categories = {a.category for a in actions}
     assert "storage" in categories
+
+
+def test_sibling_route_does_not_false_match_prefix():
+    """Regression: '/media-manager' must NOT inherit '/media' suggestions.
+
+    A raw string-prefix check would wrongly match it; matching must be on
+    path segments. Such sibling routes fall back to the generic set.
+    """
+    actions = get_suggestions(PageContext(page="/media-manager"))
+    ids = {a.id for a in actions}
+    assert "media.library" not in ids
+    assert "default.status" in ids  # generic fallback
+
+
+def test_sibling_route_networking_not_network():
+    actions = get_suggestions(PageContext(page="/networking"))
+    ids = {a.id for a in actions}
+    assert "net.interfaces" not in ids
+    assert "default.status" in ids
+
+
+def test_nested_route_still_matches_parent():
+    # The valid nested case must keep working after the segment-match fix.
+    actions = get_suggestions(PageContext(page="/media/library/2024"))
+    ids = {a.id for a in actions}
+    assert "media.library" in ids

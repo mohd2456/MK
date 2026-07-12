@@ -261,17 +261,15 @@ class MKWrapper:
         metrics.increment("mk_wrapper_chat_total", labels={"outcome": failure.value})
         metrics.increment("mk_wrapper_ai_failures_total", labels={"type": failure.value})
 
-        log_extra = {"failure_type": failure.value, "detail": detail}
-        if raw_preview:
-            log_extra["raw_preview"] = raw_preview
         # NO_ENGINE / degraded modes are expected states, not errors.
         if failure in (AIFailureType.NO_ENGINE,):
             logger.info("wrapper.chat degraded failure=%s detail=%s", failure.value, detail)
         else:
             logger.error(
-                "wrapper.chat failure=%s detail=%s",
+                "wrapper.chat failure=%s detail=%s preview=%s",
                 failure.value,
                 detail,
+                raw_preview or "",
                 exc_info=log_exc if log_exc is not None else False,
             )
 

@@ -216,11 +216,12 @@ def get_suggestions(context: PageContext) -> List[SuggestedAction]:
     """
     page = context.page or "/"
 
+    # Match on path segments only: "/apps/containers" matches "/apps", but
+    # "/media-manager" must NOT match "/media" (a raw string-prefix check would
+    # wrongly match it). Longest matching prefix wins.
     best_prefix = ""
     for prefix in _PAGE_ACTIONS:
-        if (page == prefix or page.startswith(prefix + "/") or page.startswith(prefix)) and len(
-            prefix
-        ) > len(best_prefix):
+        if (page == prefix or page.startswith(prefix + "/")) and len(prefix) > len(best_prefix):
             best_prefix = prefix
 
     if best_prefix:

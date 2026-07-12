@@ -1941,7 +1941,15 @@ def _register_websocket(app: FastAPI) -> None:
         try:
             while True:
                 data = await ws.receive_text()
-                msg = json.loads(data)
+                # A single malformed frame must not tear down the whole socket.
+                try:
+                    msg = json.loads(data)
+                except (json.JSONDecodeError, ValueError):
+                    await ws.send_json({"type": "error", "message": "Invalid JSON"})
+                    continue
+                if not isinstance(msg, dict):
+                    await ws.send_json({"type": "error", "message": "Invalid message format"})
+                    continue
 
                 if msg.get("type") == "ping":
                     await ws.send_json({"type": "pong", "server_time": time.time()})
@@ -1963,6 +1971,7 @@ def _register_websocket(app: FastAPI) -> None:
                     try:
                         result = await wrapper.chat(payload)
                     except InputValidationError as exc:
+                        await ws.send_json({"type": "typing_indicator", "active": False})
                         await ws.send_json(
                             {
                                 "type": "chat_response",
@@ -1971,6 +1980,7 @@ def _register_websocket(app: FastAPI) -> None:
                                 "content": f"Invalid message: {exc.detail}",
                                 "ok": False,
                                 "failure_type": "invalid_input",
+                                "retryable": False,
                                 "actions": [],
                                 "suggestions": [],
                                 "done": True,
@@ -1980,6 +1990,8 @@ def _register_websocket(app: FastAPI) -> None:
 
                     await _persist_exchange(msg.get("session_id"), content, result)
 
+                    # Clear the typing indicator before delivering the reply.
+                    await ws.send_json({"type": "typing_indicator", "active": False})
                     await ws.send_json(
                         {
                             "type": "chat_response",
@@ -1988,6 +2000,9 @@ def _register_websocket(app: FastAPI) -> None:
                             "content": result.content,
                             "ok": result.ok,
                             "failure_type": result.failure_type,
+                            "retryable": bool(result.failure.retryable)
+                            if result.failure
+                            else False,
                             "degraded": result.degraded,
                             "provider": result.provider,
                             "actions": result.actions,
