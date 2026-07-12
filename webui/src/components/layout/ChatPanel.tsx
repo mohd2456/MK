@@ -11,8 +11,9 @@
  */
 
 import { useRef, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { Minus, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, uuid } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/button";
@@ -21,11 +22,16 @@ import { ChatBubble } from "@/components/chat/ChatBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { ContextSuggestions } from "@/components/chat/ContextSuggestions";
+import { sendChatMessage, fetchChatHistory } from "@/lib/chat";
+import type { ChatContext, ChatMessage } from "@/types/chat";
 
 export function ChatPanel() {
   const { chatOpen, setChatOpen } = useUIStore();
-  const { messages, isTyping, addUserMessage, setTyping, addAssistantMessage } = useChatStore();
+  const { messages, isTyping, addUserMessage, setTyping, addAssistantMessage, setMessages } =
+    useChatStore();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const historyLoaded = useRef(false);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -33,6 +39,35 @@ export function ChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  // Load persisted history once, on first mount, if the panel is empty.
+  useEffect(() => {
+    if (historyLoaded.current) return;
+    historyLoaded.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const history = await fetchChatHistory();
+        if (cancelled || history.messages.length === 0) return;
+        if (useChatStore.getState().messages.length > 0) return;
+        const restored: ChatMessage[] = history.messages.map((m) => ({
+          id: uuid(),
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          actions: m.actions,
+          ok: m.ok ?? true,
+          failureType: m.failure_type ?? null,
+        }));
+        setMessages(restored);
+      } catch {
+        // History is a convenience; ignore failures and start fresh.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setMessages]);
 
   // Keyboard shortcut: Ctrl+/ to toggle
   useEffect(() => {
@@ -46,41 +81,49 @@ export function ChatPanel() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [chatOpen, setChatOpen]);
 
-  const handleSend = useCallback(
-    async (content: string) => {
-      const msgId = addUserMessage(content);
+  /**
+   * Send a prompt to the assistant and render the response.
+   * `addUser` controls whether a user bubble is added (false on retry, so the
+   * failed prompt isn't duplicated).
+   */
+  const runAssistant = useCallback(
+    async (content: string, addUser: boolean) => {
+      if (addUser) addUserMessage(content);
       setTyping(true);
 
-      // Call real API endpoint
+      const context: ChatContext = { page: location.pathname };
+
       try {
-        const response = await fetch("/api/v1/chat/message", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ content, context: {} }),
+        const data = await sendChatMessage(content, context);
+        setTyping(false);
+        addAssistantMessage(uuid(), data.content || "No response", data.actions ?? [], {
+          ok: data.ok,
+          failureType: data.failure_type,
+          retryable: data.retryable,
+          degraded: data.degraded,
+          provider: data.provider,
+          prompt: content,
         });
-        const data = await response.json();
+      } catch {
+        // Network/transport failure (backend unreachable, 5xx, etc.).
+        // Be honest about it rather than fabricating a response.
         setTyping(false);
         addAssistantMessage(
-          crypto.randomUUID(),
-          data.content || "No response",
-          data.actions || []
+          uuid(),
+          "I couldn't reach the server. Please check your connection and try again.",
+          [],
+          { ok: false, failureType: "engine_error", retryable: true, prompt: content }
         );
-      } catch {
-        // Fallback to simulated if backend unavailable
-        setTimeout(() => {
-          setTyping(false);
-          addAssistantMessage(
-            crypto.randomUUID(),
-            getSimulatedResponse(content),
-            getSimulatedActions(content)
-          );
-        }, 800);
       }
-
-      void msgId;
     },
-    [addUserMessage, setTyping, addAssistantMessage]
+    [addUserMessage, setTyping, addAssistantMessage, location.pathname]
+  );
+
+  const handleSend = useCallback((content: string) => runAssistant(content, true), [runAssistant]);
+
+  const handleRetry = useCallback(
+    (prompt: string) => runAssistant(prompt, false),
+    [runAssistant]
   );
 
   const handleSuggestionClick = useCallback(
@@ -151,7 +194,7 @@ export function ChatPanel() {
             </div>
           )}
           {messages.map((msg) => (
-            <ChatBubble key={msg.id} message={msg} />
+            <ChatBubble key={msg.id} message={msg} onRetry={handleRetry} />
           ))}
           {isTyping && <TypingIndicator />}
         </div>
@@ -164,55 +207,4 @@ export function ChatPanel() {
       <ContextSuggestions onSuggestionClick={handleSuggestionClick} />
     </aside>
   );
-}
-
-// ─── Simulated Responses (for demo without backend) ───
-
-function getSimulatedResponse(input: string): string {
-  const lower = input.toLowerCase();
-
-  if (lower.includes("pool") || lower.includes("storage") || lower.includes("health")) {
-    return "Your storage is looking great! The tank pool is at 75% capacity (36 TB / 48 TB) with RAIDZ2 protection. All disks are reporting SMART PASS. The fast pool (mirror) is at 40%. No scrub errors detected in the last run.";
-  }
-  if (lower.includes("backup")) {
-    return "Last backup completed 2 hours ago (daily-media job). All 4 backup jobs are on schedule. The weekly-full to offsite ran successfully on Sunday. Want me to start a manual backup now?";
-  }
-  if (lower.includes("alert") || lower.includes("attention")) {
-    return "You have 3 active alerts:\n\n1. Disk sda temperature hit 55C during the last scrub (resolved - now 38C)\n2. Tank pool is at 75% capacity - consider expanding\n3. A system update is available (linux-image 6.6.10)\n\nNothing critical right now.";
-  }
-  if (lower.includes("container") || lower.includes("ram") || lower.includes("docker")) {
-    return "Top containers by RAM usage:\n1. plex - 2.1 GB (media transcoding)\n2. sonarr - 512 MB\n3. radarr - 480 MB\n\nAll 12 containers are running. Total container RAM: 4.2 GB of 64 GB available.";
-  }
-  if (lower.includes("temperature") || lower.includes("temp") || lower.includes("disk")) {
-    return "Current disk temperatures:\n- sda: 38C (normal)\n- sdb: 40C (normal)\n- sdc: 42C (normal)\n- nvme0: 45C (normal)\n\nAll within safe operating range. sda peaked at 55C during Sunday's scrub, which is expected for extended I/O.";
-  }
-  if (lower.includes("system") || lower.includes("uptime") || lower.includes("doing")) {
-    return "System is running smoothly! Uptime: 47 days. CPU at 12% average, RAM at 50% (32/64 GB). Network is stable on both interfaces. No failed services. You're in good shape.";
-  }
-
-  return "I'm here to help manage your server. I can check on storage health, container status, backups, network configuration, or anything else you need. Just ask!";
-}
-
-function getSimulatedActions(input: string) {
-  const lower = input.toLowerCase();
-
-  if (lower.includes("backup")) {
-    return [
-      { label: "Start backup now", action: "api_call" as const, method: "POST" as const, endpoint: "/api/v1/protection/jobs/1/run" },
-      { label: "View backup history", action: "navigate" as const, target: "/protection" },
-    ];
-  }
-  if (lower.includes("pool") || lower.includes("storage")) {
-    return [
-      { label: "View pool details", action: "navigate" as const, target: "/storage" },
-      { label: "Create snapshot", action: "api_call" as const, method: "POST" as const, endpoint: "/api/v1/storage/snapshots" },
-    ];
-  }
-  if (lower.includes("alert")) {
-    return [
-      { label: "Dismiss all", action: "api_call" as const, method: "POST" as const, endpoint: "/api/v1/dashboard/dismiss" },
-      { label: "View system updates", action: "navigate" as const, target: "/system" },
-    ];
-  }
-  return undefined;
 }

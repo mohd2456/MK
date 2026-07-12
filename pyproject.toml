@@ -48,3 +48,9 @@ dev = [
     "pytest-asyncio>=0.21",
     "ruff>=0.1.0",
 ]
+# Context compression via Headroom (https://github.com/chopratejas/headroom).
+# Optional: enable at runtime with MK_COMPRESSION=1. Without it installed, the
+# compression layer is a transparent no-op.
+compression = [
+    "headroom-ai>=0.31.0",
+]

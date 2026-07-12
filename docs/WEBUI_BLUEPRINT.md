@@ -163,6 +163,12 @@ export default {
 - Has its own scroll, independent of main content
 - Context-aware: knows what page you are on, suggests relevant actions
 
+> **Status: implemented and wired to the backend.** The panel sends the current
+> page as context to `POST /api/v1/chat/message`, fetches page-aware chips from
+> `GET /api/v1/chat/suggestions`, restores history from
+> `GET /api/v1/chat/history?session_id=…`, and renders AI-failure states inline
+> (with Retry). See `docs/ARCHITECTURE.md` §5 for the integration details.
+
 ### Main Content
 
 - Fills remaining space (flex-1)

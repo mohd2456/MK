@@ -403,3 +403,23 @@ export function useAISettings() {
     { refreshInterval: DATA_REFRESH_INTERVAL }
   );
 }
+
+
+// ─── Chat: Context-Aware Suggestions ─────────────────────────────────
+
+import type { SuggestionsResponse } from "@/types/chat";
+import { suggestionsKey } from "@/lib/chat";
+
+/**
+ * Fetch context-aware chat suggestions for the current page/selection.
+ * Suggestions change rarely, so this uses a long dedupe window and does not
+ * poll. Returns `undefined` data while loading or on error; callers should
+ * fall back to a sensible static set so the UI is never empty.
+ */
+export function useChatSuggestions(page: string, selection?: string) {
+  return useSWR<SuggestionsResponse>(suggestionsKey(page, selection), fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60_000,
+    shouldRetryOnError: false,
+  });
+}

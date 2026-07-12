@@ -35,6 +35,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
+from mk.web.chat_history import ChatHistoryStore
+from mk.wrapper import InputValidationError, MKWrapper, PageContext
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +98,34 @@ class LoginResponse(BaseModel):
 class ChatMessage(BaseModel):
     content: str
     context: Dict[str, Any] = Field(default_factory=dict)
+    session_id: Optional[str] = None
+    expect_json: bool = False
+
+
+class SuggestedActionModel(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    command: str
+    category: str = "general"
+    icon: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
     content: str
     actions: List[Dict[str, Any]] = Field(default_factory=list)
+    ok: bool = True
+    failure_type: Optional[str] = None
+    retryable: bool = False
+    degraded: bool = False
+    provider: Optional[str] = None
+    suggestions: List[SuggestedActionModel] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+
+
+class SuggestionsResponse(BaseModel):
+    page: str
+    suggestions: List[SuggestedActionModel] = Field(default_factory=list)
 
 
 class DashboardSummary(BaseModel):
@@ -129,6 +154,8 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 _login_attempts: Dict[str, List[float]] = {}
 _pin_hash: Optional[str] = None
 _mk_engine: Optional[Any] = None
+_mk_wrapper: Optional[MKWrapper] = None
+_chat_history: Optional[ChatHistoryStore] = None
 _start_time: float = time.time()
 
 SESSION_DURATION = 7 * 24 * 3600  # 7 days
@@ -299,6 +326,7 @@ def create_app(
     mk_engine: Optional[Any] = None,
     pin: Optional[str] = None,
     static_dir: Optional[str] = None,
+    chat_history: Optional[ChatHistoryStore] = None,
 ) -> FastAPI:
     """Create the FastAPI application.
 
@@ -306,13 +334,28 @@ def create_app(
         mk_engine: The MKEngineV2 instance (for processing commands).
         pin: Override PIN (default: env MK_PIN or "1234").
         static_dir: Path to the built React frontend (webui/dist).
+        chat_history: Optional persistent chat-history store. If omitted, one
+            is created from ``MK_CHAT_DB`` (default in-memory for the process).
 
     Returns:
         Configured FastAPI app.
     """
-    global _mk_engine, _pin_hash
+    global _mk_engine, _mk_wrapper, _pin_hash, _chat_history
 
     _mk_engine = mk_engine
+    # The wrapper is the single, defensive integration point for all
+    # conversational paths (HTTP + WebSocket). It validates input, enforces a
+    # time budget, isolates engine failures, screens output for AI failures,
+    # and attaches context-aware suggestions. It is always constructed, even
+    # when no engine is wired in, so the API degrades gracefully instead of
+    # returning a raw "not initialized" stub.
+    _mk_wrapper = MKWrapper(engine=mk_engine)
+    # Persistent, session-keyed chat history. Defaults to an in-memory store
+    # so tests and no-config deployments work; set MK_CHAT_DB to a file path
+    # for durability across restarts.
+    _chat_history = chat_history or ChatHistoryStore(
+        db_path=os.environ.get("MK_CHAT_DB", ":memory:")
+    )
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -648,26 +691,113 @@ def _register_dashboard_routes(app: FastAPI) -> None:
         return {"events": []}
 
 
+def _build_wrapper() -> MKWrapper:
+    """Return the active wrapper, constructing a fallback if needed.
+
+    The wrapper is normally created in ``create_app``; this guards against any
+    import-order edge case so the chat path never dereferences ``None``.
+    """
+    global _mk_wrapper
+    if _mk_wrapper is None:
+        _mk_wrapper = MKWrapper(engine=_mk_engine)
+    return _mk_wrapper
+
+
+def _chat_response_from_result(result: Any) -> ChatResponse:
+    """Convert a wrapper ``ChatResult`` into the API ``ChatResponse`` envelope."""
+    return ChatResponse(
+        content=result.content,
+        actions=result.actions,
+        ok=result.ok,
+        failure_type=result.failure_type,
+        retryable=bool(result.failure.retryable) if result.failure else False,
+        degraded=result.degraded,
+        provider=result.provider,
+        suggestions=[SuggestedActionModel(**s.model_dump()) for s in result.suggestions],
+        elapsed_ms=round(result.elapsed_ms, 1),
+    )
+
+
+async def _persist_exchange(session_id: Optional[str], user_content: str, result: Any) -> None:
+    """Best-effort persistence of a user/assistant exchange.
+
+    Never raises: history is a convenience and must not break a chat response.
+    """
+    if not session_id or _chat_history is None:
+        return
+    try:
+        await _chat_history.append(session_id, "user", user_content, ok=True)
+        await _chat_history.append(
+            session_id,
+            "assistant",
+            result.content,
+            ok=result.ok,
+            failure_type=result.failure_type,
+            actions=result.actions or None,
+        )
+    except Exception as exc:  # noqa: BLE001 - persistence is best-effort
+        logger.warning("chat history persistence failed: %s", exc)
+
+
 def _register_chat_routes(app: FastAPI) -> None:
-    """Chat routes: send message (HTTP fallback)."""
+    """Chat routes: send message (HTTP), context suggestions, history."""
 
     @app.post("/api/v1/chat/message", dependencies=[Depends(require_auth)])
     async def chat_message(msg: ChatMessage):
-        """Send a chat message and get a response."""
-        if _mk_engine:
-            try:
-                response = await _mk_engine.process(msg.content)
-                return ChatResponse(
-                    content=response.final_response,
-                    actions=[],
-                )
-            except Exception as e:
-                return ChatResponse(content=f"Error: {str(e)}")
-        return ChatResponse(content="MK engine not initialized")
+        """Send a chat message and get a context-aware response.
+
+        Routes through the MK wrapper, which guarantees a well-formed response:
+        invalid input yields HTTP 422, and any AI/engine failure comes back as
+        a non-ok envelope with a clear message rather than a 500.
+        """
+        wrapper = _build_wrapper()
+        payload = {
+            "content": msg.content,
+            "session_id": msg.session_id,
+            "context": msg.context or {},
+            "expect_json": msg.expect_json,
+        }
+        try:
+            # Validation is centralized in the wrapper, which raises a concise
+            # InputValidationError for bad caller input (mapped to 422 here).
+            result = await wrapper.chat(payload)
+        except InputValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail)
+        await _persist_exchange(msg.session_id, msg.content, result)
+        return _chat_response_from_result(result)
+
+    @app.get("/api/v1/chat/suggestions", dependencies=[Depends(require_auth)])
+    async def chat_suggestions(
+        page: str = Query("/", description="Current route/screen"),
+        selection: Optional[str] = Query(None, description="Selected entity, if any"),
+    ):
+        """Return context-aware suggestions for the current page/screen."""
+        wrapper = _build_wrapper()
+        context = PageContext(page=page, selection=selection)
+        suggestions = wrapper.get_suggestions(context)
+        return SuggestionsResponse(
+            page=context.page,
+            suggestions=[SuggestedActionModel(**s.model_dump()) for s in suggestions],
+        )
 
     @app.get("/api/v1/chat/history", dependencies=[Depends(require_auth)])
-    async def chat_history():
-        """Get chat history."""
+    async def chat_history(
+        session_id: Optional[str] = Query(None, description="Session to load history for"),
+    ):
+        """Get chat history.
+
+        Prefers the persistent, session-keyed store when a ``session_id`` is
+        supplied; otherwise falls back to the engine's in-memory conversation.
+        """
+        if session_id and _chat_history is not None:
+            try:
+                stored = await _chat_history.get_messages(session_id, limit=50)
+            except Exception as exc:  # noqa: BLE001 - history is best-effort
+                logger.warning("chat history read failed: %s", exc)
+                stored = []
+            if stored:
+                return {"messages": stored}
+
         if _mk_engine and hasattr(_mk_engine, "conversation"):
             messages = []
             for msg in _mk_engine.conversation.messages[-50:]:
@@ -1811,7 +1941,15 @@ def _register_websocket(app: FastAPI) -> None:
         try:
             while True:
                 data = await ws.receive_text()
-                msg = json.loads(data)
+                # A single malformed frame must not tear down the whole socket.
+                try:
+                    msg = json.loads(data)
+                except (json.JSONDecodeError, ValueError):
+                    await ws.send_json({"type": "error", "message": "Invalid JSON"})
+                    continue
+                if not isinstance(msg, dict):
+                    await ws.send_json({"type": "error", "message": "Invalid message format"})
+                    continue
 
                 if msg.get("type") == "ping":
                     await ws.send_json({"type": "pong", "server_time": time.time()})
@@ -1823,23 +1961,52 @@ def _register_websocket(app: FastAPI) -> None:
                     # Send typing indicator
                     await ws.send_json({"type": "typing_indicator", "active": True})
 
-                    # Process through MK engine
-                    response_text = "MK engine not available"
-                    if _mk_engine:
-                        try:
-                            result = await _mk_engine.process(content)
-                            response_text = result.final_response
-                        except Exception as e:
-                            response_text = f"Error: {str(e)}"
+                    # Process through the MK wrapper (same defensive path as HTTP).
+                    wrapper = _build_wrapper()
+                    payload = {
+                        "content": content,
+                        "session_id": msg.get("session_id"),
+                        "context": msg.get("context") or {},
+                    }
+                    try:
+                        result = await wrapper.chat(payload)
+                    except InputValidationError as exc:
+                        await ws.send_json({"type": "typing_indicator", "active": False})
+                        await ws.send_json(
+                            {
+                                "type": "chat_response",
+                                "id": secrets.token_hex(8),
+                                "reply_to": msg.get("id", ""),
+                                "content": f"Invalid message: {exc.detail}",
+                                "ok": False,
+                                "failure_type": "invalid_input",
+                                "retryable": False,
+                                "actions": [],
+                                "suggestions": [],
+                                "done": True,
+                            }
+                        )
+                        continue
 
-                    # Send response
+                    await _persist_exchange(msg.get("session_id"), content, result)
+
+                    # Clear the typing indicator before delivering the reply.
+                    await ws.send_json({"type": "typing_indicator", "active": False})
                     await ws.send_json(
                         {
                             "type": "chat_response",
                             "id": secrets.token_hex(8),
                             "reply_to": msg.get("id", ""),
-                            "content": response_text,
-                            "actions": [],
+                            "content": result.content,
+                            "ok": result.ok,
+                            "failure_type": result.failure_type,
+                            "retryable": bool(result.failure.retryable)
+                            if result.failure
+                            else False,
+                            "degraded": result.degraded,
+                            "provider": result.provider,
+                            "actions": result.actions,
+                            "suggestions": [s.model_dump() for s in result.suggestions],
                             "done": True,
                         }
                     )
