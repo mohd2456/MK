@@ -287,7 +287,7 @@ class AnthropicProvider(LLMProvider):
             response = await client.post(
                 "/v1/messages",
                 json={
-                    "model": self.config.default_model or "claude-3-haiku-20240307",
+                    "model": self.config.default_model or "claude-haiku-4-5",
                     "messages": [{"role": "user", "content": "hi"}],
                     "max_tokens": 1,
                 },

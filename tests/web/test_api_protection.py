@@ -86,6 +86,49 @@ async def test_backup_job_crud_flow(auth_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_run_backup_job_executes_for_real(auth_client: AsyncClient):
+    """Running a job triggers real background execution that completes.
+
+    In the test environment there is no ZFS/rsync target, so the backup is
+    expected to finish with status 'failed' (fast-fail) rather than the old
+    hard-coded instant 'success'. We assert the run record transitions out of
+    'running' and records a real duration/outcome.
+    """
+    import asyncio
+
+    job_data = {
+        "name": "exec-check",
+        "backup_type": "rsync",
+        "source": "/nonexistent/source",
+        "destination": "/nonexistent/dest",
+        "schedule": "daily",
+    }
+    r = await auth_client.post("/api/v1/protection/jobs", json=job_data)
+    job_id = r.json()["job"]["id"]
+
+    r = await auth_client.post(f"/api/v1/protection/jobs/{job_id}/run")
+    assert r.status_code == 200
+    assert r.json()["status"] == "triggered"
+
+    # Poll history until the background task records completion.
+    record = None
+    for _ in range(50):  # up to ~5s
+        r = await auth_client.get(f"/api/v1/protection/jobs/{job_id}/history")
+        history = r.json()["history"]
+        assert history, "run should be recorded immediately"
+        record = history[-1]
+        if record["status"] != "running":
+            break
+        await asyncio.sleep(0.1)
+
+    assert record is not None
+    assert record["status"] in ("success", "failed")
+    # A real execution records an actual (non-stub) duration and finish time.
+    assert record.get("finished_at") is not None
+    assert isinstance(record["duration_seconds"], (int, float))
+
+
+@pytest.mark.asyncio
 async def test_backup_job_not_found(auth_client: AsyncClient):
     """Test operations on non-existent job return 404."""
     r = await auth_client.put("/api/v1/protection/jobs/999", json={"name": "x"})

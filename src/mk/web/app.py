@@ -30,11 +30,13 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mk.observability import RequestIDMiddleware, metrics, setup_logging
+from mk.safety.audit import AuditLogger
+from mk.training import ConversationCapture
 from mk.web.chat_history import ChatHistoryStore
 from mk.wrapper import InputValidationError, MKWrapper, PageContext
 
@@ -156,7 +158,12 @@ _pin_hash: Optional[str] = None
 _mk_engine: Optional[Any] = None
 _mk_wrapper: Optional[MKWrapper] = None
 _chat_history: Optional[ChatHistoryStore] = None
+_audit_logger: Optional[AuditLogger] = None
+_capture: Optional[ConversationCapture] = None
 _start_time: float = time.time()
+# Strong references to fire-and-forget background tasks (e.g. running backups)
+# so they are not garbage-collected mid-flight. Entries are discarded on done.
+_background_tasks: set = set()
 
 SESSION_DURATION = 7 * 24 * 3600  # 7 days
 MAX_ATTEMPTS = 10
@@ -327,6 +334,9 @@ def create_app(
     pin: Optional[str] = None,
     static_dir: Optional[str] = None,
     chat_history: Optional[ChatHistoryStore] = None,
+    audit_log_dir: Optional[str] = None,
+    capture_conversations: Optional[bool] = None,
+    capture_path: Optional[str] = None,
 ) -> FastAPI:
     """Create the FastAPI application.
 
@@ -336,11 +346,18 @@ def create_app(
         static_dir: Path to the built React frontend (webui/dist).
         chat_history: Optional persistent chat-history store. If omitted, one
             is created from ``MK_CHAT_DB`` (default in-memory for the process).
+        audit_log_dir: Directory for the security audit trail. Falls back to
+            ``MK_AUDIT_DIR`` and then the ``AuditLogger`` default
+            (``~/.mk/audit``). Every state-changing API call and every login
+            outcome is appended here.
+        capture_conversations: Opt-in capture of successful chats as local-brain
+            training data. Defaults to the ``MK_CAPTURE_CONVERSATIONS`` env var.
+        capture_path: Output path for captured training data (JSONL).
 
     Returns:
         Configured FastAPI app.
     """
-    global _mk_engine, _mk_wrapper, _pin_hash, _chat_history
+    global _mk_engine, _mk_wrapper, _pin_hash, _chat_history, _audit_logger, _capture
 
     _mk_engine = mk_engine
     # The wrapper is the single, defensive integration point for all
@@ -356,6 +373,15 @@ def create_app(
     _chat_history = chat_history or ChatHistoryStore(
         db_path=os.environ.get("MK_CHAT_DB", ":memory:")
     )
+    # Durable, queryable security audit trail. Records mutating API calls and
+    # login outcomes. Never logs request bodies, so PINs/API keys are not
+    # persisted.
+    _resolved_audit_dir = audit_log_dir or os.environ.get("MK_AUDIT_DIR")
+    _audit_logger = (
+        AuditLogger(log_dir=_resolved_audit_dir) if _resolved_audit_dir else AuditLogger()
+    )
+    # Opt-in capture of successful conversations for local-brain retraining.
+    _capture = ConversationCapture(path=capture_path, enabled=capture_conversations)
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -370,6 +396,13 @@ def create_app(
         docs_url="/api/docs",
         redoc_url=None,
     )
+
+    # Disable trailing-slash redirects. On an API surface we never want a
+    # request like "/network/interfaces/<injection>/" to be answered with a
+    # 307 redirect before the handler's input validation runs — it should
+    # simply 404. This keeps rejection behavior predictable and avoids
+    # leaking redirects for malformed/unsafe path segments.
+    app.router.redirect_slashes = False
 
     # CORS (allow Tailscale origins)
     app.add_middleware(
@@ -398,6 +431,41 @@ def create_app(
                     content={"detail": "Rate limit exceeded. Try again later."},
                 )
         response = await call_next(request)
+        return response
+
+    @app.middleware("http")
+    async def audit_middleware(request: Request, call_next):
+        """Record every state-changing API call to the audit trail.
+
+        Logs method, path, status, client IP, and duration for
+        POST/PUT/DELETE/PATCH requests under ``/api``. Auth endpoints are
+        audited explicitly in the login route (with success/failure), so they
+        are skipped here to avoid duplicate, less-specific entries. Request
+        bodies are never logged, so secrets (PINs, API keys) are not persisted.
+        Auditing must never break a request, so all errors are swallowed.
+        """
+        start = time.time()
+        response = await call_next(request)
+        try:
+            method = request.method
+            path = request.url.path
+            if (
+                _audit_logger is not None
+                and method in ("POST", "PUT", "DELETE", "PATCH")
+                and path.startswith("/api")
+                and not path.startswith("/api/v1/auth/")
+            ):
+                ip = request.client.host if request.client else "unknown"
+                _audit_logger.log_action(
+                    action=f"http.{method.lower()}",
+                    params={"path": path},
+                    result=str(response.status_code),
+                    initiator=ip,
+                    success=response.status_code < 400,
+                    duration_ms=round((time.time() - start) * 1000, 1),
+                )
+        except Exception:  # noqa: BLE001 - auditing must never break a request
+            logger.debug("audit logging failed", exc_info=True)
         return response
 
     # Register routes
@@ -472,11 +540,33 @@ def _register_auth_routes(app: FastAPI) -> None:
         ip = request.client.host if request.client else "unknown"
 
         if _check_lockout(ip):
+            if _audit_logger is not None:
+                _audit_logger.log_action(
+                    action="auth.login",
+                    result="locked_out",
+                    initiator=ip,
+                    success=False,
+                )
             raise HTTPException(429, "Too many attempts. Try again in 5 minutes.")
 
         if not _verify_pin(req.pin):
             _record_attempt(ip)
+            if _audit_logger is not None:
+                _audit_logger.log_action(
+                    action="auth.login",
+                    result="invalid_pin",
+                    initiator=ip,
+                    success=False,
+                )
             raise HTTPException(401, "Invalid PIN")
+
+        if _audit_logger is not None:
+            _audit_logger.log_action(
+                action="auth.login",
+                result="success",
+                initiator=ip,
+                success=True,
+            )
 
         token = _create_session()
         response = JSONResponse({"token": token, "expires": time.time() + SESSION_DURATION})
@@ -685,10 +775,18 @@ def _register_dashboard_routes(app: FastAPI) -> None:
         return []
 
     @app.get("/api/v1/dashboard/activity", dependencies=[Depends(require_auth)])
-    async def dashboard_activity():
-        """Get recent activity log."""
-        # Return recent audit entries if available
-        return {"events": []}
+    async def dashboard_activity(limit: int = Query(default=50, ge=1, le=200)):
+        """Get recent activity from the security audit trail (newest first)."""
+        if _audit_logger is None:
+            return {"events": []}
+        try:
+            entries = _audit_logger.get_recent_actions(limit)
+            # get_recent_actions returns oldest-last; present newest-first.
+            events = [e.model_dump() for e in reversed(entries)]
+            return {"events": events}
+        except Exception:  # noqa: BLE001 - activity view must not error out
+            logger.debug("reading audit trail failed", exc_info=True)
+            return {"events": []}
 
 
 def _build_wrapper() -> MKWrapper:
@@ -718,11 +816,27 @@ def _chat_response_from_result(result: Any) -> ChatResponse:
     )
 
 
+def _maybe_capture(user_content: str, assistant_content: str, ok: bool) -> None:
+    """Best-effort capture of an exchange for local-brain retraining.
+
+    No-ops unless capture is enabled. Never raises.
+    """
+    if _capture is None or not _capture.enabled:
+        return
+    try:
+        _capture.capture(user_content, assistant_content, ok=ok)
+    except Exception as exc:  # noqa: BLE001 - capture must never break a reply
+        logger.debug("conversation capture failed: %s", exc)
+
+
 async def _persist_exchange(session_id: Optional[str], user_content: str, result: Any) -> None:
     """Best-effort persistence of a user/assistant exchange.
 
     Never raises: history is a convenience and must not break a chat response.
     """
+    # Capture as training data (only clean, non-degraded successes).
+    _maybe_capture(user_content, result.content, ok=bool(result.ok) and not result.degraded)
+
     if not session_id or _chat_history is None:
         return
     try:
@@ -765,6 +879,61 @@ def _register_chat_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=422, detail=exc.detail)
         await _persist_exchange(msg.session_id, msg.content, result)
         return _chat_response_from_result(result)
+
+    @app.post("/api/v1/chat/stream", dependencies=[Depends(require_auth)])
+    async def chat_stream(msg: ChatMessage):
+        """Stream a chat reply as Server-Sent Events (SSE).
+
+        Emits ``token`` events as text arrives and a final ``done`` event.
+        Input is validated up front (HTTP 422 on bad caller input) before the
+        stream opens; all engine/AI failures are handled inside the wrapper and
+        surfaced as normal content, so the stream always closes cleanly.
+        """
+        wrapper = _build_wrapper()
+        payload = {
+            "content": msg.content,
+            "session_id": msg.session_id,
+            "context": msg.context or {},
+            "expect_json": msg.expect_json,
+        }
+        # Validate before opening the stream so bad input maps to 422.
+        try:
+            req = wrapper.validate_request(payload)
+        except InputValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail)
+
+        async def event_source():
+            parts: List[str] = []
+            try:
+                async for chunk in wrapper.stream_chat(req):
+                    parts.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+            except Exception as exc:  # noqa: BLE001 - stream must always close
+                logger.error("chat stream failed: %s", exc, exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'stream error'})}\n\n"
+            full_text = "".join(parts)
+            # Capture only real engine replies (not the no-engine degraded msg).
+            _maybe_capture(msg.content, full_text, ok=wrapper.has_engine and bool(full_text))
+            # Persist the exchange (best-effort) once the reply is complete.
+            if msg.session_id and _chat_history is not None:
+                try:
+                    await _chat_history.append(msg.session_id, "user", msg.content, ok=True)
+                    await _chat_history.append(
+                        msg.session_id, "assistant", full_text, ok=True
+                    )
+                except Exception as exc:  # noqa: BLE001 - persistence is best-effort
+                    logger.warning("stream history persistence failed: %s", exc)
+            yield f"data: {json.dumps({'type': 'done', 'ok': True})}\n\n"
+
+        return StreamingResponse(
+            event_source(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
+                "Connection": "keep-alive",
+            },
+        )
 
     @app.get("/api/v1/chat/suggestions", dependencies=[Depends(require_auth)])
     async def chat_suggestions(
@@ -1131,7 +1300,7 @@ def _register_system_routes(app: FastAPI) -> None:
     # In-memory AI settings store
     _ai_settings: Dict[str, Any] = {
         "provider": "openai",
-        "model": "gpt-4o",
+        "model": "gpt-5.4-mini",
         "temperature": 0.7,
         "max_tokens": 4096,
         "system_prompt": "",
@@ -1623,26 +1792,70 @@ def _register_protection_routes(app: FastAPI) -> None:
                     return {"status": "deleted", "id": job_id}
         raise HTTPException(404, f"Job {job_id} not found")
 
+    async def _execute_backup_job(
+        job_id: int, job_snapshot: Dict[str, Any], run_record: Dict[str, Any]
+    ) -> None:
+        """Run a backup for real in the background and record the outcome.
+
+        Uses the real :class:`~mk.server.backups.BackupManager` to execute the
+        configured backup type (ZFS snapshot/send, rsync, restic). Backups can
+        take minutes to hours, so this runs detached from the HTTP request;
+        clients poll ``/jobs/{id}/history`` for completion. Never raises — any
+        failure is captured on the run record.
+        """
+        start = run_record["started_at"]
+        status = "failed"
+        error: Optional[str] = None
+        try:
+            from mk.server.backups import BackupManager
+
+            manager = BackupManager(sudo=True)
+            result = await manager.run_backup_config(job_snapshot)
+            status = "success" if result.success else "failed"
+            if not result.success:
+                error = result.error
+        except Exception as exc:  # noqa: BLE001 - background job must not crash the app
+            status = "failed"
+            error = str(exc)
+            logger.warning("backup job %s failed: %s", job_id, exc)
+
+        async with _protection_lock:
+            run_record["status"] = status
+            run_record["finished_at"] = time.time()
+            run_record["duration_seconds"] = round(time.time() - start, 2)
+            if error:
+                run_record["error"] = error
+            for job in _backup_jobs:
+                if job["id"] == job_id:
+                    job["last_run"] = run_record["finished_at"]
+                    job["last_status"] = status
+                    break
+
     @app.post("/api/v1/protection/jobs/{job_id}/run", dependencies=[Depends(require_auth)])
     async def run_backup_job(job_id: int):
         async with _protection_lock:
-            for job in _backup_jobs:
-                if job["id"] == job_id:
-                    # Record run in history
-                    run_record = {
-                        "started_at": time.time(),
-                        "status": "running",
-                        "duration_seconds": None,
-                    }
-                    history = _job_history.setdefault(str(job_id), [])
-                    history.append(run_record)
-                    # Simulate immediate completion for stub
-                    run_record["status"] = "success"
-                    run_record["duration_seconds"] = 0.1
-                    job["last_run"] = time.time()
-                    job["last_status"] = "success"
-                    return {"status": "triggered", "job_id": job_id}
-        raise HTTPException(404, f"Job {job_id} not found")
+            job = next((j for j in _backup_jobs if j["id"] == job_id), None)
+            if job is None:
+                raise HTTPException(404, f"Job {job_id} not found")
+
+            # Record the run as in-progress; the background task updates it on
+            # completion. Snapshot the job config so the task is isolated from
+            # concurrent edits/deletes.
+            run_record: Dict[str, Any] = {
+                "started_at": time.time(),
+                "status": "running",
+                "duration_seconds": None,
+            }
+            _job_history.setdefault(str(job_id), []).append(run_record)
+            job["last_status"] = "running"
+            job_snapshot = dict(job)
+
+        # Launch the real backup detached from this request.
+        task = asyncio.create_task(_execute_backup_job(job_id, job_snapshot, run_record))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+        return {"status": "triggered", "job_id": job_id}
 
     @app.get("/api/v1/protection/jobs/{job_id}/history", dependencies=[Depends(require_auth)])
     async def get_job_history(job_id: int):
@@ -1968,6 +2181,76 @@ def _register_websocket(app: FastAPI) -> None:
                         "session_id": msg.get("session_id"),
                         "context": msg.get("context") or {},
                     }
+
+                    # When an engine is available, stream the reply token-by-token
+                    # so the UI renders it live. With no engine we keep the
+                    # single-shot envelope (below) which carries richer failure
+                    # metadata for the degraded case.
+                    if wrapper.has_engine:
+                        try:
+                            wrapper.validate_request(payload)
+                        except InputValidationError as exc:
+                            await ws.send_json({"type": "typing_indicator", "active": False})
+                            await ws.send_json(
+                                {
+                                    "type": "chat_response",
+                                    "id": secrets.token_hex(8),
+                                    "reply_to": msg.get("id", ""),
+                                    "content": f"Invalid message: {exc.detail}",
+                                    "ok": False,
+                                    "failure_type": "invalid_input",
+                                    "retryable": False,
+                                    "actions": [],
+                                    "suggestions": [],
+                                    "done": True,
+                                }
+                            )
+                            continue
+
+                        stream_id = secrets.token_hex(8)
+                        # Opening frame: tells the client to start a streaming bubble.
+                        await ws.send_json(
+                            {
+                                "type": "chat_response",
+                                "id": stream_id,
+                                "reply_to": msg.get("id", ""),
+                                "done": False,
+                            }
+                        )
+                        parts: List[str] = []
+                        try:
+                            async for chunk in wrapper.stream_chat(payload):
+                                parts.append(chunk)
+                                await ws.send_json(
+                                    {
+                                        "type": "chat_stream",
+                                        "id": stream_id,
+                                        "chunk": chunk,
+                                        "done": False,
+                                    }
+                                )
+                        except Exception as exc:  # noqa: BLE001 - stream must close
+                            logger.error("ws stream failed: %s", exc, exc_info=True)
+                        # Closing frame: finalizes the streaming bubble.
+                        await ws.send_json(
+                            {"type": "chat_stream", "id": stream_id, "done": True, "actions": []}
+                        )
+                        full_text = "".join(parts)
+                        # This branch only runs with an engine present, so the
+                        # reply is a real training signal.
+                        _maybe_capture(content, full_text, ok=bool(full_text))
+                        if msg.get("session_id") and _chat_history is not None:
+                            try:
+                                await _chat_history.append(
+                                    msg.get("session_id"), "user", content, ok=True
+                                )
+                                await _chat_history.append(
+                                    msg.get("session_id"), "assistant", full_text, ok=True
+                                )
+                            except Exception as exc:  # noqa: BLE001 - best-effort
+                                logger.warning("ws stream history persist failed: %s", exc)
+                        continue
+
                     try:
                         result = await wrapper.chat(payload)
                     except InputValidationError as exc:

@@ -17,7 +17,7 @@ import asyncio
 import hashlib
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -48,7 +48,7 @@ async def verify_latest(pool: str = "tank/backups", sample_count: int = 5) -> To
     start = time.time()
 
     # Simulate finding snapshots
-    snapshot_name = f"{pool}@auto-{datetime.utcnow().strftime('%Y%m%d')}"
+    snapshot_name = f"{pool}@auto-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
     # Simulate file sampling and verification
     verified_files: List[Dict[str, str]] = []
@@ -107,8 +107,8 @@ async def check_age(max_age_hours: int = 24) -> ToolResult:
     # and compare the latest against now
 
     # Simulate: last backup was 6 hours ago
-    simulated_last_backup = datetime.utcnow() - timedelta(hours=6)
-    age_hours = (datetime.utcnow() - simulated_last_backup).total_seconds() / 3600
+    simulated_last_backup = datetime.now(timezone.utc) - timedelta(hours=6)
+    age_hours = (datetime.now(timezone.utc) - simulated_last_backup).total_seconds() / 3600
 
     is_fresh = age_hours <= max_age_hours
 
@@ -148,7 +148,7 @@ async def list_backups(pool: str = "", limit: int = 10) -> ToolResult:
     # In production: `zfs list -t snapshot -o name,creation,used -s creation`
 
     # Simulate snapshot listing
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     snapshots = []
     for i in range(min(limit, 7)):
         ts = now - timedelta(days=i)

@@ -6,7 +6,7 @@
 llm_providers:
   - name: claude
     api_key_ref: claude_api_key  # Reference to key in secrets store
-    model: claude-3-sonnet-20240229
+    model: claude-sonnet-4-6
     endpoint: https://api.anthropic.com/v1
     priority: 10  # Higher = preferred
     max_tokens: 4096
@@ -14,7 +14,7 @@ llm_providers:
 
   - name: openai
     api_key_ref: openai_api_key
-    model: gpt-4
+    model: gpt-5.4-mini
     endpoint: https://api.openai.com/v1
     priority: 8
     max_tokens: 4096
@@ -22,7 +22,7 @@ llm_providers:
 
   - name: groq
     api_key_ref: groq_api_key
-    model: llama-3.1-70b-versatile
+    model: openai/gpt-oss-120b
     endpoint: https://api.groq.com/openai/v1
     priority: 5
     max_tokens: 4096

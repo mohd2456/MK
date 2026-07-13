@@ -57,6 +57,44 @@ def test_ws_non_object_json_is_rejected_gracefully():
         assert ws.receive_json()["type"] == "pong"
 
 
+class _StreamingEngine:
+    """Fake engine exposing stream_reply, for the WS streaming path."""
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def stream_reply(self, content: str):
+        for c in self._chunks:
+            yield c
+
+
+def test_ws_chat_message_streams_when_engine_present():
+    """With an engine, the WS delivers a start frame + token chunks + done."""
+    app = create_app(pin=TEST_PIN, mk_engine=_StreamingEngine(["Hel", "lo!"]))
+    client = TestClient(app)
+    token = client.post("/api/v1/auth/login", json={"pin": TEST_PIN}).json()["token"]
+
+    with client.websocket_connect(f"/ws/chat?token={token}") as ws:
+        ws.send_json({"type": "chat_message", "id": "m1", "content": "hi", "context": {}})
+        # typing on
+        assert ws.receive_json() == {"type": "typing_indicator", "active": True}
+        # stream opening frame
+        opening = ws.receive_json()
+        assert opening["type"] == "chat_response"
+        assert opening["done"] is False
+        stream_id = opening["id"]
+        # token chunks
+        collected = ""
+        while True:
+            frame = ws.receive_json()
+            assert frame["type"] == "chat_stream"
+            assert frame["id"] == stream_id
+            if frame.get("done"):
+                break
+            collected += frame["chunk"]
+        assert collected == "Hello!"
+
+
 def test_ws_chat_message_roundtrip_no_engine():
     """A chat message with no engine returns a graceful failure envelope."""
     client, token = _client_and_token()

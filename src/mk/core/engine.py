@@ -7,7 +7,7 @@ tools, and the agent loop. Exposes a simple process(input) interface.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from mk.config.settings import Settings, load_config
 from mk.core.agent_loop import AgentLoop, LLMProvider
@@ -16,6 +16,15 @@ from mk.core.context import ContextBuilder
 from mk.core.models import AgentResponse, AgentStep, Conversation, Role, ToolCall
 
 logger = logging.getLogger(__name__)
+
+# System prompt used for the streaming conversational path. The streaming path
+# is a direct, token-by-token completion (no ReAct tool loop), so it gets a
+# concise identity prompt; tool-driven requests still go through process().
+_STREAM_SYSTEM_PROMPT = (
+    "You are MK, a personal AI operating system that manages a homelab. "
+    "Answer clearly and concisely. If an action would change the system, "
+    "explain what you would do rather than pretending it is done."
+)
 
 
 class MKEngine:
@@ -116,6 +125,85 @@ class MKEngine:
 
         self.conversation.add_message(Role.ASSISTANT, response.final_response)
         return response
+
+    @property
+    def llm_router(self) -> Optional[Any]:
+        """Return the configured LLM router, or None if no providers are set up."""
+        return self._llm_router
+
+    def _build_stream_messages(self, max_turns: int = 12) -> List[Any]:
+        """Build the LLM message list for a streaming completion.
+
+        Uses a concise system prompt plus the most recent conversation turns
+        (which already include the current user message). Tool/other roles are
+        mapped to user/assistant so the payload stays provider-compatible.
+
+        Args:
+            max_turns: Maximum number of recent turns to include.
+
+        Returns:
+            List of ``LLMMessage`` objects.
+        """
+        from mk.llm.models import LLMMessage, MessageRole
+
+        messages: List[Any] = [
+            LLMMessage(role=MessageRole.SYSTEM, content=_STREAM_SYSTEM_PROMPT)
+        ]
+        recent = self.conversation.messages[-max_turns:]
+        for msg in recent:
+            role = (
+                MessageRole.ASSISTANT
+                if msg.role == Role.ASSISTANT
+                else MessageRole.USER
+            )
+            messages.append(LLMMessage(role=role, content=msg.content))
+        return messages
+
+    async def stream_reply(self, user_input: str) -> AsyncIterator[str]:
+        """Process user input and stream the reply in chunks.
+
+        Streaming rules:
+        * Direct commands and the no-LLM fallback are inherently non-streaming;
+          their full text is yielded as a single chunk.
+        * When an LLM router is configured, the conversational reply is streamed
+          token-by-token via :meth:`LLMRouter.stream`.
+
+        The assistant's full reply is recorded to the conversation once complete.
+
+        Args:
+            user_input: The user's input text.
+
+        Yields:
+            Reply text chunks in order.
+        """
+        self.conversation.add_message(Role.USER, user_input)
+
+        # Direct command routing — instant, not token-streamed.
+        route_result = self.command_router.route(user_input)
+        if route_result.is_direct and route_result.tool_name:
+            response = await self._handle_direct_command(
+                route_result.tool_name, route_result.tool_args
+            )
+            self.conversation.add_message(Role.ASSISTANT, response.final_response)
+            yield response.final_response
+            return
+
+        # Streaming LLM completion.
+        if self._llm_router is not None:
+            from mk.llm.models import LLMRequest
+
+            request = LLMRequest(messages=self._build_stream_messages())
+            chunks: List[str] = []
+            async for chunk in self._llm_router.stream(request):
+                chunks.append(chunk)
+                yield chunk
+            self.conversation.add_message(Role.ASSISTANT, "".join(chunks))
+            return
+
+        # No LLM configured — degrade to the offline handler (single chunk).
+        response = await self._handle_no_llm(user_input)
+        self.conversation.add_message(Role.ASSISTANT, response.final_response)
+        yield response.final_response
 
     async def _handle_no_llm(self, user_input: str) -> AgentResponse:
         """Handle user input when no LLM is configured.
@@ -465,8 +553,10 @@ class MKEngine:
         Args:
             keys_file: Optional path to keys file. Uses default if None.
         """
+        import os
+
         from mk.llm.keys import KeyManager
-        from mk.llm.provider_factory import configure_router_from_keys
+        from mk.llm.provider_factory import LOCAL_BRAIN_URL_ENV, configure_router_from_keys
 
         kwargs = {}
         if keys_file is not None:
@@ -474,11 +564,15 @@ class MKEngine:
 
         key_manager = KeyManager(**kwargs)
         active = key_manager.get_active_providers()
+        has_local_brain = bool(os.environ.get(LOCAL_BRAIN_URL_ENV))
 
-        if not active:
-            logger.info("No API keys stored - LLM providers not configured")
+        if not active and not has_local_brain:
+            logger.info("No API keys stored and no local brain - LLM providers not configured")
             return
 
+        # configure_router_from_keys registers keyed providers and the local
+        # brain (if MK_LOCAL_BRAIN_URL is set), so MK can run purely on local
+        # inference with no cloud keys at all.
         router = configure_router_from_keys(key_manager)
 
         if router.providers:

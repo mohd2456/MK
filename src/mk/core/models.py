@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from mk.clock import utcnow
+
 
 class Role(str, Enum):
     """Message role in a conversation."""
@@ -27,7 +29,7 @@ class Message(BaseModel):
 
     role: Role = Field(description="Who sent the message")
     content: str = Field(description="Message content")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

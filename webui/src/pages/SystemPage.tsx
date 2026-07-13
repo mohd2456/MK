@@ -34,7 +34,7 @@ const mockServices: SystemService[] = [
 
 const mockAISettings = {
   provider: "openai",
-  model: "gpt-4o",
+  model: "gpt-5.4-mini",
   temperature: 0.7,
   max_tokens: 4096,
   system_prompt: "You are MK, a helpful AI assistant for managing a homelab server.",

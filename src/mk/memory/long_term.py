@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from mk.clock import utcnow
 from mk.memory.models import UserKnowledge
 
 
@@ -103,7 +104,7 @@ class LongTermMemory:
         Returns:
             The created or updated UserKnowledge entry.
         """
-        now = datetime.utcnow()
+        now = utcnow()
 
         if key in self._knowledge:
             existing = self._knowledge[key]
@@ -164,7 +165,7 @@ class LongTermMemory:
         # Update access timestamps for returned results
         results = []
         for _, knowledge in scored[:limit]:
-            knowledge.last_accessed = datetime.utcnow()
+            knowledge.last_accessed = utcnow()
             knowledge.access_count += 1
             results.append(knowledge)
 

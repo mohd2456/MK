@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+from mk.clock import utcnow
 
 
 class AuditEntry(BaseModel):
@@ -61,7 +62,7 @@ class AuditLogger:
         log_path = self._current_log_path
         if log_path.exists() and log_path.stat().st_size >= self.max_file_size_bytes:
             # Rotate: rename with timestamp
-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            ts = utcnow().strftime("%Y%m%d_%H%M%S")
             rotated_name = f"audit_{ts}.jsonl"
             log_path.rename(Path(self.log_dir) / rotated_name)
 
@@ -90,7 +91,7 @@ class AuditLogger:
         self._rotate_if_needed()
 
         entry = AuditEntry(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=utcnow().isoformat(),
             action=action,
             params=params or {},
             result=result,
