@@ -29,7 +29,7 @@ defensive and testable.
                     │   • /api/v1/chat/suggestions (GET)            │
                     │   • /api/v1/chat/history   (GET, by session)  │
                     │   • /ws/chat               (WebSocket)        │
-                    │   • audit trail + /api/v1/metrics             │
+                    │   • audit trail + /metrics (Prometheus)       │
                     │   • ChatHistoryStore (SQLite persistence)     │
                     └───────────────────────┬──────────────────────┘
                                             │  ChatRequest (dict)
@@ -354,7 +354,7 @@ improve.
 ### 8.5 Observability
 
 Streaming and routing are metered on the existing Prometheus endpoint
-(`/api/v1/metrics`): `mk_llm_requests_total{provider,tier}` (with `tier` =
+(`/metrics`): `mk_llm_requests_total{provider,tier}` (with `tier` =
 `local`|`cloud`, so the local-brain hit rate vs cloud fallback is measurable),
 `mk_llm_streams_total`, `mk_llm_stream_chunks_total`,
 `mk_llm_provider_failures_total`, and `mk_training_captured_total`.
