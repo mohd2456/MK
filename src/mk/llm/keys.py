@@ -237,7 +237,13 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
         },
     ],
     "xai": [
-        {"model": "grok-4.3", "input": 0.00125, "output": 0.0025, "max_ctx": 1000000, "tier": "fast"},
+        {
+            "model": "grok-4.3",
+            "input": 0.00125,
+            "output": 0.0025,
+            "max_ctx": 1000000,
+            "tier": "fast",
+        },
         {"model": "grok-4.5", "input": 0.003, "output": 0.015, "max_ctx": 1000000, "tier": "smart"},
         {
             "model": "grok-build",
@@ -411,7 +417,13 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "ollama": [
         {"model": "mk-brain", "input": 0.0, "output": 0.0, "max_ctx": 8192, "tier": "cheap"},
-        {"model": "qwen2.5:3b-instruct", "input": 0.0, "output": 0.0, "max_ctx": 32768, "tier": "cheap"},
+        {
+            "model": "qwen2.5:3b-instruct",
+            "input": 0.0,
+            "output": 0.0,
+            "max_ctx": 32768,
+            "tier": "cheap",
+        },
     ],
 }
 

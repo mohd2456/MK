@@ -918,9 +918,7 @@ def _register_chat_routes(app: FastAPI) -> None:
             if msg.session_id and _chat_history is not None:
                 try:
                     await _chat_history.append(msg.session_id, "user", msg.content, ok=True)
-                    await _chat_history.append(
-                        msg.session_id, "assistant", full_text, ok=True
-                    )
+                    await _chat_history.append(msg.session_id, "assistant", full_text, ok=True)
                 except Exception as exc:  # noqa: BLE001 - persistence is best-effort
                     logger.warning("stream history persistence failed: %s", exc)
             yield f"data: {json.dumps({'type': 'done', 'ok': True})}\n\n"

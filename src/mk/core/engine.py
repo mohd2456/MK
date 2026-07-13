@@ -146,16 +146,10 @@ class MKEngine:
         """
         from mk.llm.models import LLMMessage, MessageRole
 
-        messages: List[Any] = [
-            LLMMessage(role=MessageRole.SYSTEM, content=_STREAM_SYSTEM_PROMPT)
-        ]
+        messages: List[Any] = [LLMMessage(role=MessageRole.SYSTEM, content=_STREAM_SYSTEM_PROMPT)]
         recent = self.conversation.messages[-max_turns:]
         for msg in recent:
-            role = (
-                MessageRole.ASSISTANT
-                if msg.role == Role.ASSISTANT
-                else MessageRole.USER
-            )
+            role = MessageRole.ASSISTANT if msg.role == Role.ASSISTANT else MessageRole.USER
             messages.append(LLMMessage(role=role, content=msg.content))
         return messages
 

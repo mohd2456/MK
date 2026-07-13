@@ -36,9 +36,7 @@ async def test_failed_login_is_audited(client: AsyncClient):
 
     resp = await client.get("/api/v1/dashboard/activity")
     events = resp.json()["events"]
-    failures = [
-        e for e in events if e["action"] == "auth.login" and e["success"] is False
-    ]
+    failures = [e for e in events if e["action"] == "auth.login" and e["success"] is False]
     assert failures, "expected a failed auth.login audit entry"
     assert failures[0]["result"] == "invalid_pin"
 

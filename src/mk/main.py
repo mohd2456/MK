@@ -158,9 +158,7 @@ async def main(mode: str = "terminal", config_path: Optional[str] = None) -> Non
             summary = await engine.initialize()
             logging.getLogger("mk.daemon").info(f"Engine initialized: {summary}")
         except Exception as exc:  # pragma: no cover - defensive daemon startup
-            logging.getLogger("mk.daemon").warning(
-                f"Engine initialization degraded: {exc}"
-            )
+            logging.getLogger("mk.daemon").warning(f"Engine initialization degraded: {exc}")
         await daemon_loop(engine)
     else:
         console.print(f"[red]Unknown mode: {mode}[/red]")

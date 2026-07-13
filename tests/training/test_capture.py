@@ -31,8 +31,8 @@ def test_capture_writes_training_format(tmp_path):
 
 def test_capture_skips_empty_and_failed(tmp_path):
     cap = ConversationCapture(path=str(tmp_path / "c.jsonl"), enabled=True)
-    assert cap.capture("", "reply") is False       # empty user
-    assert cap.capture("prompt", "   ") is False    # empty assistant
+    assert cap.capture("", "reply") is False  # empty user
+    assert cap.capture("prompt", "   ") is False  # empty assistant
     assert cap.capture("prompt", "reply", ok=False) is False  # failed reply
     assert cap.count() == 0
 

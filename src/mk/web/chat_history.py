@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -101,7 +101,7 @@ class ChatHistoryStore:
                 1 if ok else 0,
                 failure_type,
                 json.dumps(actions) if actions else None,
-                datetime.now(UTC).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         # Prune anything beyond the most recent ``_max`` for this session.

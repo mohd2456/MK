@@ -35,9 +35,7 @@ class MemoryEntry(BaseModel):
     id: str = Field(description="Unique memory entry identifier")
     content: str = Field(description="The memory content")
     category: MemoryCategory = Field(description="Memory category for filtering")
-    timestamp: datetime = Field(
-        default_factory=utcnow, description="When this memory was created"
-    )
+    timestamp: datetime = Field(default_factory=utcnow, description="When this memory was created")
     relevance_score: float = Field(default=1.0, description="Relevance score (0.0 to 1.0)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
@@ -51,9 +49,7 @@ class ConversationTurn(BaseModel):
 
     role: str = Field(description="Message role (user, assistant, system)")
     content: str = Field(description="Original message content")
-    timestamp: datetime = Field(
-        default_factory=utcnow, description="When this turn occurred"
-    )
+    timestamp: datetime = Field(default_factory=utcnow, description="When this turn occurred")
     summary: Optional[str] = Field(default=None, description="Compressed summary of this turn")
     token_count: int = Field(default=0, description="Estimated token count for this turn")
 
@@ -68,9 +64,7 @@ class UserKnowledge(BaseModel):
     key: str = Field(description="Knowledge identifier/topic")
     value: str = Field(description="The knowledge content")
     confidence: float = Field(default=1.0, description="Confidence score (0.0 to 1.0)")
-    learned_at: datetime = Field(
-        default_factory=utcnow, description="When this was learned"
-    )
+    learned_at: datetime = Field(default_factory=utcnow, description="When this was learned")
     last_accessed: datetime = Field(
         default_factory=utcnow, description="When this was last retrieved"
     )
@@ -112,9 +106,7 @@ class SystemState(BaseModel):
     services: List[ServiceInfo] = Field(
         default_factory=list, description="Services running on this machine"
     )
-    last_check: datetime = Field(
-        default_factory=utcnow, description="Last time status was checked"
-    )
+    last_check: datetime = Field(default_factory=utcnow, description="Last time status was checked")
     recent_actions: List[str] = Field(
         default_factory=list, description="Recent actions taken on this machine"
     )

@@ -52,9 +52,7 @@ class ConversationCapture:
         else:
             env_path = os.environ.get("MK_CAPTURE_PATH")
             self._path = (
-                Path(env_path)
-                if env_path
-                else Path.home() / ".mk" / "training" / "captured.jsonl"
+                Path(env_path) if env_path else Path.home() / ".mk" / "training" / "captured.jsonl"
             )
         if enabled is None:
             enabled = os.environ.get("MK_CAPTURE_CONVERSATIONS", "").strip().lower() in _TRUTHY
