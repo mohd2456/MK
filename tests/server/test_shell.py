@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mk.server._shell import safe_quote, validate_name
+from mk.server._shell import safe_quote, validate_calendar, validate_name
 
 
 class TestValidateName:
@@ -89,6 +89,40 @@ class TestValidateName:
     def test_label_appears_in_error(self):
         with pytest.raises(ValueError, match="pool"):
             validate_name(";bad", "pool")
+
+
+class TestValidateCalendar:
+    """Tests for validate_calendar (systemd OnCalendar / cron expressions)."""
+
+    def test_accepts_common_daily(self):
+        assert validate_calendar("*-*-* 02:00:00") == "*-*-* 02:00:00"
+
+    def test_accepts_weekday_prefix(self):
+        assert validate_calendar("Mon *-*-* 02:00:00") == "Mon *-*-* 02:00:00"
+
+    def test_accepts_keyword(self):
+        assert validate_calendar("daily") == "daily"
+
+    def test_accepts_interval_and_ranges(self):
+        assert validate_calendar("Mon..Fri *:0/15") == "Mon..Fri *:0/15"
+
+    def test_rejects_newline_injection(self):
+        # The core fix: a newline would let the value inject extra systemd
+        # unit directives when written into a timer file.
+        with pytest.raises(ValueError, match="Invalid"):
+            validate_calendar("*-*-* 02:00:00\n[Service]\nExecStart=/bin/sh")
+
+    def test_rejects_bracket(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            validate_calendar("[Service]")
+
+    def test_rejects_empty(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            validate_calendar("")
+
+    def test_rejects_shell_metacharacters(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            validate_calendar("$(reboot)")
 
 
 class TestSafeQuote:

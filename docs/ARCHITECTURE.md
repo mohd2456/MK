@@ -25,9 +25,11 @@ defensive and testable.
    Web API          │  FastAPI app  (src/mk/web/app.py)             │
    (transport)      │   • auth, rate limiting, CORS, observability  │
                     │   • /api/v1/chat/message   (POST)             │
+                    │   • /api/v1/chat/stream    (POST, SSE)        │
                     │   • /api/v1/chat/suggestions (GET)            │
                     │   • /api/v1/chat/history   (GET, by session)  │
                     │   • /ws/chat               (WebSocket)        │
+                    │   • audit trail + /api/v1/metrics             │
                     │   • ChatHistoryStore (SQLite persistence)     │
                     └───────────────────────┬──────────────────────┘
                                             │  ChatRequest (dict)
@@ -283,3 +285,76 @@ Frontend (vitest):
 This split keeps the fast, exhaustive logic tests separate from the slower
 end-to-end wiring tests, and guarantees the "never crashes / handles every AI
 error" properties are checked, not just asserted in prose.
+
+
+---
+
+## 8. Streaming, local brain, audit & retraining
+
+These capabilities extend the core without changing the wrapper contract.
+
+### 8.1 Streaming replies
+
+Streaming reuses the same layering — it is a streaming *variant* of the choke
+point, not a bypass.
+
+```
+provider.stream()  →  LLMRouter.stream()  →  MKEngine.stream_reply()
+      → MKWrapper.stream_chat()  →  SSE  /api/v1/chat/stream   (token/done/error)
+                                 →  WS   /ws/chat              (chat_stream frames)
+```
+
+- **Providers** already implement `stream()`. `LLMRouter.stream()` mirrors
+  `complete()`'s provider selection and prompt compression, but can only fall
+  back to another provider *before the first chunk* — once bytes are on the
+  wire the error is surfaced instead of silently switching.
+- **`MKEngine.stream_reply()`** yields direct-command and no-LLM replies as a
+  single chunk (they are instant) and streams the conversational LLM path
+  token-by-token.
+- **`MKWrapper.stream_chat()`** keeps the guarantees it can while streaming:
+  input is validated up front (→ 422 before the stream opens), a missing engine
+  degrades to one calm message chunk, and a mid-stream error is isolated into a
+  trailing notice rather than propagating.
+- **Transports.** The SSE endpoint emits `token` / `done` / `error` events; the
+  WebSocket path emits a `chat_response{done:false}` opener, `chat_stream`
+  chunks, and a `chat_stream{done:true}` closer. The React chat store renders
+  the growing bubble with a live cursor. With **no** engine, the WebSocket keeps
+  the single-shot envelope (richer failure metadata) instead of streaming.
+
+### 8.2 Local brain (first-class, keyless provider)
+
+MK's own fine-tuned model is a first-class provider that needs **no API key**.
+Set `MK_LOCAL_BRAIN_URL` (llama.cpp OpenAI-compatible server, or an Ollama
+server with `MK_LOCAL_BRAIN_KIND=ollama`) and `configure_router_from_keys`
+registers it automatically. Because its cost is `0`, the router's cost-sorted
+fallback chain **prefers the local brain first** and only falls back to cloud
+providers when it is unavailable — so MK can run entirely on local inference
+with no cloud keys at all.
+
+### 8.3 Security audit trail
+
+Every state-changing API call (`POST`/`PUT`/`DELETE`/`PATCH`) and every login
+outcome (success / invalid PIN / lockout) is appended to a durable, queryable
+audit log (`AuditLogger`). Request bodies are **never** recorded, so PINs and
+API keys are not persisted. The `dashboard/activity` endpoint serves the recent
+trail (newest first). This complements — but is distinct from — the per-request
+structured HTTP logs.
+
+### 8.4 Conversation capture → retraining loop
+
+Opt-in (`MK_CAPTURE_CONVERSATIONS=1`), MK records **successful, non-degraded**
+exchanges to a JSONL file in the exact fine-tuning format
+(`{"messages": [system, user, assistant]}`). The
+`training/scripts/ingest_captured.py` tool folds that file into the training
+dataset — de-duplicating against existing examples and normalizing the system
+prompt — so a subsequent retrain teaches the local brain from real usage. This
+closes the local-brain loop: run locally → capture real usage → retrain →
+improve.
+
+### 8.5 Observability
+
+Streaming and routing are metered on the existing Prometheus endpoint
+(`/api/v1/metrics`): `mk_llm_requests_total{provider,tier}` (with `tier` =
+`local`|`cloud`, so the local-brain hit rate vs cloud fallback is measurable),
+`mk_llm_streams_total`, `mk_llm_stream_chunks_total`,
+`mk_llm_provider_failures_total`, and `mk_training_captured_total`.

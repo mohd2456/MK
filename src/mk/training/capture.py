@@ -101,9 +101,17 @@ class ConversationCapture:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            return True
         except OSError:
             return False
+
+        # Observability: count captured training examples.
+        try:
+            from mk.metrics import metrics
+
+            metrics.increment("mk_training_captured_total")
+        except Exception:  # noqa: BLE001 - metrics must never break capture
+            pass
+        return True
 
     def count(self) -> int:
         """Return the number of captured examples on disk (0 if none/error)."""

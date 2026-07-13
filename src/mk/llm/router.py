@@ -12,6 +12,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from mk.clock import utcnow
 from mk.llm.base import LLMProvider, ProviderError
+from mk.metrics import metrics
 from mk.llm.compression import ContextCompressor
 from mk.llm.models import (
     LLMRequest,
@@ -21,6 +22,14 @@ from mk.llm.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Provider names that run on local hardware (free, preferred). Used to label
+# the local-vs-cloud request metric so hit rate can be computed.
+_LOCAL_PROVIDERS = frozenset({"local", "ollama"})
+
+
+def _provider_tier(name: str) -> str:
+    return "local" if name in _LOCAL_PROVIDERS else "cloud"
 
 
 class LLMRouter:
@@ -158,6 +167,13 @@ class LLMRouter:
         status.total_tokens += tokens
         status.total_cost += cost
 
+        # Observability: count successful requests by provider and local/cloud
+        # tier so the local-brain hit rate vs cloud fallback can be measured.
+        metrics.increment(
+            "mk_llm_requests_total",
+            labels={"provider": name, "tier": _provider_tier(name)},
+        )
+
         # Update rolling average latency
         if status.avg_latency_ms == 0:
             status.avg_latency_ms = latency_ms
@@ -174,6 +190,8 @@ class LLMRouter:
         status.last_failure = utcnow()
         status.consecutive_failures += 1
         status.total_requests += 1
+
+        metrics.increment("mk_llm_provider_failures_total", labels={"provider": name})
 
         # Degrade or mark unhealthy based on consecutive failures
         if status.consecutive_failures >= 3:
@@ -301,8 +319,13 @@ class LLMRouter:
             try:
                 async for chunk in provider.stream(request):
                     produced = True
+                    metrics.increment("mk_llm_stream_chunks_total", labels={"provider": name})
                     yield chunk
                 # Stream finished cleanly.
+                metrics.increment(
+                    "mk_llm_streams_total",
+                    labels={"provider": name, "tier": _provider_tier(name)},
+                )
                 self._update_status_success(name, 0.0, 0, 0.0)
                 return
             except Exception as e:  # noqa: BLE001 - classify + maybe fall back

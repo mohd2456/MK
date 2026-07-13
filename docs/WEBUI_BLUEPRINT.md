@@ -612,7 +612,7 @@ System info, services, updates, power controls, and AI configuration.
 |  AI SETTINGS (when AI Settings tab active)                        |
 |  +--------------------------------------------------------------+ |
 |  | Provider:     [OpenAI v] [Anthropic v] [Local v]             | |
-|  | Model:        gpt-4o / claude-sonnet / llama3                | |
+|  | Model:        gpt-5.4-mini / claude-sonnet-4-6 / mk-brain    | |
 |  | API Key:      sk-...****                    [Change]         | |
 |  | Temperature:  0.7  [=======|===]                             | |
 |  | Max tokens:   4096                                           | |

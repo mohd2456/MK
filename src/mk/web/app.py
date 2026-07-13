@@ -160,6 +160,9 @@ _mk_wrapper: Optional[MKWrapper] = None
 _chat_history: Optional[ChatHistoryStore] = None
 _audit_logger: Optional[AuditLogger] = None
 _capture: Optional[ConversationCapture] = None
+# When True, creating a backup job also registers a real systemd timer via
+# BackupManager (production). Disabled in tests to avoid touching systemd.
+_enable_backup_scheduling: bool = True
 _start_time: float = time.time()
 # Strong references to fire-and-forget background tasks (e.g. running backups)
 # so they are not garbage-collected mid-flight. Entries are discarded on done.
@@ -337,6 +340,7 @@ def create_app(
     audit_log_dir: Optional[str] = None,
     capture_conversations: Optional[bool] = None,
     capture_path: Optional[str] = None,
+    enable_backup_scheduling: bool = True,
 ) -> FastAPI:
     """Create the FastAPI application.
 
@@ -353,13 +357,18 @@ def create_app(
         capture_conversations: Opt-in capture of successful chats as local-brain
             training data. Defaults to the ``MK_CAPTURE_CONVERSATIONS`` env var.
         capture_path: Output path for captured training data (JSONL).
+        enable_backup_scheduling: When True (default), creating a backup job also
+            registers a real systemd timer via ``BackupManager``. Set False in
+            tests so no systemd/sudo side effects occur.
 
     Returns:
         Configured FastAPI app.
     """
     global _mk_engine, _mk_wrapper, _pin_hash, _chat_history, _audit_logger, _capture
+    global _enable_backup_scheduling
 
     _mk_engine = mk_engine
+    _enable_backup_scheduling = enable_backup_scheduling
     # The wrapper is the single, defensive integration point for all
     # conversational paths (HTTP + WebSocket). It validates input, enforces a
     # time budget, isolates engine failures, screens output for AI failures,
@@ -1742,6 +1751,37 @@ def _register_protection_routes(app: FastAPI) -> None:
     # Lock to protect concurrent mutations of in-memory stores
     _protection_lock = asyncio.Lock()
 
+    async def _schedule_backup_job(job: Dict[str, Any]) -> bool:
+        """Best-effort real scheduling of a backup job via a systemd timer.
+
+        Registers the job with :class:`~mk.server.backups.BackupManager`, which
+        writes a job config and a systemd timer so the backup actually runs on
+        schedule. Gated by ``_enable_backup_scheduling`` (off in tests) and fully
+        best-effort — a non-root/dev environment simply reports not-scheduled
+        instead of failing the API call.
+        """
+        if not _enable_backup_scheduling or not job.get("enabled", True):
+            return False
+        if not job.get("name") or not job.get("source"):
+            return False
+        try:
+            from mk.server.backups import BackupManager
+
+            manager = BackupManager(sudo=True)
+            result = await manager.create_job(
+                name=job["name"],
+                backup_type=job["backup_type"],
+                source=job["source"],
+                destination=job["destination"],
+                schedule=job["schedule"],
+                retention_count=job["retention_count"],
+                cron_expression=job.get("cron_expression"),
+            )
+            return bool(result.success)
+        except Exception as exc:  # noqa: BLE001 - scheduling must not break create
+            logger.warning("backup scheduling failed for %s: %s", job.get("name"), exc)
+            return False
+
     # Backup Jobs CRUD
     @app.get("/api/v1/protection/jobs", dependencies=[Depends(require_auth)])
     async def list_backup_jobs():
@@ -1768,6 +1808,9 @@ def _register_protection_routes(app: FastAPI) -> None:
             }
             _backup_jobs.append(job)
             _job_history[str(job["id"])] = []
+
+        # Best-effort: register a real systemd timer so the job runs on schedule.
+        job["scheduled"] = await _schedule_backup_job(job)
         return {"status": "created", "job": job}
 
     @app.put("/api/v1/protection/jobs/{job_id}", dependencies=[Depends(require_auth)])

@@ -60,10 +60,7 @@ UNIVERSAL_PROVIDERS = {
     "sambanova",
     "cerebras",
     "hyperbolic",
-    "lepton",
     "novita",
-    "octo",
-    "anyscale",
     # llama.cpp OpenAI-compatible local server (MK's fine-tuned brain).
     "local",
 }

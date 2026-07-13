@@ -35,7 +35,11 @@ def app(tmp_path):
     The audit trail is pointed at a per-test temp directory so security
     audit entries never leak between tests or into the developer's ~/.mk.
     """
-    return create_app(pin=TEST_PIN, audit_log_dir=str(tmp_path / "audit"))
+    return create_app(
+        pin=TEST_PIN,
+        audit_log_dir=str(tmp_path / "audit"),
+        enable_backup_scheduling=False,  # no systemd/sudo side effects in tests
+    )
 
 
 @pytest_asyncio.fixture

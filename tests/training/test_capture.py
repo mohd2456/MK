@@ -15,6 +15,18 @@ def test_capture_disabled_by_default_writes_nothing(tmp_path):
     assert not (tmp_path / "c.jsonl").exists()
 
 
+def test_capture_increments_metric(tmp_path):
+    from mk.metrics import metrics
+
+    before = metrics.get_counter("mk_training_captured_total")
+    cap = ConversationCapture(path=str(tmp_path / "c.jsonl"), enabled=True)
+    assert cap.capture("q", "a") is True
+    assert metrics.get_counter("mk_training_captured_total") == before + 1
+    # A skipped (empty) capture does not increment the metric.
+    cap.capture("", "a")
+    assert metrics.get_counter("mk_training_captured_total") == before + 1
+
+
 def test_capture_writes_training_format(tmp_path):
     out = tmp_path / "c.jsonl"
     cap = ConversationCapture(path=str(out), enabled=True)

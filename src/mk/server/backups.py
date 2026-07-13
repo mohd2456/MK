@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from mk.tools.base import ToolResult
 
-from ._shell import safe_quote, validate_name
+from ._shell import safe_quote, validate_calendar, validate_name
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,15 @@ class BackupManager:
                 success=False,
                 error="cron_expression required when schedule is 'custom'",
             )
+
+        # Security: cron_expression is interpolated into a systemd timer unit
+        # file below. Validate it against a strict allowlist (no newlines) so a
+        # crafted value cannot inject additional systemd directives.
+        if schedule == "custom":
+            try:
+                validate_calendar(cron_expression or "", "cron_expression")
+            except ValueError as exc:
+                return ToolResult(success=False, error=str(exc))
 
         job_config = {
             "name": name,
