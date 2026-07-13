@@ -221,13 +221,13 @@ MK uses a YAML configuration file (`config.yaml`):
 llm_providers:
   - name: openai
     api_key_ref: openai_api_key    # Reference to encrypted secret
-    model: gpt-4-turbo
+    model: gpt-5.4-mini
     endpoint: https://api.openai.com/v1
     priority: 10
 
   - name: anthropic
     api_key_ref: anthropic_api_key
-    model: claude-3-sonnet
+    model: claude-sonnet-4-6
     endpoint: https://api.anthropic.com/v1
     priority: 8
 

@@ -8,9 +8,9 @@ Supports fallback chains with no loyalty to any single provider.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
+from mk.clock import utcnow
 from mk.llm.base import LLMProvider, ProviderError
 from mk.llm.compression import ContextCompressor
 from mk.llm.models import (
@@ -152,7 +152,7 @@ class LLMRouter:
             return
 
         status.health = ProviderHealth.HEALTHY
-        status.last_success = datetime.utcnow()
+        status.last_success = utcnow()
         status.consecutive_failures = 0
         status.total_requests += 1
         status.total_tokens += tokens
@@ -171,7 +171,7 @@ class LLMRouter:
         if status is None:
             return
 
-        status.last_failure = datetime.utcnow()
+        status.last_failure = utcnow()
         status.consecutive_failures += 1
         status.total_requests += 1
 
@@ -256,6 +256,71 @@ class LLMRouter:
         # All providers failed
         raise ProviderError(
             f"All providers failed. Last error: {last_error}",
+            provider="router",
+            retryable=True,
+        )
+
+    async def stream(self, request: LLMRequest) -> AsyncIterator[str]:
+        """Stream a completion from the best available provider.
+
+        Mirrors :meth:`complete`'s provider selection and optional prompt
+        compression, but yields text chunks as they arrive. Fallback is only
+        possible *before the first chunk*: if a provider fails after streaming
+        has begun, the partial output cannot be un-sent, so the error is
+        surfaced instead of silently switching providers.
+
+        Args:
+            request: The LLM request.
+
+        Yields:
+            Text chunks in order.
+
+        Raises:
+            ProviderError: If no provider can start a stream.
+        """
+        candidates = self._select_provider(request)
+
+        if not candidates:
+            raise ProviderError(
+                "No available providers",
+                provider="router",
+                retryable=False,
+            )
+
+        if self._compressor.active:
+            compressed, stats = self._compressor.compress_messages(
+                request.messages, model=request.model_override
+            )
+            if stats.applied:
+                request = request.model_copy(update={"messages": compressed})
+
+        last_error: Optional[Exception] = None
+        for name in candidates:
+            provider = self._providers[name]
+            produced = False
+            try:
+                async for chunk in provider.stream(request):
+                    produced = True
+                    yield chunk
+                # Stream finished cleanly.
+                self._update_status_success(name, 0.0, 0, 0.0)
+                return
+            except Exception as e:  # noqa: BLE001 - classify + maybe fall back
+                logger.warning(f"Provider {name} stream failed: {e}")
+                self._update_status_failure(name, e)
+                last_error = e
+                if produced:
+                    # Already emitted partial output; cannot cleanly fall back.
+                    raise ProviderError(
+                        f"Stream interrupted from {name}: {e}",
+                        provider=name,
+                        retryable=True,
+                    ) from e
+                # No output yet — try the next candidate.
+                continue
+
+        raise ProviderError(
+            f"All providers failed to stream. Last error: {last_error}",
             provider="router",
             retryable=True,
         )

@@ -30,7 +30,7 @@ import asyncio
 import inspect
 import logging
 import time
-from typing import Any, Awaitable, Callable, List, Optional, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
 
 from mk.observability import metrics
 from mk.wrapper.context import get_suggestions
@@ -118,6 +118,56 @@ class MKWrapper:
         """
         ctx = self._coerce_context(context)
         return get_suggestions(ctx)
+
+    def validate_request(self, request: Union[ChatRequest, dict]) -> ChatRequest:
+        """Validate/normalize a request, raising for invalid caller input.
+
+        Exposed so streaming callers can reject bad input up front (HTTP 422)
+        before opening a stream.
+
+        Raises:
+            InputValidationError: If the request is invalid.
+        """
+        return self._coerce_request(request)
+
+    async def stream_chat(self, request: Union[ChatRequest, dict]) -> "AsyncIterator[str]":
+        """Stream a conversational reply chunk-by-chunk.
+
+        Same guarantees as :meth:`chat` for the boundary it can enforce while
+        streaming: caller input is validated (raising
+        :class:`InputValidationError`), a missing engine degrades to a single
+        calm message chunk, and any engine error mid-stream is isolated and
+        turned into a trailing fallback notice rather than propagating.
+
+        If the engine does not expose an async ``stream_reply`` generator, this
+        falls back to a single-chunk yield of the non-streaming result, so every
+        engine works through one code path.
+
+        Yields:
+            Reply text chunks in order.
+        """
+        req = self._coerce_request(request)
+        engine = await self._get_engine()
+
+        if engine is None:
+            yield user_message_for(AIFailureType.NO_ENGINE)
+            return
+
+        stream_fn = getattr(engine, "stream_reply", None)
+        if not callable(stream_fn):
+            # Engine has no streaming support — degrade to non-streaming chat.
+            result = await self.chat(req)
+            if result.content:
+                yield result.content
+            return
+
+        try:
+            async for chunk in stream_fn(req.content):
+                if chunk:
+                    yield chunk
+        except Exception as exc:  # noqa: BLE001 - defensive streaming boundary
+            logger.error("wrapper.stream_chat failure: %s", exc, exc_info=True)
+            yield "\n\n" + user_message_for(AIFailureType.ENGINE_ERROR)
 
     async def chat(self, request: Union[ChatRequest, dict]) -> ChatResult:
         """Process a conversational request and always return a ``ChatResult``.

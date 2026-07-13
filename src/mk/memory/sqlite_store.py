@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiosqlite
+
+from mk.clock import utcnow
 
 
 class SQLiteMemoryStore:
@@ -101,7 +102,7 @@ class SQLiteMemoryStore:
         """
         await self._ensure_initialized()
 
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         entry_id = f"mem_{key}_{int(time.time() * 1000)}"
         metadata_json = json.dumps(metadata or {})
 

@@ -264,20 +264,7 @@ WantedBy=timers.target
         except json.JSONDecodeError:
             return ToolResult(success=False, error=f"Invalid job config for '{name}'")
 
-        backup_type = job.get("backup_type", "")
-        source = job.get("source", "")
-        destination = job.get("destination", "")
-
-        if backup_type == "zfs_snapshot":
-            result = await self._run_zfs_snapshot(source, name)
-        elif backup_type == "zfs_send":
-            result = await self._run_zfs_send(source, destination)
-        elif backup_type == "rsync":
-            result = await self._run_rsync(source, destination)
-        elif backup_type == "restic":
-            result = await self._run_restic(source, destination)
-        else:
-            return ToolResult(success=False, error=f"Unknown backup type: {backup_type}")
+        result = await self.run_backup_config(job)
 
         # Update job state
         status = "success" if result.success else "failed"
@@ -287,6 +274,37 @@ WantedBy=timers.target
         await self._run_with_stdin(f"tee {safe_quote(config_path)} > /dev/null", updated_json)
 
         return result
+
+    async def run_backup_config(self, job: Dict[str, Any]) -> ToolResult:
+        """Execute a backup from an explicit job config dict.
+
+        Unlike :meth:`run_backup`, this does not require an on-disk job config
+        file — it dispatches purely on the provided dict. This lets callers that
+        manage their own job records (e.g. the web API's in-memory store) run a
+        real backup without first materializing a config file.
+
+        Args:
+            job: Mapping with at least ``name`` and ``backup_type``; ``source``
+                and ``destination`` as required by the backup type.
+
+        Returns:
+            ToolResult describing the outcome.
+        """
+        name = job.get("name") or "adhoc"
+        validate_name(name, "job name")
+        backup_type = job.get("backup_type", "")
+        source = job.get("source", "")
+        destination = job.get("destination", "")
+
+        if backup_type == "zfs_snapshot":
+            return await self._run_zfs_snapshot(source, name)
+        elif backup_type == "zfs_send":
+            return await self._run_zfs_send(source, destination)
+        elif backup_type == "rsync":
+            return await self._run_rsync(source, destination)
+        elif backup_type == "restic":
+            return await self._run_restic(source, destination)
+        return ToolResult(success=False, error=f"Unknown backup type: {backup_type}")
 
     async def _run_zfs_snapshot(self, dataset: str, job_name: str) -> ToolResult:
         """Execute a ZFS snapshot backup."""

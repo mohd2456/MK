@@ -29,9 +29,13 @@ async def _close_chat_history():
 
 
 @pytest.fixture
-def app():
-    """Create a fresh FastAPI app for testing."""
-    return create_app(pin=TEST_PIN)
+def app(tmp_path):
+    """Create a fresh FastAPI app for testing.
+
+    The audit trail is pointed at a per-test temp directory so security
+    audit entries never leak between tests or into the developer's ~/.mk.
+    """
+    return create_app(pin=TEST_PIN, audit_log_dir=str(tmp_path / "audit"))
 
 
 @pytest_asyncio.fixture

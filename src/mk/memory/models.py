@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from mk.clock import utcnow
+
 
 class MemoryCategory(str, Enum):
     """Category for memory entries."""
@@ -34,7 +36,7 @@ class MemoryEntry(BaseModel):
     content: str = Field(description="The memory content")
     category: MemoryCategory = Field(description="Memory category for filtering")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When this memory was created"
+        default_factory=utcnow, description="When this memory was created"
     )
     relevance_score: float = Field(default=1.0, description="Relevance score (0.0 to 1.0)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
@@ -50,7 +52,7 @@ class ConversationTurn(BaseModel):
     role: str = Field(description="Message role (user, assistant, system)")
     content: str = Field(description="Original message content")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When this turn occurred"
+        default_factory=utcnow, description="When this turn occurred"
     )
     summary: Optional[str] = Field(default=None, description="Compressed summary of this turn")
     token_count: int = Field(default=0, description="Estimated token count for this turn")
@@ -67,10 +69,10 @@ class UserKnowledge(BaseModel):
     value: str = Field(description="The knowledge content")
     confidence: float = Field(default=1.0, description="Confidence score (0.0 to 1.0)")
     learned_at: datetime = Field(
-        default_factory=datetime.utcnow, description="When this was learned"
+        default_factory=utcnow, description="When this was learned"
     )
     last_accessed: datetime = Field(
-        default_factory=datetime.utcnow, description="When this was last retrieved"
+        default_factory=utcnow, description="When this was last retrieved"
     )
     access_count: int = Field(default=0, description="Number of times this was retrieved")
     source: str = Field(default="conversation", description="Where this knowledge came from")
@@ -91,7 +93,7 @@ class ServiceInfo(BaseModel):
 
     name: str = Field(description="Service name")
     status: ServiceStatus = Field(default=ServiceStatus.UNKNOWN, description="Current status")
-    last_check: datetime = Field(default_factory=datetime.utcnow, description="Last status check")
+    last_check: datetime = Field(default_factory=utcnow, description="Last status check")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional service metadata"
     )
@@ -111,7 +113,7 @@ class SystemState(BaseModel):
         default_factory=list, description="Services running on this machine"
     )
     last_check: datetime = Field(
-        default_factory=datetime.utcnow, description="Last time status was checked"
+        default_factory=utcnow, description="Last time status was checked"
     )
     recent_actions: List[str] = Field(
         default_factory=list, description="Recent actions taken on this machine"

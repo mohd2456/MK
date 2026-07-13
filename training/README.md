@@ -278,15 +278,64 @@ You have $300 in AWS credits. This uses about 1-2% of that.
 
 ## Retraining
 
-As you use MK, you can collect real conversations and retrain:
+As you use MK, it can learn from **real conversations** and retrain.
 
-1. Add new examples to `data/generate_dataset.py`
-2. Regenerate: `python3 data/expand_dataset.py`
-3. Spin up AWS instance again
-4. Run training (it's fast — same process)
-5. Redeploy new model
+### Capture real usage (automatic, opt-in)
+
+Set `MK_CAPTURE_CONVERSATIONS=1` to have MK record successful exchanges (from
+the web UI, gateway, and WebSocket chat) to `~/.mk/training/captured.jsonl` in
+the exact training format. Capture is off by default (privacy-first), only
+records clean successful replies, and never logs failed/degraded answers.
+
+```bash
+# On the MK box (or in its systemd unit environment):
+export MK_CAPTURE_CONVERSATIONS=1
+# Optional custom location:
+export MK_CAPTURE_PATH=/var/lib/mk/training/captured.jsonl
+```
+
+### Fold captured data into the dataset
+
+```bash
+python training/scripts/ingest_captured.py \
+    --captured ~/.mk/training/captured.jsonl \
+    --data-dir training/data
+```
+
+This de-duplicates against the existing dataset, normalizes the system prompt to
+the canonical one, and appends new unique examples to `mk_train.jsonl`.
+
+### Retrain and redeploy
+
+1. (Optional) add hand-crafted examples to `data/generate_dataset.py` and run
+   `python3 data/expand_dataset.py`
+2. Spin up the AWS instance again
+3. Run training (it's fast — same process)
+4. Redeploy the new model
 
 Each retrain makes MK smarter and more attuned to you.
+
+---
+
+## Running the local brain
+
+Once deployed, point MK at the local model with an environment variable — it
+becomes a first-class, **keyless** provider that the router prefers first (it's
+free) and falls back from to the cloud only if it's unavailable:
+
+```bash
+# llama.cpp OpenAI-compatible server (default, from deploy/):
+export MK_LOCAL_BRAIN_URL=http://localhost:8080/v1
+
+# or an Ollama server:
+export MK_LOCAL_BRAIN_URL=http://localhost:11434
+export MK_LOCAL_BRAIN_KIND=ollama
+
+# optional: override the served model name (default: mk-brain)
+export MK_LOCAL_BRAIN_MODEL=mk-brain
+```
+
+With this set, MK runs on local inference even with **no cloud API keys at all**.
 
 ---
 

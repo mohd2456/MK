@@ -52,36 +52,54 @@ KEY_PATTERNS = {
 
 # Best models per provider (ranked by capability)
 PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
+    # Model pins verified against provider docs as of July 2026. The first
+    # entry in each list is the provider's default model (see provider_factory),
+    # so a balanced/cost-conscious model is listed first, matching MK's
+    # "cheap by default, smart when needed" routing philosophy. Cost figures
+    # are approximate ($/1K tokens) and only influence routing preference.
     "anthropic": [
         {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "input": 0.003,
             "output": 0.015,
             "max_ctx": 200000,
-            "tier": "smart",
+            "tier": "fast",
         },
         {
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-haiku-4-5",
             "input": 0.001,
             "output": 0.005,
             "max_ctx": 200000,
-            "tier": "fast",
+            "tier": "cheap",
+        },
+        {
+            "model": "claude-opus-4-8",
+            "input": 0.015,
+            "output": 0.075,
+            "max_ctx": 200000,
+            "tier": "smart",
         },
     ],
     "openai": [
-        {"model": "gpt-4o", "input": 0.0025, "output": 0.01, "max_ctx": 128000, "tier": "smart"},
         {
-            "model": "gpt-4o-mini",
-            "input": 0.00015,
-            "output": 0.0006,
-            "max_ctx": 128000,
+            "model": "gpt-5.4-mini",
+            "input": 0.00025,
+            "output": 0.002,
+            "max_ctx": 400000,
+            "tier": "fast",
+        },
+        {
+            "model": "gpt-5.4-nano",
+            "input": 0.00005,
+            "output": 0.0004,
+            "max_ctx": 400000,
             "tier": "cheap",
         },
-        {"model": "o3-mini", "input": 0.0011, "output": 0.0044, "max_ctx": 200000, "tier": "smart"},
+        {"model": "gpt-5.5", "input": 0.00125, "output": 0.01, "max_ctx": 400000, "tier": "smart"},
     ],
     "gemini": [
         {
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.5-flash",
             "input": 0.00015,
             "output": 0.0006,
             "max_ctx": 1000000,
@@ -97,24 +115,24 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "groq": [
         {
-            "model": "llama-3.3-70b-versatile",
-            "input": 0.00059,
-            "output": 0.00079,
+            "model": "openai/gpt-oss-120b",
+            "input": 0.00015,
+            "output": 0.0006,
             "max_ctx": 128000,
             "tier": "fast",
         },
         {
-            "model": "llama-3.1-8b-instant",
-            "input": 0.00005,
-            "output": 0.00008,
-            "max_ctx": 128000,
+            "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "input": 0.00011,
+            "output": 0.00034,
+            "max_ctx": 1000000,
             "tier": "cheap",
         },
         {
-            "model": "mixtral-8x7b-32768",
-            "input": 0.00024,
-            "output": 0.00024,
-            "max_ctx": 32768,
+            "model": "openai/gpt-oss-20b",
+            "input": 0.00005,
+            "output": 0.0002,
+            "max_ctx": 128000,
             "tier": "cheap",
         },
     ],
@@ -136,24 +154,24 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "openrouter": [
         {
-            "model": "anthropic/claude-sonnet-4-20250514",
+            "model": "anthropic/claude-sonnet-4.6",
             "input": 0.003,
             "output": 0.015,
             "max_ctx": 200000,
             "tier": "smart",
         },
         {
-            "model": "google/gemini-2.5-flash",
+            "model": "google/gemini-3.5-flash",
             "input": 0.00015,
             "output": 0.0006,
             "max_ctx": 1000000,
             "tier": "fast",
         },
         {
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "meta-llama/llama-4-maverick",
             "input": 0.0004,
             "output": 0.0004,
-            "max_ctx": 128000,
+            "max_ctx": 1000000,
             "tier": "cheap",
         },
     ],
@@ -219,16 +237,10 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
         },
     ],
     "xai": [
-        {"model": "grok-3", "input": 0.003, "output": 0.015, "max_ctx": 131072, "tier": "smart"},
+        {"model": "grok-4.3", "input": 0.00125, "output": 0.0025, "max_ctx": 1000000, "tier": "fast"},
+        {"model": "grok-4.5", "input": 0.003, "output": 0.015, "max_ctx": 1000000, "tier": "smart"},
         {
-            "model": "grok-3-mini",
-            "input": 0.0003,
-            "output": 0.0005,
-            "max_ctx": 131072,
-            "tier": "fast",
-        },
-        {
-            "model": "grok-build-0.1",
+            "model": "grok-build",
             "input": 0.001,
             "output": 0.002,
             "max_ctx": 256000,
@@ -391,6 +403,16 @@ PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
             "tier": "cheap",
         },
     ],
+    # Local brain — MK's own fine-tuned model, running for free on local
+    # hardware. Registered without an API key (see configure_router_from_keys).
+    # Cost 0 means the router prefers it first, falling back to cloud on failure.
+    "local": [
+        {"model": "mk-brain", "input": 0.0, "output": 0.0, "max_ctx": 8192, "tier": "cheap"},
+    ],
+    "ollama": [
+        {"model": "mk-brain", "input": 0.0, "output": 0.0, "max_ctx": 8192, "tier": "cheap"},
+        {"model": "qwen2.5:3b-instruct", "input": 0.0, "output": 0.0, "max_ctx": 32768, "tier": "cheap"},
+    ],
 }
 
 # Provider API endpoints
@@ -415,6 +437,11 @@ PROVIDER_ENDPOINTS = {
     "novita": "https://api.novita.ai/v3/openai",
     "octo": "https://text.octoai.run/v1",
     "anyscale": "https://api.endpoints.anyscale.com/v1",
+    # Local inference servers (no API key). Defaults match the training/deploy
+    # setup: llama.cpp OpenAI-compatible server on :8080, Ollama on :11434.
+    # Override the local URL with the MK_LOCAL_BRAIN_URL environment variable.
+    "local": "http://localhost:8080/v1",
+    "ollama": "http://localhost:11434",
 }
 
 

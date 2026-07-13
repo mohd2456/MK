@@ -2,7 +2,10 @@
 #
 # MK OS Installer
 #
-# Run this on a fresh Debian 12 (Bookworm) server install.
+# Runs on a fresh server install. Supported distributions:
+#   - Debian 12 (Bookworm) / Ubuntu           (apt)
+#   - Amazon Linux 2023 / Fedora / RHEL / CentOS (dnf/yum)
+#
 # When done, reboot. You'll see MK immediately — no login screen.
 #
 # Usage:
@@ -24,11 +27,13 @@ MK_LOG="/var/log/mk"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}[MK]${NC} $1"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail()  { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
 # --- Pre-checks ---
@@ -36,39 +41,116 @@ if [ "$(id -u)" -ne 0 ]; then
     fail "Run as root: sudo bash install.sh"
 fi
 
-info "Installing MK OS on $(hostname)..."
+# --- Distro detection ---
+# Determine the package-manager family so the rest of the installer can pick
+# the right package names. PKG_FAMILY is "debian" (apt) or "rhel" (dnf/yum).
+PKG_FAMILY=""
+PKG_MGR=""
+DISTRO_ID="unknown"
+if [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    DISTRO_ID="${ID:-unknown}"
+fi
+
+if command -v apt-get &>/dev/null; then
+    PKG_FAMILY="debian"
+    PKG_MGR="apt-get"
+elif command -v dnf &>/dev/null; then
+    PKG_FAMILY="rhel"
+    PKG_MGR="dnf"
+elif command -v yum &>/dev/null; then
+    PKG_FAMILY="rhel"
+    PKG_MGR="yum"
+else
+    fail "Unsupported distro: could not find apt-get, dnf, or yum."
+fi
+
+info "Installing MK OS on $(hostname) (distro: ${DISTRO_ID}, package manager: ${PKG_MGR})..."
 echo ""
+
+# --- Package helpers (distro-agnostic) ---
+pkg_refresh() {
+    case "$PKG_FAMILY" in
+        debian) apt-get update -qq ;;
+        rhel)   "$PKG_MGR" makecache -q >/dev/null 2>&1 || true ;;
+    esac
+}
+
+# Install packages, tolerating any that are unavailable on this distro
+# (mirrors the original best-effort behavior for optional homelab tooling).
+pkg_install() {
+    case "$PKG_FAMILY" in
+        debian) apt-get install -y -qq "$@" >/dev/null 2>&1 || true ;;
+        rhel)   "$PKG_MGR" install -y -q "$@" >/dev/null 2>&1 || true ;;
+    esac
+}
 
 # --- 1. System packages ---
 info "Installing system packages..."
-apt-get update -qq
-apt-get install -y -qq \
-    python3 python3-pip python3-venv python3-dev \
-    git curl wget \
-    zfsutils-linux \
-    docker.io docker-compose-plugin \
-    nftables wireguard-tools \
-    smartmontools lm-sensors \
-    eject ffmpeg \
-    iproute2 iputils-ping dnsutils nmap \
-    sudo systemd \
-    libvirt-daemon-system virtinst qemu-kvm \
-    lxc lxc-templates \
-    ethtool \
-    > /dev/null 2>&1 || true
+pkg_refresh
+
+if [ "$PKG_FAMILY" = "debian" ]; then
+    pkg_install \
+        python3 python3-pip python3-venv python3-dev \
+        git curl wget \
+        zfsutils-linux \
+        docker.io docker-compose-plugin \
+        nftables wireguard-tools \
+        smartmontools lm-sensors \
+        eject ffmpeg \
+        iproute2 iputils-ping dnsutils nmap \
+        sudo systemd \
+        libvirt-daemon-system virtinst qemu-kvm \
+        lxc lxc-templates \
+        ethtool
+else
+    # RHEL family (Amazon Linux 2023, Fedora, RHEL, CentOS Stream).
+    # EPEL broadens availability of tools like nmap on RHEL/CentOS; it is a
+    # no-op / harmless failure on Amazon Linux 2023 and Fedora.
+    "$PKG_MGR" install -y -q epel-release >/dev/null 2>&1 || true
+    pkg_install \
+        python3 python3-pip python3-devel \
+        git curl wget \
+        nftables wireguard-tools \
+        smartmontools lm_sensors \
+        eject ffmpeg \
+        iproute iputils bind-utils nmap \
+        sudo systemd \
+        libvirt virt-install qemu-kvm \
+        lxc \
+        ethtool
+    # Docker: package is "docker" on Amazon Linux 2023; the Compose plugin is
+    # not always packaged, so install what exists and note the rest.
+    pkg_install docker
+    if ! command -v docker &>/dev/null; then
+        warn "Docker was not installed automatically. Install it per your distro's docs."
+    fi
+    # ZFS is not in RHEL-family base repos (needs OpenZFS/kmod setup). Attempt
+    # the common package name but continue without it if unavailable.
+    pkg_install zfs || true
+    if ! command -v zpool &>/dev/null; then
+        warn "ZFS tools not installed (not in base repos on this distro). See https://openzfs.github.io/openzfs-docs/ for setup; storage features will be limited."
+    fi
+fi
 ok "System packages installed"
 
 # --- 2. Install MakeMKV (disc ripper) ---
 info "Installing MakeMKV..."
 if ! command -v makemkvcon &>/dev/null; then
-    # Add MakeMKV PPA or build from source
-    apt-get install -y -qq \
-        build-essential pkg-config libc6-dev libssl-dev libexpat1-dev \
-        libavcodec-dev libgl1-mesa-dev qtbase5-dev zlib1g-dev \
-        > /dev/null 2>&1 || true
-    # For now, just note it needs manual install
-    echo "NOTE: MakeMKV needs manual install from https://www.makemkv.com/forum/viewtopic.php?t=224"
-    echo "      Run: sudo apt install makemkv-bin makemkv-oss (if PPA available)"
+    if [ "$PKG_FAMILY" = "debian" ]; then
+        # Build dependencies for a manual MakeMKV build
+        pkg_install \
+            build-essential pkg-config libc6-dev libssl-dev libexpat1-dev \
+            libavcodec-dev libgl1-mesa-dev qtbase5-dev zlib1g-dev
+    else
+        # RHEL family build dependencies
+        "$PKG_MGR" groupinstall -y -q "Development Tools" >/dev/null 2>&1 || true
+        pkg_install \
+            pkgconf-pkg-config openssl-devel expat-devel \
+            ffmpeg-devel mesa-libGL-devel qt5-qtbase-devel zlib-devel
+    fi
+    echo "NOTE: MakeMKV needs a manual install from https://www.makemkv.com/forum/viewtopic.php?t=224"
 fi
 ok "MakeMKV check done"
 
@@ -84,7 +166,14 @@ if [ ! -d "$MK_HOME/.git" ]; then
 fi
 
 cd "$MK_HOME"
-pip3 install --break-system-packages -e . > /dev/null 2>&1
+# Newer distros (Debian 12+, Fedora) mark the system Python as
+# externally-managed (PEP 668) and require --break-system-packages for a
+# system-wide pip install. Older ones reject the unknown flag, so fall back.
+if pip3 install --break-system-packages -e . > /dev/null 2>&1; then
+    :
+else
+    pip3 install -e . > /dev/null 2>&1
+fi
 ok "MK installed"
 
 # --- 4. Create directories ---
@@ -105,7 +194,7 @@ if [ ! -f "$MK_CONFIG/config.yaml" ]; then
 llm_providers: []
 #  - name: claude
 #    api_key_ref: ANTHROPIC_API_KEY
-#    model: claude-sonnet-4-20250514
+#    model: claude-sonnet-4-6
 #    endpoint: https://api.anthropic.com
 #    priority: 10
 #    max_tokens: 4096

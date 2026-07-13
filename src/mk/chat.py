@@ -6,7 +6,7 @@ uses the cheapest model possible (only upgrades when it needs to think hard),
 and builds a relationship over time.
 
 Token strategy:
-  - Most chat replies: cheapest model available (Groq 8B, GPT-4o-mini, Gemini Flash)
+  - Most chat replies: cheapest model available (Groq gpt-oss-20b, GPT-5.4-nano, Gemini Flash)
   - Only uses expensive models when you ask something complex
   - Keeps context tight (recent messages + relevant memories)
   - Summarizes old conversation to save tokens

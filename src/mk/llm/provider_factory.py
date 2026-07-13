@@ -15,7 +15,8 @@ Provider mapping:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List
+import os
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from mk.llm.router import LLMRouter
@@ -25,16 +26,23 @@ from mk.llm.keys import PROVIDER_ENDPOINTS, PROVIDER_MODELS, KeyManager
 from mk.llm.models import ProviderConfig
 from mk.llm.providers.anthropic_provider import AnthropicProvider
 from mk.llm.providers.gemini_provider import GeminiProvider
+from mk.llm.providers.ollama_provider import OllamaProvider
 from mk.llm.providers.openai_provider import OpenAIProvider
 from mk.llm.providers.universal_provider import UniversalProvider
 
 logger = logging.getLogger(__name__)
+
+# Environment variables that enable/point at the local brain.
+LOCAL_BRAIN_URL_ENV = "MK_LOCAL_BRAIN_URL"
+LOCAL_BRAIN_KIND_ENV = "MK_LOCAL_BRAIN_KIND"  # "openai" (llama.cpp) or "ollama"
+LOCAL_BRAIN_MODEL_ENV = "MK_LOCAL_BRAIN_MODEL"
 
 # Providers that have custom (non-OpenAI-compatible) implementations
 CUSTOM_PROVIDERS = {
     "anthropic": AnthropicProvider,
     "openai": OpenAIProvider,
     "gemini": GeminiProvider,
+    "ollama": OllamaProvider,
 }
 
 # All other known providers use the OpenAI-compatible UniversalProvider
@@ -56,6 +64,8 @@ UNIVERSAL_PROVIDERS = {
     "novita",
     "octo",
     "anyscale",
+    # llama.cpp OpenAI-compatible local server (MK's fine-tuned brain).
+    "local",
 }
 
 
@@ -115,6 +125,74 @@ def create_provider(provider_name: str, api_key: str) -> LLMProvider:
     return UniversalProvider(config)
 
 
+def create_local_provider(
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    kind: str = "openai",
+    name: str = "local",
+) -> LLMProvider:
+    """Create a keyless provider for MK's local brain.
+
+    The local brain is MK's own fine-tuned model served on local hardware —
+    a first-class provider that needs no API key and costs nothing to run.
+
+    Args:
+        base_url: Local server URL. Falls back to ``MK_LOCAL_BRAIN_URL`` and
+            then the default for the transport kind.
+        model: Model name to request (default ``mk-brain`` or ``MK_LOCAL_BRAIN_MODEL``).
+        kind: ``"openai"`` for a llama.cpp OpenAI-compatible server (default)
+            or ``"ollama"`` for an Ollama server.
+        name: Provider name to register under.
+
+    Returns:
+        A ready ``LLMProvider`` (UniversalProvider for openai kind, OllamaProvider
+        for ollama kind).
+    """
+    kind = (kind or "openai").lower()
+    default_url = "http://localhost:11434" if kind == "ollama" else "http://localhost:8080/v1"
+    url = base_url or os.environ.get(LOCAL_BRAIN_URL_ENV) or default_url
+    model_name = model or os.environ.get(LOCAL_BRAIN_MODEL_ENV) or "mk-brain"
+
+    config = ProviderConfig(
+        name=name,
+        api_key="",  # local inference needs no key
+        base_url=url,
+        models=[model_name],
+        default_model=model_name,
+        cost_per_1k_input=0.0,
+        cost_per_1k_output=0.0,
+        timeout_seconds=120.0,  # local CPU inference can be slow
+        max_retries=2,
+    )
+
+    if kind == "ollama":
+        return OllamaProvider(config)
+    return UniversalProvider(config)
+
+
+def _maybe_register_local_brain(router: "LLMRouter") -> bool:
+    """Register the local brain provider if configured via environment.
+
+    The local brain is enabled by setting ``MK_LOCAL_BRAIN_URL``. Because its
+    cost is zero, the router prefers it first and falls back to cloud providers
+    only when it is unavailable.
+
+    Returns:
+        True if a local provider was registered.
+    """
+    url = os.environ.get(LOCAL_BRAIN_URL_ENV)
+    if not url:
+        return False
+    kind = os.environ.get(LOCAL_BRAIN_KIND_ENV, "openai")
+    try:
+        router.register_provider(create_local_provider(base_url=url, kind=kind))
+        logger.info("Registered local brain provider at %s (%s)", url, kind)
+        return True
+    except Exception as exc:  # noqa: BLE001 - never block startup on local brain
+        logger.warning("Failed to register local brain: %s", exc)
+        return False
+
+
 def create_providers_from_keys(key_manager: KeyManager) -> List[LLMProvider]:
     """Create provider instances for all active keys in the KeyManager.
 
@@ -165,8 +243,13 @@ def configure_router_from_keys(key_manager: KeyManager) -> "LLMRouter":
     for provider in providers:
         router.register_provider(provider)
 
-    if providers:
-        logger.info(f"Router configured with {len(providers)} providers")
+    # Register MK's local brain (keyless) if configured. It sits alongside any
+    # cloud providers and, being free, is preferred first with cloud fallback.
+    local_registered = _maybe_register_local_brain(router)
+
+    total = len(providers) + (1 if local_registered else 0)
+    if total:
+        logger.info(f"Router configured with {total} providers")
     else:
         logger.info("No API keys found - router has no providers")
 

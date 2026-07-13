@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from mk.clock import utcnow
 from mk.memory.models import ServiceInfo, ServiceStatus, SystemState
 
 
@@ -66,7 +67,7 @@ class SystemStateMemory:
         Returns:
             The updated SystemState entry.
         """
-        now = datetime.utcnow()
+        now = utcnow()
 
         if machine in self._states:
             state = self._states[machine]
@@ -113,7 +114,7 @@ class SystemStateMemory:
         for service in state.services:
             if service.name == service_name:
                 service.status = status
-                service.last_check = datetime.utcnow()
+                service.last_check = utcnow()
                 if metadata:
                     service.metadata.update(metadata)
                 return
@@ -123,7 +124,7 @@ class SystemStateMemory:
             ServiceInfo(
                 name=service_name,
                 status=status,
-                last_check=datetime.utcnow(),
+                last_check=utcnow(),
                 metadata=metadata or {},
             )
         )
@@ -141,7 +142,7 @@ class SystemStateMemory:
             self.update_state(machine, "unknown")
 
         state = self._states[machine]
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = utcnow().isoformat()
         state.recent_actions.append(f"[{timestamp}] {action}")
 
         # Keep only most recent 50 actions

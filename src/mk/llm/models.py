@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from mk.clock import utcnow
+
 
 class MessageRole(str, Enum):
     """Role for messages sent to LLM providers."""
@@ -81,7 +83,7 @@ class LLMResponse(BaseModel):
     model_used: str = Field(default="", description="Model that generated this response")
     latency_ms: float = Field(default=0.0, description="Response latency in milliseconds")
     cached: bool = Field(default=False, description="Whether this was served from cache")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class ProviderHealth(str, Enum):

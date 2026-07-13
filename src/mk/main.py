@@ -21,7 +21,7 @@ from rich.console import Console
 
 from mk.boot import boot_sequence
 from mk.config.settings import Settings
-from mk.core.engine import MKEngine
+from mk.core import MKEngineV2, create_engine
 
 console = Console()
 
@@ -36,14 +36,14 @@ logging.basicConfig(
 # ─── Interactive REPL ─────────────────────────────────────────────────────────
 
 
-async def repl_loop(engine: MKEngine) -> None:
+async def repl_loop(engine: MKEngineV2) -> None:
     """Run the interactive REPL loop.
 
     This is MK's primary interface. No menus, no buttons.
     You type, MK responds. Natural language to system commands.
 
     Args:
-        engine: Initialized MKEngine instance.
+        engine: The MK engine instance.
     """
     while True:
         try:
@@ -82,7 +82,7 @@ async def repl_loop(engine: MKEngine) -> None:
 # ─── Daemon Mode ──────────────────────────────────────────────────────────────
 
 
-async def daemon_loop(engine: MKEngine) -> None:
+async def daemon_loop(engine: MKEngineV2) -> None:
     """Run MK as a background daemon.
 
     In daemon mode, MK:
@@ -92,7 +92,7 @@ async def daemon_loop(engine: MKEngine) -> None:
     - Manages backups and services
 
     Args:
-        engine: Initialized MKEngine instance.
+        engine: The MK engine instance (Season 2 subsystems are started here).
     """
     import logging
 
@@ -108,6 +108,7 @@ async def daemon_loop(engine: MKEngine) -> None:
             # Future: health check loop, event polling, etc.
     except asyncio.CancelledError:
         logger.info("MK daemon shutting down")
+        await engine.shutdown()
 
 
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
@@ -135,7 +136,11 @@ async def main(mode: str = "terminal", config_path: Optional[str] = None) -> Non
         settings = Settings()
 
     # ─── Initialize Engine ────────────────────────────────────
-    engine = MKEngine(settings=settings)
+    # Use the canonical engine (MKEngineV2). Its Season 2 subsystems stay
+    # dormant until initialize() is awaited, so the terminal REPL keeps its
+    # lightweight, fast-start behavior while sharing one engine class with the
+    # web API and daemon.
+    engine = create_engine(settings=settings)
     engine.setup_server_management()
 
     # Store boot info for the AI to reference
@@ -145,6 +150,17 @@ async def main(mode: str = "terminal", config_path: Optional[str] = None) -> Non
     if mode == "terminal":
         await repl_loop(engine)
     elif mode == "daemon":
+        # The daemon is the right place to bring up the full engine: plugins,
+        # proactive ops, semantic memory, and policy enforcement. Best-effort so
+        # a missing optional subsystem degrades gracefully instead of crashing
+        # the service.
+        try:
+            summary = await engine.initialize()
+            logging.getLogger("mk.daemon").info(f"Engine initialized: {summary}")
+        except Exception as exc:  # pragma: no cover - defensive daemon startup
+            logging.getLogger("mk.daemon").warning(
+                f"Engine initialization degraded: {exc}"
+            )
         await daemon_loop(engine)
     else:
         console.print(f"[red]Unknown mode: {mode}[/red]")

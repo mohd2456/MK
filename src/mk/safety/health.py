@@ -15,6 +15,8 @@ from typing import List
 
 from pydantic import BaseModel, Field
 
+from mk.clock import utcnow
+
 
 class ResourceUsage(BaseModel):
     """System resource usage snapshot."""
@@ -138,8 +140,6 @@ class HealthMonitor:
         Returns:
             HealthReport with current system status.
         """
-        from datetime import datetime
-
         cpu_percent = self._get_cpu_percent()
         mem_total, mem_used, mem_percent = self._get_memory_info()
         disk_total, disk_used, disk_percent = self._get_disk_info()
@@ -173,7 +173,7 @@ class HealthMonitor:
 
         return HealthReport(
             healthy=healthy,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=utcnow().isoformat(),
             resources=resources,
             warnings=warnings,
             uptime_seconds=round(uptime, 2),

@@ -314,8 +314,8 @@ class TestProviderFactory:
         assert config.name == "openai"
         assert config.api_key == "sk-test-key"
         assert config.base_url == PROVIDER_ENDPOINTS["openai"]
-        assert "gpt-4o" in config.models
-        assert config.default_model == "gpt-4o"
+        assert "gpt-5.5" in config.models
+        assert config.default_model == "gpt-5.4-mini"
         assert config.cost_per_1k_input > 0
 
     def test_build_config_groq(self) -> None:
@@ -323,7 +323,7 @@ class TestProviderFactory:
         config = _build_config("groq", "gsk_test")
         assert config.name == "groq"
         assert config.base_url == "https://api.groq.com/openai/v1"
-        assert "llama-3.3-70b-versatile" in config.models
+        assert "openai/gpt-oss-120b" in config.models
 
     def test_build_config_unknown_provider(self) -> None:
         """Test building config for an unknown provider."""

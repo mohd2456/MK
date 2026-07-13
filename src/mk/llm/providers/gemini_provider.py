@@ -285,7 +285,7 @@ class GeminiProvider(LLMProvider):
         """
         try:
             client = self._get_client()
-            model = self.config.default_model or "gemini-pro"
+            model = self.config.default_model or "gemini-3.5-flash"
             url = f"/v1beta/models/{model}?key={self.config.api_key}"
             response = await client.get(url)
             return response.status_code == 200

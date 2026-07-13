@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
+from mk.clock import utcnow
 from mk.memory.models import ConversationTurn
 
 
@@ -83,7 +84,7 @@ class ShortTermMemory:
         turn = ConversationTurn(
             role=role,
             content=content,
-            timestamp=timestamp or datetime.utcnow(),
+            timestamp=timestamp or utcnow(),
             token_count=_estimate_tokens(content),
         )
         self._turns.append(turn)
