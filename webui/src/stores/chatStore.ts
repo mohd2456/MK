@@ -6,8 +6,15 @@
  */
 
 import { create } from "zustand";
-import type { ChatMessage, ChatAction } from "@/types/chat";
+import type { ChatMessage, ChatAction, AIFailureType } from "@/types/chat";
 import { uuid } from "@/lib/utils";
+
+/** Optional AI-failure/degraded metadata attached to an assistant reply. */
+export interface AssistantMessageMeta {
+  ok?: boolean;
+  failureType?: AIFailureType;
+  degraded?: boolean;
+}
 
 interface ChatState {
   messages: ChatMessage[];
@@ -16,7 +23,12 @@ interface ChatState {
 
   // Actions
   addUserMessage: (content: string) => string;
-  addAssistantMessage: (id: string, content: string, actions?: ChatAction[]) => void;
+  addAssistantMessage: (
+    id: string,
+    content: string,
+    actions?: ChatAction[],
+    meta?: AssistantMessageMeta
+  ) => void;
   startStream: (id: string, replyTo: string) => void;
   appendStreamChunk: (id: string, chunk: string) => void;
   endStream: (id: string, actions?: ChatAction[]) => void;
@@ -41,13 +53,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return id;
   },
 
-  addAssistantMessage: (id, content, actions) => {
+  addAssistantMessage: (id, content, actions, meta) => {
     const message: ChatMessage = {
       id,
       role: "assistant",
       content,
       timestamp: new Date().toISOString(),
       actions,
+      ok: meta?.ok ?? true,
+      failureType: meta?.failureType ?? null,
+      degraded: meta?.degraded ?? false,
     };
     set((s) => ({
       messages: [...s.messages, message],
