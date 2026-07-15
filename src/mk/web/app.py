@@ -163,6 +163,10 @@ _capture: Optional[ConversationCapture] = None
 # When True, creating a backup job also registers a real systemd timer via
 # BackupManager (production). Disabled in tests to avoid touching systemd.
 _enable_backup_scheduling: bool = True
+# Notification broadcaster for proactive alert delivery over WS + Telegram.
+_broadcaster: Optional[Any] = None
+# Ops manager (proactive system monitoring).
+_ops_manager: Optional[Any] = None
 _start_time: float = time.time()
 # Strong references to fire-and-forget background tasks (e.g. running backups)
 # so they are not garbage-collected mid-flight. Entries are discarded on done.
@@ -391,6 +395,39 @@ def create_app(
     )
     # Opt-in capture of successful conversations for local-brain retraining.
     _capture = ConversationCapture(path=capture_path, enabled=capture_conversations)
+
+    # Proactive monitoring — ops manager with real system checks and notification
+    # broadcasting to connected WS clients. Started as a FastAPI lifespan task.
+    from mk.ops.notifications import NotificationBroadcaster
+    from mk.ops.manager import OpsManager
+    from mk.ops.real_checks import (
+        real_backup_freshness,
+        real_container_health,
+        real_disk_health,
+        real_service_health,
+    )
+    from mk.ops.scheduler import ScheduleInterval
+
+    _broadcaster = NotificationBroadcaster()
+    _ops_manager = OpsManager(notify_callback=_broadcaster.notify, register_defaults=False)
+    # Register real checks (command-based, not simulated).
+    _ops_manager.register_check(
+        "container_health", real_container_health, ScheduleInterval.EVERY_5_MINUTES,
+        description="Docker container status (real)", category="containers",
+    )
+    _ops_manager.register_check(
+        "disk_health", real_disk_health, ScheduleInterval.EVERY_15_MINUTES,
+        description="Disk/ZFS pool usage (real)", category="storage",
+    )
+    _ops_manager.register_check(
+        "backup_freshness", real_backup_freshness, ScheduleInterval.EVERY_6_HOURS,
+        description="Backup snapshot freshness (real)", category="backup",
+    )
+    _ops_manager.register_check(
+        "service_health", real_service_health, ScheduleInterval.EVERY_5_MINUTES,
+        description="Homelab HTTP service pings (real)", category="services",
+    )
+
     if pin:
         _pin_hash = _hash_pin(pin)
 
@@ -479,6 +516,24 @@ def create_app(
 
     # Register routes
     _register_auth_routes(app)
+
+    # Lifecycle: start/stop the proactive ops manager alongside the server.
+    @app.on_event("startup")
+    async def _start_ops():
+        if _ops_manager is not None:
+            try:
+                await _ops_manager.start()
+                logger.info("OpsManager started (proactive monitoring active)")
+            except Exception as exc:
+                logger.warning("OpsManager start failed (degraded): %s", exc)
+
+    @app.on_event("shutdown")
+    async def _stop_ops():
+        if _ops_manager is not None:
+            try:
+                await _ops_manager.stop()
+            except Exception:
+                pass
     _register_dashboard_routes(app)
     _register_chat_routes(app)
     _register_storage_routes(app)
@@ -938,6 +993,52 @@ def _register_chat_routes(app: FastAPI) -> None:
             headers={
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
+                "Connection": "keep-alive",
+            },
+        )
+
+    @app.post("/api/v1/chat/agent", dependencies=[Depends(require_auth)])
+    async def chat_agent(msg: ChatMessage):
+        """Run the multi-step ReAct agent loop with streaming reasoning + tools.
+
+        Unlike ``/chat/stream`` (single-turn, conversational), this endpoint
+        drives the full agent loop: the LLM reasons, calls tools, observes
+        results, and continues until a final answer. Each step is emitted as
+        a distinct SSE frame so the UI can render thoughts, actions, and
+        observations as they happen.
+
+        SSE event types:
+            thought  — a token of LLM reasoning
+            action   — about to execute a tool
+            observation — tool result (success/failure)
+            answer   — final response (always last)
+            done     — stream complete
+        """
+        wrapper = _build_wrapper()
+        try:
+            wrapper.validate_request({"content": msg.content})
+        except InputValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail)
+
+        engine = _mk_engine
+        if engine is None or not hasattr(engine, "stream_agent"):
+            return await chat_stream(msg)
+
+        async def agent_event_source():
+            try:
+                async for frame in engine.stream_agent(msg.content):
+                    yield f"data: {json.dumps(frame)}\n\n"
+            except Exception as exc:
+                logger.error("agent stream error: %s", exc, exc_info=True)
+                yield f"data: {json.dumps({'type': 'answer', 'content': 'Agent error occurred.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'ok': True})}\n\n"
+
+        return StreamingResponse(
+            agent_event_source(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
             },
         )
@@ -2180,7 +2281,96 @@ def _register_metrics_routes(app: FastAPI) -> None:
 
 
 def _register_websocket(app: FastAPI) -> None:
-    """WebSocket endpoint for real-time chat."""
+    """WebSocket endpoint for real-time chat + live dashboard stats."""
+
+    async def _collect_stats_snapshot() -> Dict[str, Any]:
+        """Collect a lightweight stats snapshot for live push (no 1s sleep).
+
+        Unlike the HTTP dashboard_summary (which samples network over 1s), this
+        returns instant CPU/RAM/disk/container counts — suitable for 5s push
+        cadence where the client diffs successive snapshots itself.
+        """
+        import os as _os
+
+        cpu = 0.0
+        try:
+            load = _os.getloadavg()[0]
+            cpu_count = _os.cpu_count() or 1
+            cpu = min(100.0, (load / cpu_count) * 100.0)
+        except Exception:
+            pass
+
+        ram_total = 0.0
+        ram_used = 0.0
+        try:
+            with open("/proc/meminfo") as f:
+                info = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        info[parts[0].rstrip(":")] = int(parts[1])
+                ram_total = info.get("MemTotal", 0) / (1024 * 1024)
+                available = info.get("MemAvailable", info.get("MemFree", 0))
+                ram_used = (info.get("MemTotal", 0) - available) / (1024 * 1024)
+        except Exception:
+            pass
+
+        disk_total = 0.0
+        disk_used = 0.0
+        try:
+            st = _os.statvfs("/")
+            disk_total = (st.f_frsize * st.f_blocks) / (1024**4)
+            disk_used = (st.f_frsize * (st.f_blocks - st.f_bavail)) / (1024**4)
+        except Exception:
+            pass
+
+        containers_running = 0
+        containers_total = 0
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                "docker ps -a --format '{{.State}}' 2>/dev/null",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            if proc.returncode == 0 and stdout:
+                states = stdout.decode().strip().splitlines()
+                containers_total = len(states)
+                containers_running = sum(1 for s in states if s.strip() == "running")
+        except Exception:
+            pass
+
+        return {
+            "type": "stats_update",
+            "cpu_percent": round(cpu, 1),
+            "ram_used_gb": round(ram_used, 1),
+            "ram_total_gb": round(ram_total, 1),
+            "ram_percent": round((ram_used / ram_total * 100) if ram_total > 0 else 0, 1),
+            "disk_used_tb": round(disk_used, 2),
+            "disk_total_tb": round(disk_total, 2),
+            "disk_percent": round(
+                (disk_used / disk_total * 100) if disk_total > 0 else 0, 1
+            ),
+            "containers_running": containers_running,
+            "containers_total": containers_total,
+            "timestamp": time.time(),
+        }
+
+    async def _stats_pusher(ws: WebSocket, stop_event: asyncio.Event) -> None:
+        """Push live stats to the client every 5 seconds until disconnect.
+
+        Runs as a concurrent task alongside the message reader. Catches all
+        exceptions so a stats-collection failure never kills the connection.
+        """
+        while not stop_event.is_set():
+            try:
+                await asyncio.sleep(5)
+                if stop_event.is_set():
+                    break
+                snapshot = await _collect_stats_snapshot()
+                await ws.send_json(snapshot)
+            except Exception:  # noqa: BLE001 - stats push must never crash WS
+                break
 
     @app.websocket("/ws/chat")
     async def websocket_chat(ws: WebSocket, token: str = Query("")):
@@ -2191,6 +2381,14 @@ def _register_websocket(app: FastAPI) -> None:
 
         await ws.accept()
         logger.info("WebSocket chat connected")
+
+        # Register with the notification broadcaster for proactive alert push.
+        if _broadcaster is not None:
+            _broadcaster.register_ws(ws)
+
+        # Start a concurrent task that pushes live dashboard stats every 5s.
+        stop_event = asyncio.Event()
+        pusher_task = asyncio.create_task(_stats_pusher(ws, stop_event))
 
         try:
             while True:
@@ -2339,3 +2537,14 @@ def _register_websocket(app: FastAPI) -> None:
             logger.info("WebSocket chat disconnected")
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
+        finally:
+            # Unregister from notification broadcaster.
+            if _broadcaster is not None:
+                _broadcaster.unregister_ws(ws)
+            # Stop the background stats pusher when the connection closes.
+            stop_event.set()
+            pusher_task.cancel()
+            try:
+                await pusher_task
+            except (asyncio.CancelledError, Exception):
+                pass

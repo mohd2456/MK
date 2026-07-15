@@ -199,6 +199,196 @@ class MKEngine:
         self.conversation.add_message(Role.ASSISTANT, response.final_response)
         yield response.final_response
 
+    async def stream_agent(self, user_input: str) -> AsyncIterator[Dict[str, Any]]:
+        """Run the full ReAct agent loop with streaming reasoning + tool execution.
+
+        Unlike :meth:`stream_reply` (which is a single-turn LLM stream with no
+        tool execution), this method performs multi-step reasoning: each
+        iteration either streams reasoning tokens or executes a tool, yielding
+        structured frames so the UI can render thoughts, actions, observations,
+        and the final answer as they happen.
+
+        Frame types yielded:
+            ``{"type": "thought", "chunk": str}`` — a token of LLM reasoning
+            ``{"type": "action", "tool": str, "args": dict}`` — about to execute
+            ``{"type": "observation", "tool": str, "result": str, "success": bool}``
+            ``{"type": "answer", "content": str}`` — final response (always last)
+
+        Falls back to :meth:`stream_reply` behavior (single-turn, no tools) when
+        no agent loop is configured.
+
+        Args:
+            user_input: The user's input text.
+
+        Yields:
+            Structured dicts describing each step of the agent's reasoning.
+        """
+        self.conversation.add_message(Role.USER, user_input)
+
+        # Direct command routing — yields a single answer frame.
+        route_result = self.command_router.route(user_input)
+        if route_result.is_direct and route_result.tool_name:
+            response = await self._handle_direct_command(
+                route_result.tool_name, route_result.tool_args
+            )
+            self.conversation.add_message(Role.ASSISTANT, response.final_response)
+            yield {"type": "answer", "content": response.final_response}
+            return
+
+        # If no LLM router, fall back to no-LLM handler.
+        if self._llm_router is None:
+            response = await self._handle_no_llm(user_input)
+            self.conversation.add_message(Role.ASSISTANT, response.final_response)
+            yield {"type": "answer", "content": response.final_response}
+            return
+
+        # Full streaming ReAct loop.
+        from mk.llm.models import LLMRequest
+
+        max_iterations = 10
+        working_context = user_input
+        all_thoughts: List[str] = []
+
+        for iteration in range(max_iterations):
+            # Build messages for this iteration.
+            messages = self._build_agent_messages(working_context, iteration)
+            request = LLMRequest(messages=messages)
+
+            # Stream the LLM response for this iteration.
+            response_text_parts: List[str] = []
+            async for chunk in self._llm_router.stream(request):
+                response_text_parts.append(chunk)
+                yield {"type": "thought", "chunk": chunk}
+
+            response_text = "".join(response_text_parts)
+            all_thoughts.append(response_text)
+
+            # Parse for tool calls (JSON tool-call format from the response).
+            tool_calls = self._parse_tool_calls(response_text)
+
+            if not tool_calls:
+                # No tool calls → this is the final answer.
+                self.conversation.add_message(Role.ASSISTANT, response_text)
+                yield {"type": "answer", "content": response_text}
+                return
+
+            # Execute each tool call and yield action/observation frames.
+            tool_results: List[str] = []
+            for tc_name, tc_args in tool_calls:
+                yield {"type": "action", "tool": tc_name, "args": tc_args}
+                try:
+                    result = await self._execute_tool(tc_name, tc_args)
+                    result_str = str(result) if result is not None else "OK"
+                    yield {
+                        "type": "observation",
+                        "tool": tc_name,
+                        "result": result_str[:1000],
+                        "success": True,
+                    }
+                    tool_results.append(f"Tool '{tc_name}': {result_str[:500]}")
+                except Exception as exc:
+                    error_str = f"{type(exc).__name__}: {exc}"
+                    yield {
+                        "type": "observation",
+                        "tool": tc_name,
+                        "result": error_str,
+                        "success": False,
+                    }
+                    tool_results.append(f"Tool '{tc_name}' failed: {error_str}")
+
+            # Feed tool results back for the next iteration.
+            working_context = (
+                f"{user_input}\n\n"
+                f"[Tool results from step {iteration + 1}]\n"
+                + "\n".join(tool_results)
+                + "\n\nContinue or provide your final answer."
+            )
+
+        # Max iterations — synthesize a final answer.
+        final = "I've completed my reasoning. " + (all_thoughts[-1] if all_thoughts else "")
+        self.conversation.add_message(Role.ASSISTANT, final)
+        yield {"type": "answer", "content": final}
+
+    def _build_agent_messages(self, working_context: str, iteration: int) -> List[Any]:
+        """Build messages for a streaming agent iteration.
+
+        Includes the system prompt with tool descriptions, recent conversation,
+        and the current working context (which may include tool results from
+        prior iterations).
+        """
+        from mk.llm.models import LLMMessage, MessageRole
+
+        tool_descs = self._get_tool_descriptions()
+        tools_section = ""
+        if tool_descs:
+            tools_section = "\n\nAvailable tools (call by responding with JSON):\n"
+            for t in tool_descs:
+                tools_section += f"- {t['name']}: {t['description'][:80]}\n"
+            tools_section += (
+                "\nTo call a tool, respond with: "
+                '{"tool": "tool_name", "params": {...}}\n'
+                "To give a final answer, just respond normally without a tool call."
+            )
+
+        system = (
+            "You are MK, a personal AI operating system managing a homelab. "
+            "You can execute multi-step tasks by calling tools, observing results, "
+            "and continuing until the task is complete. Think step by step."
+            + tools_section
+        )
+
+        messages: List[Any] = [LLMMessage(role=MessageRole.SYSTEM, content=system)]
+
+        # Recent conversation for context (skip current iteration's working input).
+        if iteration == 0:
+            recent = self.conversation.messages[-8:]
+            for msg in recent:
+                role = MessageRole.ASSISTANT if msg.role == Role.ASSISTANT else MessageRole.USER
+                messages.append(LLMMessage(role=role, content=msg.content))
+        else:
+            # Subsequent iterations: just the working context with tool results.
+            messages.append(LLMMessage(role=MessageRole.USER, content=working_context))
+
+        return messages
+
+    def _parse_tool_calls(self, text: str) -> List[tuple]:
+        """Parse tool calls from LLM response text.
+
+        Looks for JSON objects with a "tool" key and optional "params".
+        Returns a list of (tool_name, args_dict) tuples.
+        Defensive: returns empty list if no valid tool calls found.
+        """
+        import json as _json
+
+        calls: List[tuple] = []
+        # Find JSON objects by tracking brace depth (handles nested braces).
+        i = 0
+        while i < len(text):
+            if text[i] == "{":
+                depth = 0
+                start = i
+                while i < len(text):
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[start : i + 1]
+                            try:
+                                obj = _json.loads(candidate)
+                                tool_name = obj.get("tool")
+                                params = obj.get("params", obj.get("args", {}))
+                                if tool_name and isinstance(tool_name, str):
+                                    calls.append(
+                                        (tool_name, params if isinstance(params, dict) else {})
+                                    )
+                            except (_json.JSONDecodeError, TypeError, ValueError):
+                                pass
+                            break
+                    i += 1
+            i += 1
+        return calls
+
     async def _handle_no_llm(self, user_input: str) -> AgentResponse:
         """Handle user input when no LLM is configured.
 

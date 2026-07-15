@@ -13,6 +13,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { useChatStore } from "@/stores/chatStore";
+import { useDashboardStore } from "@/stores/dashboardStore";
 import type { WSMessage } from "@/lib/ws";
 import type { AIFailureType, ChatAction, ChatContext } from "@/types/chat";
 import { getChatSessionId } from "@/lib/chat";
@@ -37,6 +38,7 @@ export function useChat(): UseChatReturn {
     addAssistantMessage,
     setTyping,
   } = useChatStore();
+  const { applyStatsUpdate } = useDashboardStore();
 
   // Maps an outgoing message id -> the prompt that produced it, so a failed
   // reply can offer a retry with the original text.
@@ -94,11 +96,16 @@ export function useChat(): UseChatReturn {
           setTyping(active ?? true);
           break;
         }
+        case "stats_update": {
+          // Live dashboard stats pushed by the server every ~5s.
+          applyStatsUpdate(msg as any);
+          break;
+        }
       }
     });
 
     return unsub;
-  }, [onMessage, addAssistantMessage, startStream, appendStreamChunk, endStream, setTyping]);
+  }, [onMessage, addAssistantMessage, startStream, appendStreamChunk, endStream, setTyping, applyStatsUpdate]);
 
   const sendMessage = useCallback(
     (content: string, context?: ChatContext) => {
