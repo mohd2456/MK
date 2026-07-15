@@ -25,12 +25,15 @@ import {
   MessageSquare,
   HelpCircle,
   Menu,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { NotificationCenter } from "./NotificationCenter";
 
 const navItems = [
   { label: "Dashboard", path: "/", icon: LayoutDashboard },
@@ -46,7 +49,7 @@ const navItems = [
 
 export function TopBar() {
   const location = useLocation();
-  const { toggleChat, chatOpen, setMobileNavOpen } = useUIStore();
+  const { toggleChat, chatOpen, setMobileNavOpen, toggleTheme, theme } = useUIStore();
   const messages = useChatStore((s) => s.messages);
 
   // Check if there are unread messages (simple heuristic: last message is from assistant)
@@ -111,11 +114,23 @@ export function TopBar() {
 
       {/* Right side actions */}
       <div className="flex items-center gap-1 ml-auto">
+        <Tooltip content={theme === "dark" ? "Switch to light" : "Switch to dark"} side="bottom">
+          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === "dark" ? (
+              <Sun size={18} className="text-mk-text-muted" />
+            ) : (
+              <Moon size={18} className="text-mk-text-muted" />
+            )}
+          </Button>
+        </Tooltip>
+
         <Tooltip content="Help" side="bottom">
           <Button variant="ghost" size="icon" aria-label="Help">
             <HelpCircle size={18} className="text-mk-text-muted" />
           </Button>
         </Tooltip>
+
+        <NotificationCenter />
 
         <Tooltip content={chatOpen ? "Close chat (Ctrl+/)" : "Open chat (Ctrl+/)"} side="bottom">
           <Button

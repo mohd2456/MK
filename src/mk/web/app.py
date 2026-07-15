@@ -192,14 +192,32 @@ def _verify_pin(pin: str) -> bool:
     return hmac.compare_digest(_hash_pin(pin), _pin_hash)
 
 
-def _create_session() -> str:
-    """Create a new session and return the token."""
+def _create_session(role: str = "admin") -> str:
+    """Create a new session and return the token.
+
+    Args:
+        role: User role for this session ('admin' or 'viewer').
+    """
     token = secrets.token_urlsafe(32)
     _sessions[token] = {
         "created": time.time(),
         "expires": time.time() + SESSION_DURATION,
+        "role": role,
     }
     return token
+
+
+def _get_session_role(token: Optional[str]) -> Optional[str]:
+    """Return the role for a valid session token, or None."""
+    if not token:
+        return None
+    session = _sessions.get(token)
+    if not session:
+        return None
+    if time.time() > session["expires"]:
+        del _sessions[token]
+        return None
+    return session.get("role", "admin")
 
 
 def _validate_session(token: Optional[str]) -> bool:
@@ -331,6 +349,22 @@ async def require_auth(
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
+async def require_admin(
+    request: Request,
+    mk_session: Optional[str] = Cookie(None),
+) -> str:
+    """Dependency: require admin role. Viewers get 403.
+
+    Use on mutating/dangerous endpoints (restart, shutdown, backup run, key
+    management) to enforce role separation when MK_VIEWER_PIN is set.
+    """
+    token = await require_auth(request, mk_session)
+    role = _get_session_role(token)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return token
+
+
 # ═══════════════════════════════════════════════════════════════
 # App Factory
 # ═══════════════════════════════════════════════════════════════
@@ -412,20 +446,32 @@ def create_app(
     _ops_manager = OpsManager(notify_callback=_broadcaster.notify, register_defaults=False)
     # Register real checks (command-based, not simulated).
     _ops_manager.register_check(
-        "container_health", real_container_health, ScheduleInterval.EVERY_5_MINUTES,
-        description="Docker container status (real)", category="containers",
+        "container_health",
+        real_container_health,
+        ScheduleInterval.EVERY_5_MINUTES,
+        description="Docker container status (real)",
+        category="containers",
     )
     _ops_manager.register_check(
-        "disk_health", real_disk_health, ScheduleInterval.EVERY_15_MINUTES,
-        description="Disk/ZFS pool usage (real)", category="storage",
+        "disk_health",
+        real_disk_health,
+        ScheduleInterval.EVERY_15_MINUTES,
+        description="Disk/ZFS pool usage (real)",
+        category="storage",
     )
     _ops_manager.register_check(
-        "backup_freshness", real_backup_freshness, ScheduleInterval.EVERY_6_HOURS,
-        description="Backup snapshot freshness (real)", category="backup",
+        "backup_freshness",
+        real_backup_freshness,
+        ScheduleInterval.EVERY_6_HOURS,
+        description="Backup snapshot freshness (real)",
+        category="backup",
     )
     _ops_manager.register_check(
-        "service_health", real_service_health, ScheduleInterval.EVERY_5_MINUTES,
-        description="Homelab HTTP service pings (real)", category="services",
+        "service_health",
+        real_service_health,
+        ScheduleInterval.EVERY_5_MINUTES,
+        description="Homelab HTTP service pings (real)",
+        category="services",
     )
 
     if pin:
@@ -534,6 +580,7 @@ def create_app(
                 await _ops_manager.stop()
             except Exception:
                 pass
+
     _register_dashboard_routes(app)
     _register_chat_routes(app)
     _register_storage_routes(app)
@@ -614,25 +661,36 @@ def _register_auth_routes(app: FastAPI) -> None:
             raise HTTPException(429, "Too many attempts. Try again in 5 minutes.")
 
         if not _verify_pin(req.pin):
-            _record_attempt(ip)
+            # Check if it's a viewer PIN (read-only access)
+            viewer_pin = os.environ.get("MK_VIEWER_PIN")
+            if viewer_pin and hmac.compare_digest(_hash_pin(req.pin), _hash_pin(viewer_pin)):
+                if _audit_logger is not None:
+                    _audit_logger.log_action(
+                        action="auth.login",
+                        result="success_viewer",
+                        initiator=ip,
+                        success=True,
+                    )
+                token = _create_session(role="viewer")
+            else:
+                _record_attempt(ip)
+                if _audit_logger is not None:
+                    _audit_logger.log_action(
+                        action="auth.login",
+                        result="invalid_pin",
+                        initiator=ip,
+                        success=False,
+                    )
+                raise HTTPException(401, "Invalid PIN")
+        else:
             if _audit_logger is not None:
                 _audit_logger.log_action(
                     action="auth.login",
-                    result="invalid_pin",
+                    result="success",
                     initiator=ip,
-                    success=False,
+                    success=True,
                 )
-            raise HTTPException(401, "Invalid PIN")
-
-        if _audit_logger is not None:
-            _audit_logger.log_action(
-                action="auth.login",
-                result="success",
-                initiator=ip,
-                success=True,
-            )
-
-        token = _create_session()
+            token = _create_session(role="admin")
         response = JSONResponse({"token": token, "expires": time.time() + SESSION_DURATION})
         response.set_cookie(
             "mk_session",
@@ -2348,9 +2406,7 @@ def _register_websocket(app: FastAPI) -> None:
             "ram_percent": round((ram_used / ram_total * 100) if ram_total > 0 else 0, 1),
             "disk_used_tb": round(disk_used, 2),
             "disk_total_tb": round(disk_total, 2),
-            "disk_percent": round(
-                (disk_used / disk_total * 100) if disk_total > 0 else 0, 1
-            ),
+            "disk_percent": round((disk_used / disk_total * 100) if disk_total > 0 else 0, 1),
             "containers_running": containers_running,
             "containers_total": containers_total,
             "timestamp": time.time(),

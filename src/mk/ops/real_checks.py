@@ -89,13 +89,9 @@ async def real_disk_health() -> CheckResult:
         pct = ((total - free) / total * 100) if total > 0 else 0
         free_gb = free / (1024**3)
         if pct > 95:
-            issues.append(
-                f"Root filesystem {pct:.0f}% full ({free_gb:.1f}GB free)"
-            )
+            issues.append(f"Root filesystem {pct:.0f}% full ({free_gb:.1f}GB free)")
         elif pct > 85:
-            issues.append(
-                f"Root filesystem {pct:.0f}% used ({free_gb:.1f}GB free)"
-            )
+            issues.append(f"Root filesystem {pct:.0f}% used ({free_gb:.1f}GB free)")
     except OSError:
         pass
 
@@ -165,9 +161,7 @@ async def real_backup_freshness() -> CheckResult:
     parts = out.split("\t")
     snap_name = parts[0] if parts else "unknown"
     # Use `zfs get creation` which gives epoch-parseable format
-    rc3, epoch_out = await _run(
-        f"zfs get -Hp -o value creation {snap_name.split()[0]} 2>/dev/null"
-    )
+    rc3, epoch_out = await _run(f"zfs get -Hp -o value creation {snap_name.split()[0]} 2>/dev/null")
     if rc3 == 0 and epoch_out.strip().isdigit():
         age_seconds = time.time() - int(epoch_out.strip())
         age_hours = age_seconds / 3600

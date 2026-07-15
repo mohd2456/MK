@@ -26,6 +26,7 @@ dependencies = [
 mk = "mk.main:cli_entry"
 mk-web = "mk.web.serve:start_server"
 mk-doctor = "mk.doctor:cli_entry"
+mk-plugin = "mk.plugins.marketplace:cli_entry"
 mk-validate-config = "mk.config.validate:cli_validate"
 
 [build-system]

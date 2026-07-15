@@ -14,6 +14,7 @@ import { useEffect, useCallback, useRef } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { useChatStore } from "@/stores/chatStore";
 import { useDashboardStore } from "@/stores/dashboardStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import type { WSMessage } from "@/lib/ws";
 import type { AIFailureType, ChatAction, ChatContext } from "@/types/chat";
 import { getChatSessionId } from "@/lib/chat";
@@ -39,6 +40,7 @@ export function useChat(): UseChatReturn {
     setTyping,
   } = useChatStore();
   const { applyStatsUpdate } = useDashboardStore();
+  const { addNotification } = useNotificationStore();
 
   // Maps an outgoing message id -> the prompt that produced it, so a failed
   // reply can offer a retry with the original text.
@@ -101,11 +103,20 @@ export function useChat(): UseChatReturn {
           applyStatsUpdate(msg as any);
           break;
         }
+        case "notification": {
+          // Proactive alert from the ops manager.
+          const { message, timestamp } = msg as WSMessage & {
+            message: string;
+            timestamp: number;
+          };
+          if (message) addNotification(message, timestamp || Date.now() / 1000);
+          break;
+        }
       }
     });
 
     return unsub;
-  }, [onMessage, addAssistantMessage, startStream, appendStreamChunk, endStream, setTyping, applyStatsUpdate]);
+  }, [onMessage, addAssistantMessage, startStream, appendStreamChunk, endStream, setTyping, applyStatsUpdate, addNotification]);
 
   const sendMessage = useCallback(
     (content: string, context?: ChatContext) => {

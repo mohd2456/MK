@@ -333,8 +333,7 @@ class MKEngine:
         system = (
             "You are MK, a personal AI operating system managing a homelab. "
             "You can execute multi-step tasks by calling tools, observing results, "
-            "and continuing until the task is complete. Think step by step."
-            + tools_section
+            "and continuing until the task is complete. Think step by step." + tools_section
         )
 
         messages: List[Any] = [LLMMessage(role=MessageRole.SYSTEM, content=system)]

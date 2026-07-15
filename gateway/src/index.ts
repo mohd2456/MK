@@ -15,6 +15,7 @@ import { loadConfig } from "./config.js";
 import { MKBridge } from "./bridge.js";
 import { createTelegramBot, startProactivePolling } from "./telegram.js";
 import { createDiscordBot } from "./discord.js";
+import { createVoiceRouter } from "./voice.js";
 import type { GatewayConfig } from "./types.js";
 
 async function main(): Promise<void> {
@@ -73,6 +74,11 @@ async function main(): Promise<void> {
       res.json({ gateway: "healthy", core: "unreachable" });
     }
   });
+
+  // --- Voice interface (local Whisper STT + Piper TTS) ---
+  const voiceRouter = createVoiceRouter(config, bridge);
+  app.use(voiceRouter);
+  console.log("✓ Voice interface ready (POST /voice)");
 
   app.listen(config.healthPort, () => {
     console.log(`Health endpoint: http://0.0.0.0:${config.healthPort}/health`);
