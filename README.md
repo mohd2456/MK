@@ -1,538 +1,617 @@
-# MK - Personal AI Operating System
+# MK — Personal AI Operating System
 
-> Your entire digital life, orchestrated by one intelligent agent.
+> Your homelab, orchestrated by one intelligent agent. Talk to it. It talks back.
 
-MK is a personal AI operating system that runs on minimal hardware (a MacBook Pro 2010 with 6GB RAM) and orchestrates everything: your homelab, media servers, Docker containers, SSH sessions, files, and services. It delegates heavy computation to remote LLM providers while maintaining local awareness and control.
+MK is a **personal AI operating system** that boots on minimal hardware and orchestrates your entire digital life: containers, storage, networking, backups, media, and services. It delegates reasoning to LLM providers (cloud or local) while maintaining local awareness and control.
 
-**MK is not an app. MK is the OS. The terminal is MK. MK is the terminal.**
+**MK is not an app running on your computer. MK *is* the OS.**
+
+The terminal is MK. The dashboard is MK. Your Telegram. Your voice. All MK.
+
+---
+
+## What MK Can Do
+
+### Talk to your homelab
+```
+MK> check the status of my media server
+{
+  "containers": "12 running, 0 stopped",
+  "disk": "78% used (3.2TB/4TB)",
+  "plex": "active, 0 streams",
+  "last_backup": "6h ago"
+}
+```
+
+### Multi-step agent actions (ReAct loop)
+```
+You: restart plex and check if it came back healthy
+MK: [thinking] I'll restart the container then verify...
+MK: [action] docker restart plex
+MK: [observation] Container restarted, port 32400 responding
+MK: Done — Plex is back up and healthy (2.3s restart).
+```
+
+### Proactive notifications (MK talks first)
+```
+[MK → Telegram]
+⚠️ Your tank pool is 92% full. Want me to clean old snapshots?
+
+[MK → Telegram]
+✓ Weekly report: 12 containers healthy, 847GB free, last backup 3h ago.
+```
+
+### Voice interface (all local, nothing leaves your network)
+```
+POST /voice  (audio) → Whisper STT → MK brain → Piper TTS → audio response
+```
+
+### Stream replies token-by-token (SSE + WebSocket)
+The UI renders MK's response as it thinks — live cursor, growing text.
+
+---
+
+
+## Full Capability List
+
+| Category | Capabilities |
+|----------|-------------|
+| **Chat** | Natural language → actions, streaming responses (SSE + WS), multi-step agent reasoning with tool execution, context-aware suggestions, persistent chat history |
+| **Containers** | List, start, stop, restart Docker containers; view logs; manage stacks |
+| **Storage** | ZFS pools/datasets/snapshots, disk health, SMART data, NFS/SMB shares |
+| **Networking** | Interface config, firewall rules (nftables), WireGuard peers, DNS, reverse proxy, Tailscale |
+| **Backups** | ZFS snapshots, ZFS send/receive replication, rsync, restic; scheduled via systemd timers; retention policies; real execution (not simulated) |
+| **Media** | Disc ripping (MakeMKV), library stats, Plex/Sonarr/Radarr integration, media organization |
+| **System** | Service management (start/stop/restart), system updates, power (reboot/shutdown), AI settings |
+| **Security** | PIN auth + session tokens, role separation (admin/viewer), rate limiting, audit trail, dangerous-command detection, encrypted secrets |
+| **Monitoring** | Live dashboard (CPU/RAM/disk/containers via WS push), proactive alerts (container down, disk full, backup stale), Prometheus metrics |
+| **Voice** | Local Whisper.cpp STT + Piper TTS — talk to MK, get spoken answers (no cloud) |
+| **Notifications** | Bell icon dropdown in UI, WS push to all clients, Telegram delivery |
+| **Memory** | Short-term (session), long-term (SQLite + vector/semantic), system state tracking |
+| **Local Brain** | Fine-tuned model runs locally (cost $0, preferred first, cloud fallback) |
+| **Training** | Conversation capture (opt-in) → JSONL → ingest into dataset → retrain local model |
+| **Plugins** | YAML-declared tool packs, CLI install/list/remove/search from git URLs |
+| **Multi-user** | Admin (full control) vs Viewer (read-only) via separate PINs |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          MK AI Operating System                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────┐     ┌──────────────┐     ┌──────────────────────┐ │
-│  │   Terminal   │────▶│              │     │   Telegram Gateway    │ │
-│  │   (local)   │     │   MK Core    │◀───▶│   (Node.js/TS)       │ │
-│  └─────────────┘     │   Engine     │     └──────────────────────┘ │
-│                       │              │                               │
-│  ┌─────────────┐     │  ┌────────┐  │     ┌──────────────────────┐ │
-│  │  Internal   │◀───▶│  │ Agent  │  │     │   LLM Providers      │ │
-│  │  HTTP API   │     │  │  Loop  │  │────▶│   - OpenAI           │ │
-│  └─────────────┘     │  └────────┘  │     │   - Anthropic        │ │
-│                       │              │     │   - Google            │ │
-│                       └──────┬───────┘     │   - Ollama (local)   │ │
-│                              │             │   - Groq             │ │
-│                       ┌──────┴───────┐     │   - OpenRouter       │ │
-│                       │              │     └──────────────────────┘ │
-│  ┌─────────┐   ┌─────┴─────┐  ┌─────┴─────┐                       │
-│  │ Safety  │   │  Memory   │  │   Tools    │                       │
-│  │ Layer   │   │  System   │  │  Registry  │                       │
-│  ├─────────┤   ├───────────┤  ├────────────┤                       │
-│  │Confirm  │   │Short-term │  │SSH         │                       │
-│  │Audit    │   │Long-term  │  │Files       │                       │
-│  │Secrets  │   │Sys State  │  │Docker      │                       │
-│  │Health   │   │           │  │Media       │                       │
-│  └─────────┘   └───────────┘  │System Mon  │                       │
-│                                └────────────┘                       │
-│                                                                       │
-├─────────────────────────────────────────────────────────────────────┤
-│              Minimal Linux │ Kernel + Networking + MK                 │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         MK AI Operating System v2.0                        │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  Interfaces          Core Engine              LLM Providers                │
+│  ──────────          ───────────              ─────────────                │
+│  Terminal ─────┐     MKEngineV2               Claude (Opus/Sonnet/Haiku)   │
+│  Web UI ───────┤     ├─ Agent Loop (ReAct)    OpenAI (GPT-5.x)            │
+│  Telegram ─────┤───▶ ├─ Command Router        Gemini (3.5 Flash/Pro)       │
+│  Discord ──────┤     ├─ Stream Agent          Groq / DeepSeek / Mistral   │
+│  Voice ────────┘     ├─ Tool Executor         xAI (Grok 4.x)             │
+│                      ├─ Ops Manager           Local Brain (Ollama/llama)   │
+│                      └─ Memory Manager        + 10 more providers          │
+│                                                                            │
+│  Web Dashboard (React)     Safety Layer        Server Managers             │
+│  ─────────────────────     ────────────        ────────────────            │
+│  10 pages, live WS stats   Confirmation        Docker containers           │
+│  Streaming chat panel      Audit trail         ZFS storage                 │
+│  Notification center       Secrets (Fernet)    VMs (KVM/libvirt)           │
+│  Theme toggle (dark/light) Rate limiting       LXC containers              │
+│  Context suggestions       Shell injection     Network (nftables/WG)       │
+│  Mobile responsive         validation          Backups (real execution)    │
+│                                                Services (systemd)          │
+│                                                Media (MakeMKV/Plex)        │
+│                                                                            │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Observability: Prometheus metrics (/metrics) │ Structured JSON logs        │
+│  mk_llm_requests_total{provider,tier=local|cloud}                          │
+│  mk_llm_streams_total, mk_notifications_total, mk_training_captured_total  │
+├──────────────────────────────────────────────────────────────────────────┤
+│              Debian 12 │ Docker │ ZFS │ systemd │ Tailscale                 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Features
 
-### Intelligent Agent Loop
+## Tech Stack
 
-- **ReAct pattern**: Reason, Act, Observe, Respond
-- **Multi-step planning**: Breaks complex tasks into executable steps
-- **Context-aware**: Remembers your preferences, system state, and history
-- **Self-correcting**: Detects errors and adjusts approach automatically
-
-### Multi-Provider LLM Integration
-
-- **6 providers**: OpenAI, Anthropic, Google Gemini, Ollama (local), Groq, OpenRouter
-- **Intelligent routing**: Routes to the best provider based on task, cost, latency
-- **Automatic fallback**: If one provider fails, seamlessly switches to another
-- **Token management**: Tracks usage, enforces budgets, optimizes context windows
-- **Prompt compilation**: Assembles optimized prompts from system state and context
-- **Context compression** (optional): Routes prompts through [Headroom](https://github.com/chopratejas/headroom)
-  to crush large JSON tool outputs, logs, and code 40–90% before they reach the model.
-  Off by default; enable with `uv sync --extra compression` then `MK_COMPRESSION=1`.
-  Transparent no-op when the package isn't installed. See `docs/ARCHITECTURE.md`.
-
-### Three-Tier Memory System
-
-| Tier | Purpose | Persistence |
-|------|---------|-------------|
-| Short-term | Current conversation context | Session |
-| Long-term | User preferences, learned patterns, knowledge | Permanent |
-| System State | Homelab status, service health, schedules | Real-time |
-
-### Tool Framework
-
-Extensible tool system with auto-discovery:
-
-| Tool | Capability |
-|------|-----------|
-| **SSH** | Remote command execution on any machine |
-| **Files** | Read, write, search, manage files |
-| **Docker** | Container lifecycle management |
-| **Media** | Media server control, library management |
-| **System Monitor** | Resource tracking, process management |
-
-### Safety Layer
-
-- **Confirmation**: Asks before dangerous actions (rm -rf, drop database, shutdown)
-- **Audit Trail**: Logs every action with timestamp, params, result, initiator
-- **Encrypted Secrets**: API keys stored encrypted at rest (Fernet + PBKDF2)
-- **Self-Monitoring**: Tracks own CPU, memory, disk usage; alerts when struggling
-
-### Two-Way Communication
-
-- **At home**: Talk to MK directly in the terminal
-- **Away**: MK reaches you on Telegram
-- **Proactive**: MK initiates contact for alerts, updates, completions
-- **Bidirectional**: Reply from your phone to give MK commands
-
-### MK OS
-
-- Stripped-down minimal Linux
-- Kernel + networking + MK. Nothing else.
-- Boots directly into MK terminal mode
-- systemd service with auto-restart and hardening
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Core engine | Python 3.10+ (async) | Fast prototyping, great LLM libraries |
+| Web API | FastAPI + Uvicorn | Async, OpenAPI docs, WebSocket native |
+| Web UI | React 19 + TypeScript + Vite + Tailwind | Fast, type-safe, dark-first design system |
+| State management | Zustand (persisted) | Minimal, no boilerplate |
+| Gateway | Node.js + TypeScript + Express | Telegram/Discord/Voice adapters |
+| Database | SQLite (aiosqlite) + vector embeddings | Zero-config, embedded, fast |
+| Package management | uv (Python) + pnpm (JS) | Fastest available |
+| Testing | pytest (847 tests) + vitest (75+5) | Comprehensive, offline-friendly |
+| Linting | ruff (Python) + biome (TS) | Sub-second, strict |
+| LLM routing | Custom multi-provider router | Health-based fallback, cost-sorted |
+| Encryption | Fernet (AES-128-CBC + HMAC, PBKDF2 480K) | Battle-tested, no deps |
+| OS target | Debian 12 (Bookworm) | Stable, ZFS in repos |
+| Containerization | Docker + docker-compose | Standard, declarative |
 
 ---
 
-## Directory Structure
+## Installation
 
-```
-MK/
-├── src/mk/                    # Python core engine
-│   ├── core/                  # Agent loop, engine, context, models
-│   │   ├── engine.py          # Main orchestrator
-│   │   ├── agent_loop.py      # ReAct reasoning loop
-│   │   ├── context.py         # Context management
-│   │   ├── command_router.py  # Command classification
-│   │   └── models.py          # Core data models
-│   ├── llm/                   # Multi-provider LLM integration
-│   │   ├── providers/         # Provider implementations (6 providers)
-│   │   ├── router.py          # Intelligent provider selection
-│   │   ├── token_manager.py   # Token tracking and budgets
-│   │   └── prompt_compiler.py # Prompt assembly and optimization
-│   ├── memory/                # Three-tier memory system
-│   │   ├── short_term.py      # Conversation context
-│   │   ├── long_term.py       # Persistent knowledge
-│   │   ├── system_state.py    # Live system state
-│   │   └── manager.py         # Memory coordination
-│   ├── tools/                 # Extensible tool framework
-│   │   ├── registry.py        # Tool discovery and registration
-│   │   ├── ssh.py             # Remote execution
-│   │   ├── files.py           # File operations
-│   │   ├── docker.py          # Container management
-│   │   ├── media.py           # Media services
-│   │   └── system_monitor.py  # Resource monitoring
-│   ├── safety/                # Safety mechanisms
-│   │   ├── confirmation.py    # Dangerous action detection
-│   │   ├── audit.py           # Action audit logging
-│   │   ├── secrets.py         # Encrypted credential storage
-│   │   └── health.py          # Self-health monitoring
-│   ├── api/                   # Internal HTTP API
-│   │   └── server.py          # Gateway communication endpoints
-│   └── config/                # Configuration management
-│       └── settings.py        # Pydantic-validated settings
-├── gateway/                   # Telegram messaging gateway (TypeScript)
-│   ├── src/
-│   │   ├── index.ts           # Entry point
-│   │   ├── telegram.ts        # Telegraf bot implementation
-│   │   ├── bridge.ts          # HTTP bridge to MK core
-│   │   ├── config.ts          # Environment configuration
-│   │   └── types.ts           # TypeScript type definitions
-│   ├── package.json
-│   └── tsconfig.json
-├── os-build/                  # Minimal Linux OS build
-│   ├── build.sh               # Main build script
-│   ├── Dockerfile             # Docker build environment
-│   ├── mk.service             # systemd service file
-│   ├── mk-shell.sh            # Login shell wrapper
-│   └── motd                   # MK branding
-├── tests/                     # Test suite
-├── config.example.yaml        # Example configuration
-└── pyproject.toml             # Python project config
-```
-
----
-
-## Setup
-
-### Prerequisites
-
-- Python 3.9+
-- Node.js 22+
-- `uv` (Python package manager)
-- `pnpm` (Node.js package manager)
-
-### Installation
+### Option A: Full OS (MK boots as the computer)
 
 ```bash
-# Clone the repository
-git clone https://github.com/mohd2456/MK.git
-cd MK
-
-# Install Python dependencies
-uv sync
-
-# Install gateway dependencies
-cd gateway
-pnpm install
-pnpm build
-cd ..
-
-# Copy and configure
-cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
+# Flash Debian 12 minimal on a USB, install on your box, SSH in:
+curl -sSL https://raw.githubusercontent.com/mohd2456/MK/main/os-build/install.sh | sudo bash
+sudo reboot
+# → Machine boots straight into MK. No login screen. Just talk.
 ```
 
-### Quick Start
+### Option B: Service on existing Linux (recommended for testing)
 
 ```bash
-# Run MK in terminal mode
-uv run mk --mode terminal
+git clone https://github.com/mohd2456/MK.git /opt/mk && cd /opt/mk
+curl -LsSf https://astral.sh/uv/install.sh | sh  # install uv
+uv sync                                            # install deps
+export MK_PIN=your-secure-pin
+uv run mk-web --host 0.0.0.0 --port 8080          # start web UI
+# → Open http://your-ip:8080 in any browser
+```
 
-# Or run the gateway for Telegram access
-cd gateway && pnpm start
+### Option C: Docker (zero commitment)
+
+```bash
+git clone https://github.com/mohd2456/MK.git && cd MK
+docker compose up --build
+# → Web UI on :8080
+```
+
+### Post-install: verify readiness
+
+```bash
+uv run mk-doctor
+# → 16-point green/red readout with fix suggestions
 ```
 
 ---
+
 
 ## Configuration
 
-MK uses a YAML configuration file (`config.yaml`):
+### LLM Providers (at least one needed for AI features)
 
 ```yaml
-# LLM Providers (configure at least one)
+# /etc/mk/config.yaml
 llm_providers:
-  - name: openai
-    api_key_ref: openai_api_key    # Reference to encrypted secret
-    model: gpt-5.4-mini
-    endpoint: https://api.openai.com/v1
-    priority: 10
-
   - name: anthropic
-    api_key_ref: anthropic_api_key
+    api_key_ref: anthropic_key
     model: claude-sonnet-4-6
     endpoint: https://api.anthropic.com/v1
+    priority: 10
+
+  - name: openai
+    api_key_ref: openai_key
+    model: gpt-5.4-mini
+    endpoint: https://api.openai.com/v1
     priority: 8
-
-  - name: ollama
-    model: llama3
-    endpoint: http://localhost:11434
-    priority: 5
-
-# Memory settings
-memory:
-  short_term_max_messages: 50
-  context_window_budget: 8000
-
-# Safety settings
-safety:
-  max_iterations: 10
-  require_confirmation: true
-  audit_enabled: true
-
-# Gateway
-gateway:
-  telegram_bot_token_ref: telegram_token
-  allowed_chat_ids:
-    - "123456789"
 ```
 
-### Storing Secrets
+Or just add a key at runtime: `/setkey sk-ant-your-key-here` (auto-detects provider).
+
+### Local Brain (runs with no cloud keys at all)
 
 ```bash
-# Store API keys encrypted
-export MK_SECRETS_PASSPHRASE="your-master-passphrase"
-uv run python -c "
-from mk.safety.secrets import SecretsManager
-sm = SecretsManager()
-sm.store_secret('openai_api_key', 'sk-...')
-sm.store_secret('telegram_token', '1234567890:ABC...')
-"
+export MK_LOCAL_BRAIN_URL=http://localhost:8080/v1  # llama.cpp server
+export MK_LOCAL_BRAIN_MODEL=mk-brain               # your fine-tuned model
+# MK prefers local (cost $0), falls back to cloud only if unreachable.
+```
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `MK_PIN` | Admin PIN for web/API auth | `1234` |
+| `MK_VIEWER_PIN` | Read-only viewer PIN (optional) | — |
+| `MK_LOCAL_BRAIN_URL` | Local LLM server URL | — |
+| `MK_LOCAL_BRAIN_KIND` | `openai` or `ollama` | `openai` |
+| `MK_LOCAL_BRAIN_MODEL` | Model name to request | `mk-brain` |
+| `MK_CAPTURE_CONVERSATIONS` | Enable training capture | `0` |
+| `MK_CAPTURE_PATH` | JSONL output for captured data | `~/.mk/training/captured.jsonl` |
+| `MK_AUDIT_DIR` | Security audit log directory | `~/.mk/audit` |
+| `MK_PLUGIN_DIR` | Plugin install directory | `~/.mk/plugins` |
+| `MK_COMPRESSION` | Enable prompt compression | `0` |
+| `MK_WHISPER_MODEL` | Whisper GGML model path | `/opt/mk/models/whisper-base.bin` |
+| `MK_PIPER_MODEL` | Piper TTS voice model path | `/opt/mk/models/en_US-lessac-medium.onnx` |
+
+---
+
+## API Reference (86 endpoints)
+
+### Authentication
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/login` | Login with PIN → session token |
+| POST | `/api/v1/auth/logout` | Invalidate session |
+| GET | `/api/v1/auth/status` | Check session validity |
+
+### Chat & AI
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/chat/message` | Send message, get full response |
+| POST | `/api/v1/chat/stream` | Send message, stream reply (SSE) |
+| POST | `/api/v1/chat/agent` | Multi-step agent with tool execution (SSE) |
+| GET | `/api/v1/chat/suggestions` | Context-aware action suggestions |
+| GET | `/api/v1/chat/history` | Persistent conversation history |
+| WS | `/ws/chat` | Real-time chat + live stats + notifications |
+
+### Dashboard
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/dashboard/summary` | CPU/RAM/disk/containers/Tailscale |
+| GET | `/api/v1/dashboard/alerts` | Active alerts from ops checks |
+| GET | `/api/v1/dashboard/activity` | Security audit trail (newest first) |
+
+### Storage
+| GET | `/api/v1/storage/pools` | ZFS pools with health |
+| GET | `/api/v1/storage/datasets` | ZFS datasets |
+| GET | `/api/v1/storage/snapshots` | Snapshots |
+| GET | `/api/v1/storage/disks` | Physical disks + SMART |
+
+### Containers
+| GET | `/api/v1/apps/containers` | All containers with state |
+| POST | `/api/v1/apps/containers/{name}/restart` | Restart container |
+| POST | `/api/v1/apps/containers/{name}/stop` | Stop container |
+| POST | `/api/v1/apps/containers/{name}/start` | Start container |
+
+### Network
+| GET | `/api/v1/network/interfaces` | Network interfaces |
+| GET/POST | `/api/v1/network/firewall` | nftables rules CRUD |
+| GET/POST | `/api/v1/network/wireguard` | WireGuard interfaces + peers |
+| GET/PUT | `/api/v1/network/dns` | DNS configuration |
+| GET/POST | `/api/v1/network/proxy` | Reverse proxy sites |
+| GET | `/api/v1/network/tailscale` | Tailscale mesh status |
+
+### Protection (Backups)
+| GET/POST | `/api/v1/protection/jobs` | Backup job CRUD |
+| POST | `/api/v1/protection/jobs/{id}/run` | Trigger real backup execution |
+| GET | `/api/v1/protection/jobs/{id}/history` | Run history with status/duration |
+| GET/PUT | `/api/v1/protection/scrubs/{pool}` | ZFS scrub schedules |
+| POST | `/api/v1/protection/scrubs/{pool}/run` | Run scrub |
+| GET/POST | `/api/v1/protection/replication` | ZFS send/receive tasks |
+| GET/POST | `/api/v1/protection/retention` | Retention policies |
+
+### System
+| GET | `/api/v1/system/info` | Hostname, OS, kernel, CPU, RAM, uptime |
+| GET | `/api/v1/system/health` | Health checks |
+| GET | `/api/v1/system/services` | systemd services |
+| POST | `/api/v1/system/services/{name}/restart` | Restart service |
+| GET | `/api/v1/system/updates` | Available updates |
+| POST | `/api/v1/system/updates/apply` | Apply updates |
+| POST | `/api/v1/system/power/reboot` | Reboot |
+| POST | `/api/v1/system/power/shutdown` | Shutdown |
+| GET/PUT | `/api/v1/system/ai/settings` | LLM provider/model config |
+
+### Media
+| GET | `/api/v1/media/drives` | Optical drives |
+| POST | `/api/v1/media/rip` | Start disc rip |
+| GET | `/api/v1/media/rip/status` | Rip progress |
+| GET | `/api/v1/media/library/stats` | Library counts |
+| POST | `/api/v1/media/organize` | Organize incoming files |
+
+### Keys
+| GET/POST/DELETE | `/api/v1/keys/llm` | LLM API key management |
+| POST | `/api/v1/keys/telegram` | Set Telegram bot token |
+| POST | `/api/v1/keys/tailscale` | Set Tailscale auth key |
+
+### Observability
+| GET | `/metrics` | Prometheus metrics (local/cloud hit rate, streams, captures) |
+
+---
+
+
+## CLI Commands
+
+| Command | What it does |
+|---------|-------------|
+| `mk` | Main CLI — terminal REPL or daemon mode |
+| `mk --mode terminal` | Interactive chat (boot sequence → `MK>` prompt) |
+| `mk --mode daemon` | Background service (systemd, with Season 2 subsystems) |
+| `mk-web` | Start the web API + React dashboard |
+| `mk-doctor` | Pre-flight readiness check (16 checks, green/red + fixes) |
+| `mk-doctor --json` | Machine-readable doctor output (for CI) |
+| `mk-plugin list` | Show installed plugins |
+| `mk-plugin install <url>` | Install plugin from git URL |
+| `mk-plugin remove <name>` | Remove a plugin |
+| `mk-plugin search <query>` | Search available plugins |
+| `mk-validate-config` | Validate config YAML |
+
+### Terminal commands (offline, no LLM needed)
+
+```
+status       — System overview (JSON)
+health       — Full health report
+containers   — Docker containers
+storage      — ZFS pools
+services     — Failed services
+network      — Network interfaces
+backup       — Backup health
+hardware     — Hardware info
+temps        — Temperatures
+speedtest    — Internet speed
+users        — User accounts
+vms          — Virtual machines
+lxc          — LXC containers
+keys         — API keys configured
+rip          — Disc ripper status
+eject        — Eject disc
+updates      — Check for updates
+aboutme      — What MK knows about you
+remember ... — Store a fact
+forget ...   — Remove a fact
+help         — Show all commands
 ```
 
 ---
 
-## Usage Examples
-
-### Terminal Mode
+## Code Structure (130 Python modules, 847 tests)
 
 ```
-$ mk
-
-  ███╗   ███╗██╗  ██╗
-  ████╗ ████║██║ ██╔╝
-  ██╔████╔██║█████╔╝
-  ██║╚██╔╝██║██╔═██╗
-  ██║ ╚═╝ ██║██║  ██╗
-  ╚═╝     ╚═╝╚═╝  ╚═╝
-
-You: Check the status of my media server
-
-MK: Connecting to media-server via SSH...
-    Plex Media Server: Running (uptime: 14d 6h)
-    Library: 2,847 movies, 412 TV shows
-    Active streams: 0
-    Disk usage: 78% (3.2TB / 4TB)
-    Everything looks healthy.
-
-You: Download the latest episode of that show I was watching
-
-MK: Last show you watched: "Severance" S2E06
-    Searching... Found: S2E07 (aired yesterday)
-    ⚠️  This will download ~4GB to media-server:/data/tv/
-    Confirm? [y/N]
-
-You: y
-
-MK: Download queued. I'll let you know when it's ready.
-```
-
-### Telegram Interaction
-
-```
-[MK -> You]
-Hey - your media server disk is at 92%.
-Want me to clean up old transcodes? (~180GB reclaimable)
-
-[You -> MK]
-Yes, clean them up
-
-[MK -> You]
-Done. Removed 847 transcode files (183GB freed).
-Disk now at 74%. All good.
-
-[MK -> You]
-That episode of Severance just finished downloading.
-Ready to watch whenever you want.
-```
-
-### Homelab Management
-
-```
-You: What's running on my Docker host?
-
-MK: docker-host (192.168.1.50):
-    - nginx-proxy    : Up 30d  | 12MB RAM
-    - plex           : Up 14d  | 890MB RAM
-    - sonarr         : Up 14d  | 210MB RAM
-    - radarr         : Up 14d  | 185MB RAM
-    - transmission   : Up 14d  | 45MB RAM
-    - home-assistant : Up 7d   | 320MB RAM
-    - pihole         : Up 30d  | 88MB RAM
-
-    Total: 7 containers | 1.7GB RAM used
-
-You: Restart home-assistant, it's been acting up
-
-MK: ⚠️  This will restart the home-assistant container.
-    Smart home automations will pause briefly.
-    Confirm? [y/N]
+MK/
+├── src/mk/                        # Python core (35K+ lines)
+│   ├── core/                      # Engine + agent loop
+│   │   ├── __init__.py            # Canonical Engine alias + create_engine()
+│   │   ├── engine.py              # MKEngine: tools, routing, streaming, agent loop
+│   │   ├── engine_v2.py           # MKEngineV2: plugins, planner, ops, semantic memory
+│   │   ├── agent_loop.py          # ReAct reasoning loop (reason → act → observe)
+│   │   ├── command_router.py      # Fast direct-command dispatch (no LLM needed)
+│   │   ├── context.py             # Context builder for LLM prompts
+│   │   └── models.py             # AgentResponse, AgentStep, Conversation, Role
+│   ├── llm/                       # Multi-provider LLM layer
+│   │   ├── router.py              # Health-based fallback, cost routing, streaming
+│   │   ├── keys.py                # Auto-detect provider from key, 20+ providers
+│   │   ├── provider_factory.py    # Build providers from keys, local brain registration
+│   │   ├── providers/             # 7 provider implementations (all with stream())
+│   │   ├── compression.py         # Optional Headroom context compression
+│   │   ├── token_manager.py       # Budget tracking
+│   │   └── prompt_compiler.py     # System prompt assembly
+│   ├── memory/                    # Three-tier memory
+│   │   ├── short_term.py          # Conversation buffer (token-budgeted)
+│   │   ├── long_term.py           # Persistent user knowledge
+│   │   ├── system_state.py        # Live homelab state tracking
+│   │   ├── sqlite_store.py        # Durable key-value (async SQLite)
+│   │   └── vector/               # Semantic search (embeddings + cosine sim)
+│   ├── tools/                     # Extensible tool framework
+│   │   ├── docker.py, ssh.py, files.py, media.py, system_monitor.py
+│   │   └── registry.py           # Auto-discovery + registration
+│   ├── server/                    # Homelab server managers
+│   │   ├── backups.py             # Real ZFS/rsync/restic execution
+│   │   ├── containers.py          # Docker lifecycle
+│   │   ├── storage.py             # ZFS pools/datasets/snapshots
+│   │   ├── network.py             # Interfaces, firewall, WireGuard, DNS, proxy
+│   │   ├── vms.py, lxc.py         # KVM VMs, LXC containers
+│   │   ├── services.py            # systemd service management
+│   │   └── _shell.py             # Shell safety (validate_name, safe_quote, validate_calendar)
+│   ├── ops/                       # Proactive operations
+│   │   ├── scheduler.py           # Interval-based check runner
+│   │   ├── alerts.py              # Alert manager (fire/resolve/dedup/cooldown)
+│   │   ├── real_checks.py         # Real system checks (docker ps, zpool, df, curl)
+│   │   ├── notifications.py       # Broadcaster → WS + Telegram delivery
+│   │   ├── reports.py             # Weekly summary generator
+│   │   └── manager.py            # OpsManager orchestrator
+│   ├── web/                       # FastAPI web API + React serving
+│   │   ├── app.py                 # 86 endpoints, WS, audit, streaming, rate limiting
+│   │   ├── chat_history.py        # Persistent session-keyed chat (async SQLite)
+│   │   └── serve.py              # Uvicorn launcher
+│   ├── wrapper/                   # MKWrapper (the single choke point)
+│   │   └── wrapper.py            # Validate → timeout → isolate → screen → suggest
+│   ├── safety/                    # Security layer
+│   │   ├── confirmation.py        # Dangerous-command detection
+│   │   ├── audit.py               # Durable audit trail (JSONL, rotation)
+│   │   ├── secrets.py             # Fernet-encrypted credential store
+│   │   └── health.py             # Self-health monitoring
+│   ├── training/                  # Local brain retraining
+│   │   ├── capture.py             # Opt-in conversation capture → JSONL
+│   │   └── ingest.py             # Deduplicate + merge into dataset
+│   ├── plugins/                   # Plugin system
+│   │   └── marketplace.py         # CLI install/list/remove/search
+│   ├── config/                    # Configuration
+│   │   ├── settings.py            # Pydantic models for all config
+│   │   └── validate.py           # Config file validator
+│   ├── brain/                     # Knowledge + routing
+│   ├── planner/                   # Task decomposition + critique
+│   ├── policy/                    # Policy engine (permissions, constraints)
+│   ├── clock.py                   # Non-deprecated UTC helper
+│   ├── metrics.py                 # Dependency-free Prometheus collector
+│   ├── observability.py           # Structured logging + request tracing
+│   ├── doctor.py                  # Pre-flight readiness checks (16 checks)
+│   ├── boot.py                    # Boot sequence (hardware/network/AI probes)
+│   ├── chat.py                    # Chat handler (offline + LLM)
+│   └── main.py                   # CLI entry point (terminal/daemon)
+├── webui/                         # React dashboard (75 tests)
+│   └── src/
+│       ├── pages/ (10)            # Dashboard, Storage, Apps, Network, Protection,
+│       │                          #   Media, MediaManager, Keys, System, Login
+│       ├── components/            # UI components (chat, dashboard, layout, etc.)
+│       ├── stores/                # Zustand (auth, chat, ui, dashboard, notification)
+│       ├── hooks/                 # useChat, useAuth, useWebSocket, useApi
+│       └── lib/                   # API client, chat helpers, SSE consumer
+├── gateway/                       # Messaging gateway (TypeScript, 5 tests)
+│   └── src/
+│       ├── telegram.ts            # Telegram bot adapter
+│       ├── discord.ts             # Discord bot adapter
+│       ├── voice.ts               # Whisper STT + Piper TTS (local)
+│       └── bridge.ts             # HTTP bridge to MK core (retry + fallback)
+├── training/                      # Fine-tuning pipeline
+│   ├── data/                      # Training dataset (JSONL)
+│   ├── scripts/
+│   │   ├── finetune.py           # QLoRA fine-tuning (Qwen2.5-3B)
+│   │   ├── ingest_captured.py    # Fold captured convos into dataset
+│   │   └── quantize.py          # GGUF quantization for local deploy
+│   └── README.md                 # Training + retraining + local brain docs
+├── os-build/                      # Bootable Linux OS
+│   ├── install.sh                 # Multi-distro installer (apt + dnf)
+│   ├── mk.service                # systemd unit
+│   └── build.sh                  # Image builder
+├── docs/                          # Architecture + API docs
+├── examples/plugins/              # Example plugin (backup-verifier)
+├── pyproject.toml                 # Python project config (5 CLI entry points)
+└── docker-compose.yml             # One-command deploy
 ```
 
 ---
 
-## LLM Providers
 
-MK supports multiple LLM providers with intelligent fallback:
+## How the Code Works
 
-| Provider | Best For | Local? | Cost |
-|----------|----------|--------|------|
-| OpenAI | General tasks, coding | No | $$ |
-| Anthropic | Complex reasoning, safety | No | $$ |
-| Google Gemini | Long context, multimodal | No | $ |
-| Ollama | Privacy, offline use | Yes | Free |
-| Groq | Speed (lowest latency) | No | $ |
-| OpenRouter | Model variety, fallback | No | Varies |
+### Request lifecycle (the MKWrapper pattern)
 
-### Provider Selection Logic
+Every request — HTTP, WebSocket, Terminal — flows through **one choke point**:
 
-1. Route based on task type (coding -> OpenAI, reasoning -> Anthropic)
-2. Respect cost budgets and rate limits
-3. Fall back to next provider on failure
-4. Use local Ollama when privacy is needed or network is down
-
----
-
-## Safety
-
-### Dangerous Action Detection
-
-MK recognizes and blocks dangerous operations until confirmed:
-
-- `rm -rf`, `rm -r` (recursive deletion)
-- `DROP DATABASE`, `DROP TABLE`, `TRUNCATE`
-- `shutdown`, `reboot`
-- `mkfs`, `dd`, `fdisk` (disk operations)
-- `git push --force`, `git reset --hard`
-- `curl | bash` (piped execution)
-- `chmod 777`, `iptables -F`
-- Custom patterns can be added
-
-### Audit Trail
-
-Every action is logged:
-
-```json
-{
-  "timestamp": "2024-01-15T14:30:22.123456",
-  "action": "ssh_execute",
-  "params": {"host": "media-server", "command": "docker restart plex"},
-  "result": "Container restarted successfully",
-  "initiator": "user",
-  "success": true,
-  "duration_ms": 2340
-}
+```
+User input
+    → MKWrapper.validate_request()     (reject bad input → 422)
+    → MKWrapper.chat() / stream_chat() (route to engine)
+        → MKEngine.process() or stream_reply() or stream_agent()
+            → CommandRouter (fast path, no LLM)  OR
+            → AgentLoop (ReAct: reason → tool call → observe → loop)
+    ← Result always wrapped: {content, ok, failure_type, actions, suggestions}
+    ← Engine crash? Caught. Returns calm message, never 500.
 ```
 
-### Secret Storage
+### LLM routing (cost-sorted fallback)
 
-- Fernet symmetric encryption (AES-128-CBC + HMAC)
-- Key derived from passphrase via PBKDF2 (480,000 iterations)
-- Salt stored separately, rotatable
-- Secrets never logged or exposed in plaintext
-
----
-
-## Building MK OS
-
-Create a minimal Linux image that boots directly into MK:
-
-```bash
-cd os-build
-
-# Using Docker (recommended)
-./build.sh
-
-# Specify architecture
-./build.sh --arch arm64
-
-# Custom output directory
-./build.sh --output /path/to/images
+```python
+# The router tries providers in cost order (cheapest first):
+# 1. Local brain ($0) — always preferred when configured
+# 2. Groq/fast tier — cheap + fast
+# 3. Cloud providers — by priority/cost
+# If one fails: fall back to next (before first token for streaming)
+router.complete(request)  # or router.stream(request)
 ```
 
-The resulting image contains:
-- Linux kernel with minimal modules
-- systemd + networkd (DHCP)
-- Python 3.9+, Node.js 22
-- MK (core + gateway)
-- No GUI, no desktop, no browser, no bloat
+### Streaming (three paths)
 
-On boot:
-1. Kernel loads
-2. systemd starts mk.service
-3. Login shell is mk-shell (not bash)
-4. User sees MK, not a command prompt
+| Path | Use case | Yields |
+|------|----------|--------|
+| `stream_reply()` | Simple conversational (no tools) | Text chunks |
+| `stream_agent()` | Multi-step with tool execution | thought/action/observation/answer frames |
+| `stream_chat()` | Wrapper boundary (validates + isolates) | Text chunks (safe) |
+
+### Memory (three tiers)
+
+```
+Short-term: last N messages (token-budgeted, in-memory)
+Long-term:  "remember that I prefer dark mode" → SQLite + vector embeddings
+System:     live tracking of machines, services, recent actions
+```
+
+### Safety (defense in depth)
+
+```
+1. Input validation:    shell-injection regex on ALL path params
+2. Dangerous detection: rm -rf, DROP TABLE, dd → require confirmation
+3. Audit trail:         every mutating API call logged (no bodies → no secrets)
+4. Rate limiting:       100/min per IP + login lockout (10 attempts / 5 min)
+5. Role separation:     admin PIN vs viewer PIN (MK_VIEWER_PIN)
+6. Calendar validation: cron expressions validated before systemd unit write
+7. Encrypted secrets:   Fernet + PBKDF2 480K iterations
+```
 
 ---
 
 ## Development
 
-### Running Tests
+### Running tests
 
 ```bash
-# All Python tests
+# Full Python suite (847 tests)
 uv run pytest tests/ -v
 
-# Specific module
-uv run pytest tests/safety/ -v
-uv run pytest tests/core/ -v
+# Specific area
+uv run pytest tests/core/ tests/llm/ tests/web/ -v
 
-# Build gateway
-cd gateway && pnpm build
+# WebUI (75 tests)
+cd webui && pnpm test
 
-# Type checking
-uv run mypy src/mk/
+# Gateway (5 tests)
+cd gateway && pnpm test
+
+# Lint
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
 ```
 
-### Project Conventions
-
-- **Python**: Type hints everywhere, docstrings on all public APIs
-- **Async**: All I/O operations are async (asyncio-based)
-- **Models**: Pydantic for data validation and serialization
-- **HTTP**: httpx for outbound HTTP calls
-- **Testing**: pytest + pytest-asyncio, mock external dependencies
-- **TypeScript**: Strict mode, Zod for runtime validation
-
-### Adding a New Tool
+### Adding a new tool
 
 ```python
-from mk.tools.base import Tool, ToolResult
+# src/mk/tools/my_tool.py
+async def my_tool(target: str, action: str = "info") -> str:
+    """Describe what this tool does (shown to the LLM)."""
+    result = await some_operation(target, action)
+    return f"Done: {result}"
 
-class MyTool(Tool):
-    @property
-    def name(self) -> str:
-        return "my_tool"
-
-    @property
-    def description(self) -> str:
-        return "Does something useful"
-
-    @property
-    def parameters_schema(self) -> dict:
-        return {
-            "type": "object",
-            "properties": {
-                "target": {"type": "string", "description": "Target to act on"}
-            },
-            "required": ["target"]
-        }
-
-    async def execute(self, **kwargs) -> ToolResult:
-        target = kwargs["target"]
-        # Do the thing
-        return ToolResult(success=True, output=f"Done: {target}")
+# Register in engine setup:
+engine._tools["my_tool"] = my_tool
 ```
 
-### Adding a New LLM Provider
+### Adding a new LLM provider
 
-Implement the provider interface in `src/mk/llm/providers/` and register it in the router configuration.
+1. Create `src/mk/llm/providers/my_provider.py` implementing `LLMProvider`
+2. Implement `complete()`, `stream()`, `health_check()`
+3. Add to `PROVIDER_MODELS` and `PROVIDER_ENDPOINTS` in `keys.py`
+4. Add key-pattern regex to `KEY_PATTERNS` for auto-detection
+
+### Creating a plugin
+
+```yaml
+# my-plugin/plugin.yaml
+name: my-plugin
+version: 1.0.0
+description: Does cool stuff
+tools:
+  - name: cool_tool
+    description: Does the cool thing
+    handler: tools.py:cool_tool
+    params:
+      - name: target
+        type: string
+        required: true
+```
+
+```bash
+mk-plugin install /path/to/my-plugin
+# or
+mk-plugin install https://github.com/user/mk-plugin-cool.git
+```
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-thing`)
-3. Write tests for your changes
-4. Ensure all tests pass (`uv run pytest tests/`)
-5. Submit a pull request
-
-### Code Style
-
-- Follow existing patterns in the codebase
-- All public functions need docstrings
-- Type hints on all function signatures
-- Keep modules focused and cohesive
+1. Fork → branch → code → test → PR
+2. All public functions need docstrings + type hints
+3. Tests must pass: `uv run pytest tests/ && cd webui && pnpm test`
+4. Lint must pass: `uv run ruff check src/ tests/`
+5. Format must pass: `uv run ruff format --check src/ tests/`
 
 ---
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE).
 
 ---
 
-## Acknowledgments
+## Philosophy
 
-MK was built with the philosophy that AI should work for you, not the other way around. No cloud dependency, no subscription lock-in, no data harvesting. Your AI, your hardware, your rules.
+MK was built with one belief: **your AI should work for you, not the other way around.**
+
+- No cloud dependency (runs on local brain alone)
+- No subscription lock-in (bring any provider key)
+- No data harvesting (everything stays on your hardware)
+- No complexity tax (one command to install, one PIN to login)
+
+Your AI. Your hardware. Your rules.
 
 ---
 
-*MK - Because your computer should be smarter than you.*
+*MK — Because your computer should be smarter than you.*
